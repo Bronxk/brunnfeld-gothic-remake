@@ -1,6 +1,6 @@
 import type { AgentName, ItemType, Marketplace, Order, Trade, WorldState, SimTime } from "./types.js";
 import { getAgentVillage, isRoadLocation, getVillageForLocation } from "./world-registry.js";
-import { addToInventory, removeFromInventory, unreserveInventory, feedbackToAgent } from "./inventory.js";
+import { addToInventory, removeFromInventory, unreserveInventory, feedbackToAgent, itemLabel } from "./inventory.js";
 import { emitSSE } from "./events.js";
 
 // ─── Per-village marketplace access ──────────────────────────
@@ -75,7 +75,7 @@ export function executeTrade(
     if (!eco.tool || eco.tool.durability === 0) {
       removeFromInventory(eco.inventory, "werkzeug", 1);
       eco.tool = { type: "werkzeug", durability: 100 };
-      feedbackToAgent(buyer, state, "You equipped a fresh Werkzeug.");
+      feedbackToAgent(buyer, state, "Du hast frisches Werkzeug angelegt.");
     }
   }
 
@@ -126,7 +126,7 @@ export function expireOrders(state: WorldState, time: SimTime): void {
     for (const order of expired) {
       if (order.type === "sell") {
         unreserveInventory(order.agentId, order.item, order.quantity, state);
-        feedbackToAgent(order.agentId, state, `Your sell order for ${order.quantity} ${order.item} expired.`);
+        feedbackToAgent(order.agentId, state, `Dein Verkaufsangebot für ${order.quantity} ${itemLabel(order.item)} ist abgelaufen.`);
       }
       emitSSE("order:expired", { orderId: order.id, agentId: order.agentId, orderType: order.type, item: order.item, quantity: order.quantity, price: order.price });
     }

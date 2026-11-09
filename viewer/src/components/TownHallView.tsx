@@ -86,7 +86,7 @@ function DiscussionFeed({ meeting }: { meeting: MeetingState }) {
             {line.name}
           </span>
           <span style={{ color: "#c8b898", wordBreak: "break-word" }}>
-            {line.text.replace(/^.*says: "/, "").replace(/"$/, "").replace(/^\[Thought\] /, "")}
+            {line.text.replace(/^.*(says|sagt): "/, "").replace(/"$/, "").replace(/^\[(Thought|Gedanke)\] /, "")}
           </span>
         </div>
       ))}

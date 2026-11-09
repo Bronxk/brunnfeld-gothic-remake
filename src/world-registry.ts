@@ -239,6 +239,28 @@ export function getDisplayName(agent: string): string {
   return _agentMap!.get(agent)?.displayName ?? AGENT_DISPLAY_NAMES[agent] ?? agent;
 }
 
+/**
+ * Resolve an agent name typed by an LLM/player to an agent id.
+ * Accepts the id, the full display name or any single word of the display name
+ * ("Reinhart", "Vogt Reinhart", "reinhart", "Anno", "Bruder Anno"), case/umlaut-insensitive
+ * via normalizeKey. Full id/display-name matches win; a single-word match that hits
+ * more than one candidate is ambiguous and returns null.
+ */
+export function resolveAgentName(input: string, candidates: readonly string[]): string | null {
+  if (typeof input !== "string") return null;
+  const key = normalizeKey(input);
+  if (!key) return null;
+
+  const exact = candidates.find(id => normalizeKey(id) === key || normalizeKey(getDisplayName(id)) === key);
+  if (exact) return exact;
+
+  const byWord = candidates.filter(id =>
+    normalizeKey(getDisplayName(id)).split("_").includes(key) ||
+    normalizeKey(id).split("_").includes(key)
+  );
+  return byWord.length === 1 ? byWord[0]! : null;
+}
+
 export function getSkill(agent: string): Skill {
   ensureMaps();
   const skill = _agentMap!.get(agent)?.skill;

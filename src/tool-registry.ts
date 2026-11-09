@@ -2,9 +2,9 @@ import type { AgentAction, AgentName, ItemType, ResolvedAction, WorldState, SimT
 import { resolveItemInput } from "./types.js";
 import { HUB_LOCATION, isBaseLocation, resolveLocationName } from "./village-map.js";
 import type { LocationContext, NegotiationOffer } from "./location-context.js";
-import { readAgentMemory } from "./memory.js";
-import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent } from "./inventory.js";
-import { getDisplayName, getAgentVillage, getVillages, getVillageElder, getVillageTownHall, getVillageLocations, getVillageForLocation, getLocationType, getRoads, getAllLocations } from "./world-registry.js";
+import { readAgentMemory, getPeopleSection } from "./memory.js";
+import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent, itemLabel, skillLabel } from "./inventory.js";
+import { getDisplayName, getAgentVillage, getVillages, getVillageElder, getVillageTownHall, getVillageLocations, getVillageForLocation, getLocationType, getRoads, getAllLocations, resolveAgentName } from "./world-registry.js";
 import { computeVillageConcerns } from "./village-concerns.js";
 import { getAgentMarketplace } from "./marketplace.js";
 import { resolveAction, type ResolveContext } from "./tools.js";
@@ -53,6 +53,16 @@ function makeContext(config: HarnessToolConfig): ResolveContext {
   };
 }
 
+// Order sides are engine-internal ("sell"/"buy"); agents read BIETE / SUCHE.
+function sideLabel(side: string): string {
+  return side === "sell" ? "BIETE" : "SUCHE";
+}
+
+// Object types are engine-internal ids; agents read the German word.
+const OBJECT_TYPE_LABELS: Record<string, string> = {
+  note: "Notiz", letter: "Brief", notice: "Aushang",
+};
+
 // ─── Observation tool handlers ────────────────────────────────
 
 function handleLookAround(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
@@ -61,37 +71,37 @@ function handleLookAround(_args: Record<string, unknown>, config: HarnessToolCon
 
   const presentAgents = Object.entries(worldState.agent_locations)
     .filter(([a, l]) => a !== agentId && l === loc)
-    .map(([a]) => `${getDisplayName(a)} (${worldState.economics[a]?.skill ?? "unknown"})`);
+    .map(([a]) => `${getDisplayName(a)} (${skillLabel(worldState.economics[a]?.skill ?? "unbekannt")})`);
 
   const lines: string[] = [];
   lines.push(presentAgents.length > 0
-    ? `People here: ${presentAgents.join(", ")}`
-    : "You are alone here.");
+    ? `Hier sind: ${presentAgents.join(", ")}`
+    : "Du bist hier allein.");
 
   if (locationCtx.speechLog.length > 0) {
-    lines.push("Recent speech:");
+    lines.push("Zuletzt gesagt:");
     for (const entry of locationCtx.speechLog.slice(-6)) {
       lines.push(`  ${entry.name}: "${entry.text}"`);
     }
   }
 
   if (locationCtx.visibleActions.length > 0) {
-    lines.push("Visible:");
+    lines.push("Sichtbar:");
     for (const a of locationCtx.visibleActions.slice(-4)) {
-      lines.push(`  ${a.name} is ${a.summary}`);
+      lines.push(`  ${a.name} ${a.summary}`);
     }
   }
 
   if (locationCtx.negotiationOffers.length > 0) {
-    lines.push("Active offers:");
+    lines.push("Offene Angebote:");
     for (const o of locationCtx.negotiationOffers) {
-      lines.push(`  ${o.fromName} offers ${o.qty}x ${o.item} @ ${o.price}c to ${getDisplayName(o.to)}`);
+      lines.push(`  ${o.fromName} bietet ${getDisplayName(o.to)} ${o.qty}x ${itemLabel(o.item)} für je ${o.price} Groschen an`);
     }
   }
 
   // Sounds from adjacent locations (last tick's actions)
   const sounds = getSounds(agentId, loc, lastTickActions, worldState.agent_locations);
-  if (sounds.length > 0) lines.push("Sounds: " + sounds.join(" "));
+  if (sounds.length > 0) lines.push("Geräusche: " + sounds.join(" "));
 
   // Objects at this location (notices, letters, notes)
   const objects = (worldState.objects ?? []).filter(o =>
@@ -99,9 +109,9 @@ function handleLookAround(_args: Record<string, unknown>, config: HarnessToolCon
     (o.visibility === "shared" || o.recipient === agentId || o.discovered_by.includes(agentId))
   );
   if (objects.length > 0) {
-    lines.push("Objects here:");
+    lines.push("Gegenstände hier:");
     for (const obj of objects.slice(0, 3)) {
-      lines.push(`  [${obj.type}] ${obj.label}: ${obj.content.slice(0, 60)}`);
+      lines.push(`  [${OBJECT_TYPE_LABELS[obj.type] ?? obj.type}] ${obj.label}: ${obj.content.slice(0, 60)}`);
     }
   }
 
@@ -114,21 +124,21 @@ function handleLookAround(_args: Record<string, unknown>, config: HarnessToolCon
       .sort((a, b) => a.price - b.price)
       .slice(0, 5);
     if (topOrders.length > 0) {
-      lines.push("Sell orders here:");
-      for (const o of topOrders) lines.push(`  ${o.quantity}x ${o.item} @ ${o.price}c`);
+      lines.push("Tauschbrett, BIETE:");
+      for (const o of topOrders) lines.push(`  ${o.quantity}x ${itemLabel(o.item)} für je ${o.price} Groschen`);
     }
     const buyOrders = mkt.orders
       .filter(o => o.type === "buy" && o.agentId !== agentId)
       .slice(0, 3);
     if (buyOrders.length > 0) {
-      lines.push("Buy orders (people want):");
-      for (const o of buyOrders) lines.push(`  ${o.quantity}x ${o.item}, paying up to ${o.price}c`);
+      lines.push("Tauschbrett, SUCHE (das wollen die Leute):");
+      for (const o of buyOrders) lines.push(`  ${o.quantity}x ${itemLabel(o.item)}, zahlen bis zu ${o.price} Groschen je Stück`);
     }
     const ownOrders = mkt.orders.filter(o => o.agentId === agentId);
     if (ownOrders.length > 0) {
-      lines.push("Your active orders:");
+      lines.push("Deine Angebote:");
       for (const o of ownOrders) {
-        lines.push(`  ${o.type.toUpperCase()} ${o.quantity}x ${o.item} @ ${o.price}c (id: ${o.id})`);
+        lines.push(`  ${sideLabel(o.type)} ${o.quantity}x ${itemLabel(o.item)} für je ${o.price} Groschen (ID: ${o.id})`);
       }
     }
   }
@@ -138,55 +148,55 @@ function handleLookAround(_args: Record<string, unknown>, config: HarnessToolCon
 
 function handleCheckInventory(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const eco = config.worldState.economics[config.agentId];
-  if (!eco) return { text: "No economic data.", isInteraction: false };
+  if (!eco) return { text: "Keine Wirtschaftsdaten.", isInteraction: false };
 
-  const lines = [`Wallet: ${eco.wallet} coin`];
+  const lines = [`Geldbeutel: ${eco.wallet} Groschen`];
   if (eco.inventory.items.length === 0) {
-    lines.push("Inventory: empty");
+    lines.push("Inventar: leer");
   } else {
-    lines.push("Inventory:");
+    lines.push("Inventar:");
     for (const item of eco.inventory.items) {
       const avail = item.quantity - (item.reserved ?? 0);
-      const res = (item.reserved ?? 0) > 0 ? ` (${item.reserved} reserved)` : "";
-      const spoil = item.spoilsAtTick ? ` [spoils t${item.spoilsAtTick}]` : "";
-      lines.push(`  ${item.type}: ${item.quantity} (${avail} free)${res}${spoil}`);
+      const res = (item.reserved ?? 0) > 0 ? ` (${item.reserved} reserviert)` : "";
+      const spoil = item.spoilsAtTick ? ` [verdirbt Stunde ${item.spoilsAtTick}]` : "";
+      lines.push(`  ${itemLabel(item.type)}: ${item.quantity} (${avail} frei)${res}${spoil}`);
     }
   }
-  if (eco.tool) lines.push(`Tool: ${eco.tool.type} ${eco.tool.durability}%`);
-  if (eco.hiredBy) lines.push(`Employed by: ${getDisplayName(eco.hiredBy)} (until tick ${eco.hiredUntilTick ?? "?"})`);
+  if (eco.tool) lines.push(`Werkzeug: ${itemLabel(eco.tool.type)} Zustand ${eco.tool.durability}%`);
+  if (eco.hiredBy) lines.push(`Angeheuert von: ${getDisplayName(eco.hiredBy)} (bis Stunde ${eco.hiredUntilTick ?? "?"})`);
 
   return { text: lines.join("\n"), isInteraction: false };
 }
 
 function handleCheckPrices(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const item = resolveItemInput(args.item);
-  if (!item) return { text: 'Specify item. Example: {"item": "mehl"}', isInteraction: false };
+  if (!item) return { text: 'Gib eine Ware an. Beispiel: {"item": "mehl"}', isInteraction: false };
 
   const mkt = getAgentMarketplace(config.agentId, config.worldState);
   const acquaintances = config.worldState.acquaintances[config.agentId] ?? [];
   const priceIdx = mkt.priceIndex[item as ItemType];
 
-  const lines = [`${item} prices:`];
-  if (priceIdx) lines.push(`  Index: ${priceIdx} coin`);
+  const lines = [`Preise für ${itemLabel(item)}:`];
+  if (priceIdx) lines.push(`  Richtwert: ${priceIdx} Groschen`);
 
   const sells = mkt.orders
     .filter(o => o.type === "sell" && o.item === item && o.agentId !== config.agentId)
     .sort((a, b) => a.price - b.price);
 
   if (sells.length > 0) {
-    lines.push("  Sell orders:");
+    lines.push("  Verkaufsangebote:");
     for (const o of sells.slice(0, 3)) {
-      const name = acquaintances.includes(o.agentId) ? getDisplayName(o.agentId) : "someone";
-      lines.push(`    ${o.quantity}x @ ${o.price}c (from ${name})`);
+      const name = acquaintances.includes(o.agentId) ? getDisplayName(o.agentId) : "jemand";
+      lines.push(`    ${o.quantity}x für je ${o.price} Groschen (von ${name})`);
     }
   } else {
-    lines.push("  No sell orders.");
+    lines.push("  Keine Verkaufsangebote.");
   }
 
   const recent = (mkt.history ?? []).filter(t => t.item === item).slice(-3);
   if (recent.length > 0) {
     const avg = Math.round(recent.reduce((s, t) => s + t.pricePerUnit, 0) / recent.length);
-    lines.push(`  Recent avg: ${avg}c`);
+    lines.push(`  Zuletzt im Schnitt: ${avg} Groschen`);
   }
 
   return { text: lines.join("\n"), isInteraction: false };
@@ -194,68 +204,67 @@ function handleCheckPrices(args: Record<string, unknown>, config: HarnessToolCon
 
 function handleCheckBody(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const body = config.worldState.body[config.agentId];
-  if (!body) return { text: "No body data.", isInteraction: false };
+  if (!body) return { text: "Keine Körperdaten.", isInteraction: false };
 
-  const hungerLabels = ["full", "satisfied", "peckish", "hungry", "very hungry", "starving"];
-  const energyLabel = body.energy >= 8 ? "great" : body.energy >= 5 ? "good" : body.energy >= 3 ? "tired" : "exhausted";
+  const hungerLabels = ["satt", "zufrieden", "leicht hungrig", "hungrig", "sehr hungrig", "am Verhungern"];
+  const energyLabel = body.energy >= 8 ? "großartig" : body.energy >= 5 ? "gut" : body.energy >= 3 ? "müde" : "erschöpft";
+  const sleepLabels: Record<string, string> = { good: "gut", fair: "mäßig", poor: "schlecht" };
 
   const lines = [
-    `Hunger: ${body.hunger}/5 — ${hungerLabels[body.hunger] ?? "unknown"}`,
-    `Energy: ${body.energy}/10 — ${energyLabel}`,
-    `Sleep: ${body.sleep_quality}`,
+    `Hunger: ${body.hunger}/5 — ${hungerLabels[body.hunger] ?? "unbekannt"}`,
+    `Energie: ${body.energy}/10 — ${energyLabel}`,
+    `Schlaf: ${sleepLabels[body.sleep_quality] ?? body.sleep_quality}`,
   ];
-  if (body.sickness) lines.push(`Sick (severity ${body.sickness})`);
-  if (body.injury) lines.push(`Injured (severity ${body.injury})`);
+  if (body.sickness) lines.push(`Krank (Stärke ${body.sickness})`);
+  if (body.injury) lines.push(`Verletzt (Stärke ${body.injury})`);
 
   return { text: lines.join("\n"), isInteraction: false };
 }
 
 function handleRecall(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const topic = ((args.topic as string) ?? "").toLowerCase().trim();
-  if (!topic) return { text: 'Specify topic. Example: {"topic": "gerste"}', isInteraction: false };
+  if (!topic) return { text: 'Gib ein Thema an. Beispiel: {"topic": "gerste"}', isInteraction: false };
 
   let memory: string;
   try { memory = readAgentMemory(config.agentId); } catch {
-    return { text: "No memory found.", isInteraction: false };
+    return { text: "Keine Erinnerungen gefunden.", isInteraction: false };
   }
 
   const relevant = memory.split("\n")
     .filter(l => l.toLowerCase().includes(topic))
     .slice(0, 8);
 
-  if (relevant.length === 0) return { text: `Nothing in memory about "${topic}".`, isInteraction: false };
-  return { text: `Memory (${topic}):\n${relevant.join("\n")}`, isInteraction: false };
+  if (relevant.length === 0) return { text: `Dazu hast du nichts in Erinnerung: "${topic}".`, isInteraction: false };
+  return { text: `Erinnerung (${topic}):\n${relevant.join("\n")}`, isInteraction: false };
 }
 
 function handleAssessPerson(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const name = ((args.name as string) ?? "").toLowerCase().trim();
-  if (!name) return { text: 'Specify name. Example: {"name": "Anselm"}', isInteraction: false };
+  const name = String(args.name ?? "").toLowerCase().trim();
+  if (!name) return { text: 'Gib einen Namen an. Beispiel: {"name": "Bodo"}', isInteraction: false };
 
   const acquaintances = config.worldState.acquaintances[config.agentId] ?? [];
   const all = Object.keys(config.worldState.economics);
-  const target = all.find(
-    a => getDisplayName(a).toLowerCase() === name || a.toLowerCase() === name
-  );
+  const target = resolveAgentName(name, all);
 
-  if (!target) return { text: `Don't know anyone named "${name}".`, isInteraction: false };
+  if (!target) return { text: `Du kennst niemanden namens "${String(args.name).trim()}".`, isInteraction: false };
   if (!acquaintances.includes(target)) {
-    return { text: `Haven't met ${getDisplayName(target)} yet.`, isInteraction: false };
+    return { text: `Du bist ${getDisplayName(target)} noch nicht begegnet.`, isInteraction: false };
   }
 
   const eco = config.worldState.economics[target];
   const lines = [
     `${getDisplayName(target)}:`,
-    `  Skill: ${eco?.skill ?? "unknown"} | Works at: ${eco?.workLocation ?? "unknown"}`,
+    `  Handwerk: ${skillLabel(eco?.skill ?? "unbekannt")} | Arbeitsort: ${eco?.workLocation ?? "unbekannt"}`,
   ];
 
   try {
     const mem = readAgentMemory(config.agentId);
-    const peopleSection = mem.split("## People")[1]?.split("##")[0] ?? "";
+    const peopleSection = getPeopleSection(mem);
     const personLines = peopleSection.split("\n")
       .filter(l => l.toLowerCase().includes(name) || l.toLowerCase().includes(getDisplayName(target).toLowerCase()))
       .slice(0, 3);
     if (personLines.length > 0) {
-      lines.push("  From memory:");
+      lines.push("  Aus deiner Erinnerung:");
       personLines.forEach(l => lines.push(`  ${l.trim()}`));
     }
   } catch { /* no memory */ }
@@ -267,7 +276,7 @@ function handleAssessPerson(args: Record<string, unknown>, config: HarnessToolCo
 
 function handleSpeak(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const text = ((args.text as string) ?? "").trim();
-  if (!text) return { text: "[Can't speak] No text provided.", isInteraction: false };
+  if (!text) return { text: "[Kann nicht sprechen] Kein Text angegeben.", isInteraction: false };
 
   const resolved = resolveAction({ type: "speak", text }, makeContext(config));
 
@@ -282,22 +291,20 @@ function handleSpeak(args: Record<string, unknown>, config: HarnessToolConfig): 
   }
 
   config.executedActions.push(resolved);
-  return { text: resolved.result || "[Spoke]", isInteraction: true, executedAction: resolved };
+  return { text: resolved.result || "[Gesagt]", isInteraction: true, executedAction: resolved };
 }
 
 function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const targetName = ((args.agent as string) ?? "").toLowerCase();
+  const rawTarget = String(args.agent ?? "");
   const item = resolveItemInput(args.item) ?? "";
   const price = Number(args.price ?? 0);
   const qty = Number(args.qty ?? args.quantity ?? 1);
 
   const all = Object.keys(config.worldState.economics);
-  const target = all.find(
-    a => getDisplayName(a).toLowerCase() === targetName || a.toLowerCase() === targetName
-  ) as AgentName | undefined;
+  const target = resolveAgentName(rawTarget, all) as AgentName | null;
 
   if (!target) {
-    return { text: `[Can't negotiate] No agent named "${args.agent}".`, isInteraction: false };
+    return { text: `[Kann nicht verhandeln] Niemanden namens "${args.agent}" gefunden.`, isInteraction: false };
   }
 
   // Check if a matching counter-offer from target already exists — if so, execute the trade
@@ -323,14 +330,14 @@ function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfi
       seller = config.agentId; sellerEco = agentEco; buyerEco = targetEco;
     } else {
       config.locationCtx.negotiationOffers.splice(matchIdx, 1);
-      return { text: `[Negotiate] Deal agreed but neither party has ${qty}x ${item}.`, isInteraction: true };
+      return { text: `[Verhandlung] Einigung erzielt, aber keiner von beiden hat ${qty}x ${itemLabel(item)}.`, isInteraction: true };
     }
     const buyer = seller === target ? config.agentId : target;
     const totalCost = tradePrice * qty;
 
     if (buyerEco.wallet < totalCost) {
       config.locationCtx.negotiationOffers.splice(matchIdx, 1);
-      return { text: `[Negotiate] Deal agreed but ${getDisplayName(buyer)} can't afford ${totalCost}c.`, isInteraction: true };
+      return { text: `[Verhandlung] Einigung erzielt, aber ${getDisplayName(buyer)} kann ${totalCost} Groschen nicht zahlen.`, isInteraction: true };
     }
 
     removeFromInventory(sellerEco.inventory, item as ItemType, qty);
@@ -339,12 +346,12 @@ function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfi
     buyerEco.wallet -= totalCost;
     config.locationCtx.negotiationOffers.splice(matchIdx, 1);
 
-    feedbackToAgent(seller, config.worldState, `Sold ${qty} ${item} to ${getDisplayName(buyer)} for ${totalCost}c (negotiated).`);
-    feedbackToAgent(buyer, config.worldState, `Bought ${qty} ${item} from ${getDisplayName(seller)} for ${totalCost}c (negotiated).`);
+    feedbackToAgent(seller, config.worldState, `Verkauft: ${qty} ${itemLabel(item)} an ${getDisplayName(buyer)} für ${totalCost} Groschen (verhandelt).`);
+    feedbackToAgent(buyer, config.worldState, `Gekauft: ${qty} ${itemLabel(item)} von ${getDisplayName(seller)} für ${totalCost} Groschen (verhandelt).`);
 
-    const text = `Deal done: ${getDisplayName(seller)} → ${qty}x ${item} → ${getDisplayName(buyer)} for ${totalCost}c.`;
+    const text = `Verkauft: ${getDisplayName(seller)} → ${qty}x ${itemLabel(item)} → ${getDisplayName(buyer)} für ${totalCost} Groschen (verhandelt).`;
     emitSSE("trade", { seller, buyer, item, qty, price: tradePrice, source: "negotiate" });
-    const resolved: ResolvedAction = { type: "speak", text: `[Deal] ${qty}x ${item} @ ${tradePrice}c`, result: text, visible: true };
+    const resolved: ResolvedAction = { type: "speak", text: `[Handel] ${qty}x ${itemLabel(item)} für je ${tradePrice} Groschen`, result: text, visible: true };
     config.executedActions.push(resolved);
     return { text, isInteraction: true, executedAction: resolved };
   }
@@ -363,19 +370,19 @@ function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfi
     agentId: config.agentId,
     name: getDisplayName(config.agentId),
     type: "negotiate",
-    summary: `offering ${qty}x ${item} @ ${price}c to ${getDisplayName(target)}`,
+    summary: `bietet ${getDisplayName(target)} ${qty}x ${itemLabel(item)} für je ${price} Groschen an`,
   });
 
-  const resultText = `${getDisplayName(config.agentId)} offers ${qty}x ${item} @ ${price}c to ${getDisplayName(target)}.`;
+  const resultText = `${getDisplayName(config.agentId)} bietet ${getDisplayName(target)} ${qty}x ${itemLabel(item)} für je ${price} Groschen an.`;
   emitSSE("agent:action", {
     agent: config.agentId,
     actionType: "negotiate",
-    text: `${qty}x ${item} @ ${price}c → ${getDisplayName(target)}`,
+    text: `${qty}x ${itemLabel(item)} für je ${price} Groschen → ${getDisplayName(target)}`,
     result: resultText,
     location: currentLocation(config),
   });
 
-  const resolved: ResolvedAction = { type: "speak", text: `[Negotiate] ${qty}x ${item} @ ${price}c to ${getDisplayName(target)}`, result: resultText, visible: true };
+  const resolved: ResolvedAction = { type: "speak", text: `[Verhandlung] ${qty}x ${itemLabel(item)} für je ${price} Groschen an ${getDisplayName(target)}`, result: resultText, visible: true };
   config.executedActions.push(resolved);
   return { text: resultText, isInteraction: true, executedAction: resolved };
 }
@@ -391,27 +398,27 @@ function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig)
   // Block if already moved this tick — resolveProduction checks post-move location
   const alreadyMoved = config.executedActions.some(a => a.type === "move_to");
   if (alreadyMoved) {
-    return { text: `[Can't produce] You moved this tick. Return to your work location next tick.`, isInteraction: false };
+    return { text: `[Kann nicht herstellen] Du bist diese Runde gegangen. Kehr nächste Runde an deinen Arbeitsort zurück.`, isInteraction: false };
   }
 
   // Block duplicate produce — one production per turn
   const alreadyProduced = config.executedActions.some(a => a.type === "produce");
   if (alreadyProduced) {
-    return { text: `[Can't produce] Already produced this tick. One production per turn.`, isInteraction: false };
+    return { text: `[Kann nicht herstellen] Diese Runde hast du schon etwas hergestellt. Pro Runde nur einmal.`, isInteraction: false };
   }
 
   // Validate item name against known recipes for this skill
   const producible = getProducibleItems(skill);
   if (producible.length === 0) {
-    return { text: `[Can't produce] You have no skill. Find an employer — use hire_laborer if someone is willing to hire you, or ask them to hire you.`, isInteraction: false };
+    return { text: `[Kann nicht herstellen] Du hast kein Handwerk. Such dir einen Arbeitgeber: Bitte jemanden mit Handwerk, dich per hire_laborer anzuheuern.`, isInteraction: false };
   }
   const match = producible.find(p => p.item === item);
   if (!match) {
     const list = producible.map(p => {
-      const inp = Object.entries(p.inputs).map(([k, v]) => `${v}x ${k}`).join(", ");
-      return inp ? `${p.item} (needs: ${inp})` : p.item;
+      const inp = Object.entries(p.inputs).map(([k, v]) => `${v}x ${itemLabel(k)}`).join(", ");
+      return inp ? `${itemLabel(p.item)} (braucht: ${inp})` : itemLabel(p.item);
     }).join(", ");
-    return { text: `[Can't produce] No recipe for "${item}". You can make: ${list}`, isInteraction: false };
+    return { text: `[Kann nicht herstellen] Kein Rezept für "${itemLabel(item)}". Das kannst du herstellen: ${list}`, isInteraction: false };
   }
 
   // Check ingredients are available before calling resolveAction
@@ -419,7 +426,7 @@ function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig)
     const have = getInventoryQty(eco.inventory, inputItem as ItemType);
     if (have < qty) {
       return {
-        text: `[Can't produce] Need ${qty}x ${inputItem} to make ${item}, but you only have ${have}. Go buy or gather more.`,
+        text: `[Kann nicht herstellen] Für ${itemLabel(item)} brauchst du ${qty}x ${itemLabel(inputItem)}, hast aber nur ${have}. Kauf oder sammle mehr.`,
         isInteraction: false,
       };
     }
@@ -432,9 +439,11 @@ function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig)
   const atValidLocation = validLocations.includes(agentLoc) ||
     (agentLocType != null && validLocations.some(vl => getLocationType(vl) === agentLocType));
   if (!atValidLocation) {
-    const where = validLocations.length === 1 ? validLocations[0]! : validLocations.join(" or ");
+    const where = validLocations.length === 1
+      ? validLocations[0]!
+      : `${validLocations.slice(0, -1).join(", ")} oder ${validLocations[validLocations.length - 1]}`;
     return {
-      text: `[Can't produce] ${item} must be produced at ${where}. You are at ${agentLoc} — move there first.`,
+      text: `[Kann nicht herstellen] ${itemLabel(item)} stellst du nur dort her: ${where}. Du bist gerade hier: ${agentLoc} — geh erst dorthin.`,
       isInteraction: false,
     };
   }
@@ -446,12 +455,12 @@ function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig)
       agentId: config.agentId,
       name: getDisplayName(config.agentId),
       type: "produce",
-      summary: `working on ${item}`,
+      summary: `arbeitet an ${itemLabel(item)}`,
     });
   }
 
   config.executedActions.push(resolved);
-  return { text: resolved.result || `[Working on ${item}]`, isInteraction: true, executedAction: resolved };
+  return { text: resolved.result || `[Arbeit an ${itemLabel(item)}]`, isInteraction: true, executedAction: resolved };
 }
 
 function handleMoveTo(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
@@ -471,10 +480,10 @@ function handleMoveTo(args: Record<string, unknown>, config: HarnessToolConfig):
     const localEquiv = agentVillageName ? `${agentVillageName}:${bareDest}` : bareDest;
     const localExists = !!getVillageForLocation(localEquiv);
     const hint = localExists
-      ? ` Your local equivalent is "${localEquiv}" — go there instead.`
-      : ` You are in ${agentVillageName}.`;
+      ? ` Dein Gegenstück hier heißt "${localEquiv}" — geh lieber dorthin.`
+      : ` Du bist in ${agentVillageName}.`;
     return {
-      text: `[Can't go there] "${location}" is in another village.${hint}`,
+      text: `[Dort geht's nicht hin] "${location}" liegt in einer anderen Siedlung.${hint}`,
       isInteraction: false,
     };
   }
@@ -497,19 +506,19 @@ function handleMoveTo(args: Record<string, unknown>, config: HarnessToolConfig):
   config.executedActions.push(resolved);
 
   // After a successful move, describe the new location — the environment speaks
-  let moveText = resolved.result || `[Moving to ${location}]`;
+  let moveText = resolved.result || `[Unterwegs] zum Ort ${location}`;
   if (pendingMove) {
     const dest = pendingMove;
     const othersAtDest = Object.entries(config.worldState.agent_locations)
       .filter(([a, l]) => a !== config.agentId && l === dest)
       .map(([a]) => {
         const skill = config.worldState.economics[a]?.skill;
-        return skill && skill !== "none" ? `${getDisplayName(a)} (${skill})` : getDisplayName(a);
+        return skill && skill !== "none" ? `${getDisplayName(a)} (${skillLabel(skill)})` : getDisplayName(a);
       });
     if (othersAtDest.length > 0) {
-      moveText += ` Others here: ${othersAtDest.join(", ")}.`;
+      moveText += ` Hier sind: ${othersAtDest.join(", ")}.`;
     } else {
-      moveText += " You are alone here.";
+      moveText += " Du bist hier allein.";
     }
   }
 
@@ -555,29 +564,27 @@ function handleEat(args: Record<string, unknown>, config: HarnessToolConfig): To
 // ─── Hire/labor tool handlers ────────────────────────────────
 
 function handleHireLaborer(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const targetName = ((args.agent as string) ?? "").toLowerCase();
+  const rawTarget = String(args.agent ?? "");
   const wage = Math.max(0, Number(args.wage ?? 5));
 
   const all = Object.keys(config.worldState.economics);
-  const target = all.find(
-    a => getDisplayName(a).toLowerCase() === targetName || a.toLowerCase() === targetName
-  ) as AgentName | undefined;
+  const target = resolveAgentName(rawTarget, all) as AgentName | null;
 
-  if (!target) return { text: `[Can't hire] No agent named "${args.agent}".`, isInteraction: false };
+  if (!target) return { text: `[Kann nicht anheuern] Niemanden namens "${args.agent}" gefunden.`, isInteraction: false };
 
   const loc = config.worldState.agent_locations[config.agentId];
   if (config.worldState.agent_locations[target] !== loc) {
-    return { text: `[Can't hire] ${getDisplayName(target)} is not here.`, isInteraction: false };
+    return { text: `[Kann nicht anheuern] ${getDisplayName(target)} ist nicht hier.`, isInteraction: false };
   }
 
   const eco = config.worldState.economics[config.agentId];
   if (eco.wallet < wage) {
-    return { text: `[Can't hire] You need ${wage}c but only have ${eco.wallet}c.`, isInteraction: false };
+    return { text: `[Kann nicht anheuern] Du brauchst ${wage} Groschen, hast aber nur ${eco.wallet}.`, isInteraction: false };
   }
 
   const targetEco = config.worldState.economics[target];
   if (targetEco.hiredBy) {
-    return { text: `[Can't hire] ${getDisplayName(target)} is already employed by ${getDisplayName(targetEco.hiredBy)}.`, isInteraction: false };
+    return { text: `[Kann nicht anheuern] ${getDisplayName(target)} ist schon von ${getDisplayName(targetEco.hiredBy)} angeheuert.`, isInteraction: false };
   }
 
   eco.wallet -= wage;
@@ -585,22 +592,22 @@ function handleHireLaborer(args: Record<string, unknown>, config: HarnessToolCon
   targetEco.hiredBy = config.agentId;
   targetEco.hiredUntilTick = config.time.tick + 16;
 
-  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} hired you for the day (${wage}c). Follow them and assist with their work.`);
+  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} hat dich für den Tag angeheuert (${wage} Groschen). Geh mit und hilf bei der Arbeit.`);
 
-  const text = `${getDisplayName(config.agentId)} hired ${getDisplayName(target)} for ${wage}c.`;
-  const resolved: ResolvedAction = { type: "speak", text: `[Hired] ${getDisplayName(target)} for ${wage}c`, result: text, visible: true };
+  const text = `${getDisplayName(config.agentId)} hat ${getDisplayName(target)} für ${wage} Groschen angeheuert.`;
+  const resolved: ResolvedAction = { type: "speak", text: `[Angeheuert] ${getDisplayName(target)} für ${wage} Groschen`, result: text, visible: true };
   config.executedActions.push(resolved);
   return { text, isInteraction: true, executedAction: resolved };
 }
 
 function handleQuitJob(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const eco = config.worldState.economics[config.agentId];
-  if (!eco.hiredBy) return { text: "[Not hired] You have no current employer.", isInteraction: false };
+  if (!eco.hiredBy) return { text: "[Nicht angeheuert] Du hast gerade keinen Arbeitgeber.", isInteraction: false };
   const employerName = getDisplayName(eco.hiredBy);
-  feedbackToAgent(eco.hiredBy, config.worldState, `${getDisplayName(config.agentId)} has quit their job.`);
+  feedbackToAgent(eco.hiredBy, config.worldState, `${getDisplayName(config.agentId)} hat die Arbeit bei dir hingeworfen.`);
   eco.hiredBy = undefined;
   eco.hiredUntilTick = undefined;
-  return { text: `You quit your job with ${employerName}.`, isInteraction: false };
+  return { text: `Du hast bei ${employerName} gekündigt.`, isInteraction: false };
 }
 
 // ─── Planning tool handlers ───────────────────────────────────
@@ -609,7 +616,8 @@ function handleThink(args: Record<string, unknown>, config: HarnessToolConfig): 
   const text = ((args.text as string) ?? "").trim();
   const displayName = getDisplayName(config.agentId);
 
-  const resolved: ResolvedAction = { type: "think", text, result: `[Thought] ${text}`, visible: false };
+  // NOTE: `[Gedanke] ` is stripped by viewer/src/components/TownHallView.tsx — keep in sync.
+  const resolved: ResolvedAction = { type: "think", text, result: `[Gedanke] ${text}`, visible: false };
   config.executedActions.push(resolved);
 
   // Stream the think text to viewer
@@ -617,16 +625,16 @@ function handleThink(args: Record<string, unknown>, config: HarnessToolConfig): 
   emitSSE("agent:stream", { agent: config.agentId, name: displayName, chunk: text });
   emitSSE("agent:stream", { agent: config.agentId, name: displayName, chunk: "" });
 
-  return { text: `[Thought] ${text}`, isInteraction: false, executedAction: resolved };
+  return { text: `[Gedanke] ${text}`, isInteraction: false, executedAction: resolved };
 }
 
 function handlePlan(args: Record<string, unknown>, _config: HarnessToolConfig): ToolResult {
   const steps = args.steps;
   const text = Array.isArray(steps) ? steps.join(" → ") : String(steps ?? "");
-  return { text: `[Planned] ${text}`, isInteraction: false };
+  return { text: `[Geplant] ${text}`, isInteraction: false };
 }
 
-// ─── Village info tool handler ───��───────────────────────────
+// ─── Village info tool handler ───────────────────────────────
 
 function handleCheckVillage(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const { agentId, worldState, time } = config;
@@ -635,7 +643,7 @@ function handleCheckVillage(_args: Record<string, unknown>, config: HarnessToolC
 
   // Laws
   for (const law of (worldState.active_laws ?? [])) {
-    lines.push(`Law: ${law.description}`);
+    lines.push(`Ratsbeschluss: ${law.description}`);
   }
 
   // Concerns (elder only)
@@ -647,20 +655,20 @@ function handleCheckVillage(_args: Record<string, unknown>, config: HarnessToolC
 
   // Loans
   for (const loan of (worldState.loans ?? []).filter(l => !l.repaid)) {
-    if (loan.creditor === agentId) lines.push(`Owed: ${loan.amount}c by ${getDisplayName(loan.debtor)}`);
-    if (loan.debtor === agentId) lines.push(`You owe: ${loan.amount}c to ${getDisplayName(loan.creditor)}`);
+    if (loan.creditor === agentId) lines.push(`Dir geschuldet: ${loan.amount} Groschen von ${getDisplayName(loan.debtor)}`);
+    if (loan.debtor === agentId) lines.push(`Du schuldest: ${loan.amount} Groschen an ${getDisplayName(loan.creditor)}`);
   }
 
   // Locations + travel
   const locs = getVillageLocations(villageId);
-  lines.push(`Locations: ${locs.join(", ")}`);
+  lines.push(`Orte: ${locs.join(", ")}`);
   for (const road of getRoads().filter(r => r.connectsVillages.includes(villageId))) {
     const destId = road.connectsVillages.find(v => v !== villageId);
     const destName = getVillages().find(v => v.id === destId)?.name ?? destId;
-    lines.push(`Travel: ${road.name} → ${destName} (${road.transitTicks} ticks)`);
+    lines.push(`Reise: ${road.name} → ${destName} (${road.transitTicks} Stunden)`);
   }
 
-  return { text: lines.join("\n") || "Nothing notable.", isInteraction: false };
+  return { text: lines.join("\n") || "Nichts Besonderes.", isInteraction: false };
 }
 
 // ─── Missing action tool handlers ────────────────────────────
@@ -707,19 +715,19 @@ function handleCancelOrder(args: Record<string, unknown>, config: HarnessToolCon
 // ─── Governance tool handlers (only available when granted by assembly) ───
 
 function handleFineAgent(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const targetName = ((args.target as string) ?? "").toLowerCase();
+  const rawTarget = String(args.target ?? "");
   const amount = Math.max(0, Math.floor(Number(args.amount ?? 0)));
-  const reason = (args.reason as string) ?? "no reason given";
+  const reason = (args.reason as string) ?? "kein Grund genannt";
 
-  if (!amount) return { text: "[Can't fine] Specify an amount.", isInteraction: false };
+  if (!amount) return { text: "[Kann nicht strafen] Gib einen Betrag an.", isInteraction: false };
 
   const all = Object.keys(config.worldState.economics);
-  const target = all.find(a => getDisplayName(a).toLowerCase() === targetName || a === targetName) as AgentName | undefined;
-  if (!target) return { text: `[Can't fine] No agent named "${args.target}".`, isInteraction: false };
+  const target = resolveAgentName(rawTarget, all) as AgentName | null;
+  if (!target) return { text: `[Kann nicht strafen] Niemanden namens "${args.target}" gefunden.`, isInteraction: false };
 
   const loc = config.worldState.agent_locations[config.agentId];
   if (config.worldState.agent_locations[target] !== loc) {
-    return { text: `[Can't fine] ${getDisplayName(target)} is not here.`, isInteraction: false };
+    return { text: `[Kann nicht strafen] ${getDisplayName(target)} ist nicht hier.`, isInteraction: false };
   }
 
   const targetEco = config.worldState.economics[target];
@@ -737,13 +745,13 @@ function handleFineAgent(args: Record<string, unknown>, config: HarnessToolConfi
     tick: config.time.tick,
     agent: target,
     lawId: "fine",
-    action: `fined ${actual}c: ${reason}`,
+    action: `${actual} Groschen Strafe: ${reason}`,
     blocked: false,
   });
 
-  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} fined you ${actual} coin. Reason: ${reason}`);
+  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} hat dich mit ${actual} Groschen bestraft. Grund: ${reason}`);
 
-  const text = `${getDisplayName(config.agentId)} fines ${getDisplayName(target)} ${actual} coin. Reason: ${reason}`;
+  const text = `${getDisplayName(config.agentId)} bestraft ${getDisplayName(target)} mit ${actual} Groschen. Grund: ${reason}`;
   const resolved: ResolvedAction = { type: "fine_agent", target, text: reason, result: text, visible: true };
   config.executedActions.push(resolved);
   emitSSE("agent:action", { agent: config.agentId, actionType: "fine_agent", text: reason, result: text, location: loc });
@@ -751,23 +759,23 @@ function handleFineAgent(args: Record<string, unknown>, config: HarnessToolConfi
 }
 
 function handleSeizeGoods(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const targetName = ((args.target as string) ?? "").toLowerCase();
+  const rawTarget = String(args.target ?? "");
   const item = resolveItemInput(args.item) ?? "";
   const qty = Math.max(1, Math.floor(Number(args.qty ?? args.quantity ?? 1)));
-  const reason = (args.reason as string) ?? "no reason given";
+  const reason = (args.reason as string) ?? "kein Grund genannt";
 
   const all = Object.keys(config.worldState.economics);
-  const target = all.find(a => getDisplayName(a).toLowerCase() === targetName || a === targetName) as AgentName | undefined;
-  if (!target) return { text: `[Can't seize] No agent named "${args.target}".`, isInteraction: false };
+  const target = resolveAgentName(rawTarget, all) as AgentName | null;
+  if (!target) return { text: `[Kann nicht beschlagnahmen] Niemanden namens "${args.target}" gefunden.`, isInteraction: false };
 
   const loc = config.worldState.agent_locations[config.agentId];
   if (config.worldState.agent_locations[target] !== loc) {
-    return { text: `[Can't seize] ${getDisplayName(target)} is not here.`, isInteraction: false };
+    return { text: `[Kann nicht beschlagnahmen] ${getDisplayName(target)} ist nicht hier.`, isInteraction: false };
   }
 
   const targetEco = config.worldState.economics[target];
   const available = getInventoryQty(targetEco.inventory, item as ItemType);
-  if (available <= 0) return { text: `[Can't seize] ${getDisplayName(target)} has no ${item}.`, isInteraction: false };
+  if (available <= 0) return { text: `[Kann nicht beschlagnahmen] ${getDisplayName(target)} hat nichts von dieser Ware: ${itemLabel(item)}.`, isInteraction: false };
 
   const actual = Math.min(qty, available);
   removeFromInventory(targetEco.inventory, item as ItemType, actual);
@@ -777,13 +785,13 @@ function handleSeizeGoods(args: Record<string, unknown>, config: HarnessToolConf
     tick: config.time.tick,
     agent: target,
     lawId: "seizure",
-    action: `${actual}x ${item} seized: ${reason}`,
+    action: `${actual}x ${itemLabel(item)} beschlagnahmt: ${reason}`,
     blocked: false,
   });
 
-  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} seized ${actual} ${item} from you. Reason: ${reason}`);
+  feedbackToAgent(target, config.worldState, `${getDisplayName(config.agentId)} hat dir ${actual} ${itemLabel(item)} abgenommen. Grund: ${reason}`);
 
-  const text = `${getDisplayName(config.agentId)} seizes ${actual} ${item} from ${getDisplayName(target)}. Reason: ${reason}`;
+  const text = `${getDisplayName(config.agentId)} beschlagnahmt ${actual} ${itemLabel(item)} von ${getDisplayName(target)}. Grund: ${reason}`;
   const resolved: ResolvedAction = { type: "seize_goods", target, text: reason, result: text, visible: true };
   config.executedActions.push(resolved);
   emitSSE("agent:action", { agent: config.agentId, actionType: "seize_goods", text: reason, result: text, location: loc });
@@ -792,8 +800,8 @@ function handleSeizeGoods(args: Record<string, unknown>, config: HarnessToolConf
 
 // Governance tools — separate from ALL_TOOL_DEFS, injected dynamically by assembly vote
 const GOVERNANCE_TOOL_DEFS: ToolDef[] = [
-  { name: "fine_agent",  description: "Fine someone present (deducts coin, goes to village treasury)", argsHint: '{"target": "Gerard", "amount": 5, "reason": "violated curfew"}' },
-  { name: "seize_goods", description: "Confiscate items from someone present",                        argsHint: '{"target": "Gerard", "item": "gerste", "qty": 3, "reason": "unpaid debt"}' },
+  { name: "fine_agent",  description: "Straf jemanden hier (zieht Groschen ab, sie gehen in die Kasse des Bergvogts)", argsHint: '{"target": "Kasper", "amount": 5, "reason": "Sperrstunde missachtet"}' },
+  { name: "seize_goods", description: "Beschlagnahme Waren von jemandem hier",                                        argsHint: '{"target": "Kasper", "item": "gerste", "qty": 3, "reason": "unbezahlte Schulden"}' },
 ];
 
 // ─── Tool registry ──────────────────────────────────────────
@@ -819,27 +827,27 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   cancel_order:   handleCancelOrder,
   fine_agent:     handleFineAgent,
   seize_goods:    handleSeizeGoods,
-  done:           () => ({ text: "Turn ended.", isInteraction: false }),
+  done:           () => ({ text: "Runde beendet.", isInteraction: false }),
 };
 
 const ALL_TOOL_DEFS: ToolDef[] = [
-  { name: "check_inventory",description: "View your inventory and wallet",                      argsHint: "{}" },
-  { name: "recall",         description: "Search your memory for a topic",                      argsHint: '{"topic": "gerste trade"}' },
-  { name: "assess_person",  description: "What you know about someone (must be acquainted)",    argsHint: '{"name": "Bodo"}' },
-  { name: "speak",          description: "Say something aloud — max 15 words, only if others present", argsHint: '{"text": "..."}' },
-  { name: "negotiate",      description: "Make a structured trade offer to someone here",       argsHint: '{"agent": "Bodo", "item": "mehl", "price": 6, "qty": 3}' },
-  { name: "produce",        description: "Craft an item (must be at your work location)",       argsHint: '{"item": "mehl"}' },
-  { name: "move_to",        description: "Move to a location",                                  argsHint: `{"location": "${HUB_LOCATION}"}` },
-  { name: "post_order",     description: "Post a market buy or sell order",                     argsHint: '{"side": "sell", "item": "mehl", "qty": 3, "price": 6}' },
-  { name: "buy_item",       description: `Buy from market — must be at ${HUB_LOCATION}`,        argsHint: '{"item": "brot", "max_price": 5}' },
-  { name: "eat",            description: "Eat food from your inventory",                        argsHint: '{"item": "brot", "qty": 1}' },
-  { name: "send_message",   description: "Send a written message to someone (delivered next tick)", argsHint: '{"to": "Rudolf", "text": "..."}' },
-  { name: "give_coin",      description: "Give coin to someone here",                           argsHint: '{"to": "Rudolf", "amount": 5}' },
-  { name: "steal",          description: "Steal an item from someone here. You may be caught.",  argsHint: '{"target": "Gerard", "item": "brot"}' },
-  { name: "cancel_order",   description: "Cancel your marketplace order",                       argsHint: '{"order_id": "ord_123"}' },
-  { name: "hire_laborer",   description: "Pay someone here to work for you today (output goes to you)", argsHint: '{"agent": "Pabo", "wage": 5}' },
-  { name: "quit_job",       description: "Quit your current job and stop working for your employer", argsHint: "{}" },
-  { name: "done",           description: "End your turn",                                       argsHint: "{}" },
+  { name: "check_inventory",description: "Zeig dein Inventar und deinen Geldbeutel",                      argsHint: "{}" },
+  { name: "recall",         description: "Durchsuche dein Gedächtnis nach einem Thema",                   argsHint: '{"topic": "gerste handel"}' },
+  { name: "assess_person",  description: "Was du über jemanden weißt (nur Bekannte)",                     argsHint: '{"name": "Bodo"}' },
+  { name: "speak",          description: "Sag etwas laut — max. 15 Wörter, nur wenn andere da sind",      argsHint: '{"text": "..."}' },
+  { name: "negotiate",      description: "Mach jemandem hier ein festes Tauschangebot",                   argsHint: '{"agent": "Bodo", "item": "mehl", "price": 6, "qty": 3}' },
+  { name: "produce",        description: "Stell etwas her (du musst an deinem Arbeitsort sein)",          argsHint: '{"item": "mehl"}' },
+  { name: "move_to",        description: "Geh an einen Ort",                                              argsHint: `{"location": "${HUB_LOCATION}"}` },
+  { name: "post_order",     description: "Schlag ein Kauf- oder Verkaufsgesuch am Tauschbrett an",        argsHint: '{"side": "sell", "item": "mehl", "qty": 3, "price": 6}' },
+  { name: "buy_item",       description: `Kauf am Tauschbrett — nur auf dem ${HUB_LOCATION} möglich`,     argsHint: '{"item": "brot", "max_price": 5}' },
+  { name: "eat",            description: "Iss etwas aus deinem Inventar",                                 argsHint: '{"item": "brot", "qty": 1}' },
+  { name: "send_message",   description: "Schick jemandem eine schriftliche Nachricht (kommt nächste Runde an)", argsHint: '{"to": "Bodo", "text": "..."}' },
+  { name: "give_coin",      description: "Gib jemandem hier Groschen",                                    argsHint: '{"to": "Bodo", "amount": 5}' },
+  { name: "steal",          description: "Stiehl jemandem hier etwas — du kannst erwischt werden",        argsHint: '{"target": "Kasper", "item": "brot"}' },
+  { name: "cancel_order",   description: "Zieh dein Angebot vom Tauschbrett zurück",                      argsHint: '{"order_id": "ord_123"}' },
+  { name: "hire_laborer",   description: "Bezahl jemanden hier, heute für dich zu arbeiten (der Ertrag geht an dich)", argsHint: '{"agent": "Wendel", "wage": 5}' },
+  { name: "quit_job",       description: "Kündige deine Anstellung und hör auf, für deinen Arbeitgeber zu arbeiten", argsHint: "{}" },
+  { name: "done",           description: "Beende deine Runde",                                            argsHint: "{}" },
 ];
 
 export function getToolsForAgent(
@@ -887,7 +895,7 @@ export function executeToolCall(
   config: HarnessToolConfig,
 ): ToolResult {
   const handler = TOOL_HANDLERS[toolName];
-  if (!handler) return { text: `[Unknown tool: ${toolName}]`, isInteraction: false };
+  if (!handler) return { text: `[Unbekanntes Tool: ${toolName}]`, isInteraction: false };
   return handler(args, config);
 }
 
@@ -899,37 +907,37 @@ export function formatToolsForPrompt(tools: ToolDef[]): string {
   const group = (label: string, names: string[]) => {
     const defs = tools.filter(t => names.includes(t.name));
     if (defs.length === 0) return "";
-    return `${label}:\n${defs.map(t => `- ${t.name}: ${t.description}. Args: ${t.argsHint}`).join("\n")}`;
+    return `${label}:\n${defs.map(t => `- ${t.name}: ${t.description}. Argumente: ${t.argsHint}`).join("\n")}`;
   };
 
   return [
-    group("Observation (read-only)", obs),
-    group("Action (affect the world)", act),
-    group("Planning (internal)", plan),
+    group("Beobachtung (nur lesen)", obs),
+    group("Aktion (verändert die Welt)", act),
+    group("Planung (intern)", plan),
   ].filter(Boolean).join("\n\n");
 }
 
 export function getToolSummary(toolName: string, args: Record<string, unknown>): string {
   const s: Record<string, (a: Record<string, unknown>) => string> = {
-    check_inventory:() => "checking inventory",
-    recall:         a => `recalling ${String(a.topic ?? "past")}`,
-    assess_person:  a => `thinking about ${String(a.name ?? "someone")}`,
-    speak:          () => "speaking",
-    negotiate:      a => `making offer to ${String(a.agent ?? "someone")}`,
-    produce:        a => `working on ${String(a.item ?? "goods")}`,
-    move_to:        a => `heading to ${String(a.location ?? "somewhere")}`,
-    post_order:     a => `posting ${String(a.side ?? "")} order`,
-    buy_item:       a => `buying ${String(a.item ?? "item")}`,
-    eat:            a => `eating ${String(a.item ?? "food")}`,
-    hire_laborer:   a => `hiring ${String(a.agent ?? "someone")}`,
-    quit_job:       () => "quitting job",
-    send_message:   a => `messaging ${String(a.to ?? "someone")}`,
-    give_coin:      a => `giving ${String(a.amount ?? "?")}c to ${String(a.to ?? "someone")}`,
-    cancel_order:   a => `cancelling order ${String(a.order_id ?? "?")}`,
-    steal:          a => `stealing ${String(a.item ?? "something")} from ${String(a.target ?? "someone")}`,
-    fine_agent:     a => `fining ${String(a.target ?? "someone")} ${String(a.amount ?? "?")}c`,
-    seize_goods:    a => `seizing ${String(a.item ?? "goods")} from ${String(a.target ?? "someone")}`,
-    done:           () => "finishing turn",
+    check_inventory:() => "prüft das Inventar",
+    recall:         a => `erinnert sich an ${String(a.topic ?? "früher")}`,
+    assess_person:  a => `denkt über ${String(a.name ?? "jemanden")} nach`,
+    speak:          () => "spricht",
+    negotiate:      a => `macht ${String(a.agent ?? "jemandem")} ein Angebot`,
+    produce:        a => `arbeitet an ${a.item ? itemLabel(String(a.item)) : "Waren"}`,
+    move_to:        a => `geht Richtung ${String(a.location ?? "irgendwohin")}`,
+    post_order:     a => `schlägt ein ${a.side ? sideLabel(String(a.side)) : ""}-Gesuch an`,
+    buy_item:       a => `kauft ${a.item ? itemLabel(String(a.item)) : "etwas"}`,
+    eat:            a => `isst ${a.item ? itemLabel(String(a.item)) : "etwas"}`,
+    hire_laborer:   a => `heuert ${String(a.agent ?? "jemanden")} an`,
+    quit_job:       () => "kündigt die Anstellung",
+    send_message:   a => `schreibt ${String(a.to ?? "jemandem")}`,
+    give_coin:      a => `gibt ${String(a.to ?? "jemandem")} ${String(a.amount ?? "?")} Groschen`,
+    cancel_order:   a => `zieht Angebot ${String(a.order_id ?? "?")} zurück`,
+    steal:          a => `stiehlt ${a.item ? itemLabel(String(a.item)) : "etwas"} von ${String(a.target ?? "jemandem")}`,
+    fine_agent:     a => `bestraft ${String(a.target ?? "jemanden")} mit ${String(a.amount ?? "?")} Groschen`,
+    seize_goods:    a => `beschlagnahmt ${a.item ? itemLabel(String(a.item)) : "Waren"} von ${String(a.target ?? "jemandem")}`,
+    done:           () => "beendet die Runde",
   };
   return s[toolName]?.(args) ?? toolName;
 }

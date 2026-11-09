@@ -1,7 +1,7 @@
 import type { AgentName, AgentTurnResult, ItemType, Skill, WorldState, SimTime } from "./types.js";
 import { resolveItemId, SKILL_LABELS } from "./types.js";
-import { getAgentNames, getLocationType } from "./world-registry.js";
-import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent } from "./inventory.js";
+import { getAgentNames, getDisplayName, getLocationType } from "./world-registry.js";
+import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent, itemLabel } from "./inventory.js";
 import { getSeasonMultiplier } from "./seasons.js";
 import { getEventProductionMultiplier } from "./god-mode.js";
 
@@ -49,6 +49,11 @@ export function getProducibleItems(skill: string): { item: string; inputs: Recor
     .map(([item, r]) => ({ item, inputs: r.inputs as Record<string, number>, location: r.location }));
 }
 
+// Season ids are engine-internal (English); agents read the German name.
+const SEASON_LABELS: Record<string, string> = {
+  spring: "Frühling", summer: "Sommer", autumn: "Herbst", winter: "Winter",
+};
+
 function getHiredLaborer(employer: AgentName, state: WorldState): AgentName | null {
   for (const a of getAgentNames()) {
     if (state.economics[a].hiredBy === employer) return a;
@@ -69,7 +74,7 @@ export function resolveProduction(
       const agent = result.agent;
 
       if (producedThisTick.has(agent)) {
-        feedbackToAgent(agent, state, `[Can't produce] Already produced this tick. One production per hour.`);
+        feedbackToAgent(agent, state, `[Kann nicht herstellen] Du hast diese Stunde schon etwas hergestellt. Pro Stunde nur einmal.`);
         continue;
       }
       const eco = state.economics[agent];
@@ -78,7 +83,7 @@ export function resolveProduction(
       const recipe = RECIPES[itemKey];
 
       if (!recipe) {
-        feedbackToAgent(agent, state, `[Can't do that] No recipe for "${itemKey}".`);
+        feedbackToAgent(agent, state, `[Geht nicht] Kein Rezept für "${itemLabel(itemKey)}".`);
         continue;
       }
 
@@ -86,7 +91,7 @@ export function resolveProduction(
         // Allow hired laborers to produce using their employer's skill
         const employer = eco.hiredBy ? state.economics[eco.hiredBy] : null;
         if (!employer || employer.skill !== recipe.skill) {
-          feedbackToAgent(agent, state, `[Can't do that] You don't have the ${SKILL_LABELS[recipe.skill] ?? recipe.skill} skill.`);
+          feedbackToAgent(agent, state, `[Geht nicht] Dafür fehlt dir das Handwerk ${SKILL_LABELS[recipe.skill] ?? recipe.skill}.`);
           continue;
         }
       }
@@ -99,12 +104,12 @@ export function resolveProduction(
         (prodLocType != null &&
          validLocations.some(vl => getLocationType(vl) === prodLocType));
       if (!atValidLocation) {
-        feedbackToAgent(agent, state, `[Can't do that] You must be at ${recipe.location} to produce ${itemKey}.`);
+        feedbackToAgent(agent, state, `[Geht nicht] ${itemLabel(itemKey)} stellst du nur dort her: ${recipe.location}.`);
         continue;
       }
 
       if (recipe.tool && (!eco.tool || eco.tool.durability <= 0)) {
-        feedbackToAgent(agent, state, `[Can't do that] You need a working Werkzeug to produce ${itemKey}.`);
+        feedbackToAgent(agent, state, `[Geht nicht] Für ${itemLabel(itemKey)} brauchst du brauchbares Werkzeug.`);
         continue;
       }
 
@@ -112,7 +117,7 @@ export function resolveProduction(
       for (const [inputItem, qty] of Object.entries(recipe.inputs)) {
         const have = getInventoryQty(eco.inventory, inputItem as ItemType);
         if (have < qty) {
-          feedbackToAgent(agent, state, `[Can't do that] Need ${qty} ${inputItem} but only have ${have}.`);
+          feedbackToAgent(agent, state, `[Geht nicht] Du brauchst ${qty} ${itemLabel(inputItem)}, hast aber nur ${have}.`);
           inputsFailed = true;
           break;
         }
@@ -137,8 +142,8 @@ export function resolveProduction(
 
       if (multiplier === 0 || eventMultiplier === 0) {
         const reason = eventMultiplier === 0
-          ? `[Can't produce] ${outputItem} production is blocked by a village event.`
-          : `[Can't do that] You can't produce ${outputItem} in ${state.season}.`;
+          ? `[Kann nicht herstellen] ${itemLabel(outputItem)} lässt sich wegen eines Ereignisses in der Kolonie gerade nicht herstellen.`
+          : `[Geht nicht] ${itemLabel(outputItem)} lässt sich im ${SEASON_LABELS[state.season] ?? state.season} nicht herstellen.`;
         feedbackToAgent(agent, state, reason);
         // Restore consumed inputs
         for (const [inputItem, qty] of Object.entries(recipe.inputs)) {
@@ -160,9 +165,9 @@ export function resolveProduction(
       // Track for economy snapshots
       state.production_log.push({ tick: time.tick, agent, item: outputItem, qty });
 
-      feedbackToAgent(agent, state, `Produced ${qty} ${outputItem}${isLaborer ? ` (delivered to ${outputTarget})` : ""}.`);
+      feedbackToAgent(agent, state, `Hergestellt: ${qty} ${itemLabel(outputItem)}${isLaborer ? ` (an ${getDisplayName(outputTarget)} abgeliefert)` : ""}.`);
       if (isLaborer) {
-        feedbackToAgent(outputTarget as AgentName, state, `${agent} delivered ${qty} ${outputItem} to your inventory.`);
+        feedbackToAgent(outputTarget as AgentName, state, `${getDisplayName(agent)} hat ${qty} ${itemLabel(outputItem)} in dein Inventar geliefert.`);
       }
     }
   }

@@ -1,5 +1,5 @@
 import type { AgentName, AgentTurnResult, ItemType, WorldState, SimTime } from "./types.js";
-import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent, unreserveInventory } from "./inventory.js";
+import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent, unreserveInventory, itemLabel } from "./inventory.js";
 import { updatePriceIndex, getAgentMarketplace } from "./marketplace.js";
 
 interface BarterOffer {
@@ -10,8 +10,9 @@ interface BarterOffer {
   text: string;
 }
 
-const BARTER_KEYWORDS = ["trade", "barter", "deal", "exchange", "give you", "swap", "i'll give", "i will give", "offer you"];
-const ACCEPT_KEYWORDS = ["deal", "agreed", "fine", "ok", "yes", "accept", "done", "sure", "i agree", "sounds good"];
+// Agents speak German now, so the speech scanner matches German phrases.
+const BARTER_KEYWORDS = ["tausch", "handel", "deal", "gegen", "gebe dir", "geb dir", "gib dir", "biete dir", "biete", "überlasse dir", "ueberlasse dir"];
+const ACCEPT_KEYWORDS = ["abgemacht", "einverstanden", "angenommen", "in ordnung", "topp", "deal", "okay", "gern", "geht klar", "passt", "ja gut", "ja,", "ja."];
 
 const ITEM_WORDS: Record<string, ItemType> = {
   gerste: "gerste", mehl: "mehl", brot: "brot", fleisch: "fleisch", milch: "milch",
@@ -29,7 +30,7 @@ function parseItemsFromText(text: string): { item: ItemType; quantity: number }[
   const results: { item: ItemType; quantity: number }[] = [];
 
   for (const [word, itemType] of Object.entries(ITEM_WORDS)) {
-    const pattern = new RegExp(`(\\d+)\\s+${word}|${word}\\s+(\\d+)|(a|an|one|some)\\s+${word}`, "i");
+    const pattern = new RegExp(`(\\d+)\\s+${word}|${word}\\s+(\\d+)|(ein|eine|einen|einem|etwas)\\s+${word}`, "i");
     const match = pattern.exec(lower);
     if (match) {
       const qtyStr = match[1] || match[2];
@@ -94,7 +95,7 @@ export function resolveBarter(
         let valid = true;
         for (const { item, quantity } of offerItems) {
           if (getInventoryQty(state.economics[offerer].inventory, item) < quantity) {
-            feedbackToAgent(offerer, state, `[Barter failed] You don't have enough ${item}.`);
+            feedbackToAgent(offerer, state, `[Tausch gescheitert] Du hast nicht genug ${itemLabel(item)}.`);
             valid = false;
             break;
           }
@@ -103,7 +104,7 @@ export function resolveBarter(
 
         for (const { item, quantity } of requestItems) {
           if (getInventoryQty(state.economics[receiver].inventory, item) < quantity) {
-            feedbackToAgent(receiver, state, `[Barter failed] You don't have enough ${item}.`);
+            feedbackToAgent(receiver, state, `[Tausch gescheitert] Du hast nicht genug ${itemLabel(item)}.`);
             valid = false;
             break;
           }
@@ -122,10 +123,10 @@ export function resolveBarter(
           addToInventory(state.economics[offerer].inventory, item, quantity, time.tick);
         }
 
-        const offerStr = offerItems.map(i => `${i.quantity} ${i.item}`).join(", ");
-        const requestStr = requestItems.map(i => `${i.quantity} ${i.item}`).join(", ");
-        feedbackToAgent(offerer, state, `Barter completed: gave ${offerStr}, received ${requestStr}.`);
-        feedbackToAgent(receiver, state, `Barter completed: gave ${requestStr}, received ${offerStr}.`);
+        const offerStr = offerItems.map(i => `${i.quantity} ${itemLabel(i.item)}`).join(", ");
+        const requestStr = requestItems.map(i => `${i.quantity} ${itemLabel(i.item)}`).join(", ");
+        feedbackToAgent(offerer, state, `Tausch abgeschlossen: Du gibst ${offerStr} und bekommst ${requestStr}.`);
+        feedbackToAgent(receiver, state, `Tausch abgeschlossen: Du gibst ${requestStr} und bekommst ${offerStr}.`);
 
         // Update price index for both sides (use offerer's village marketplace)
         const offererMkt = getAgentMarketplace(offerer, state);

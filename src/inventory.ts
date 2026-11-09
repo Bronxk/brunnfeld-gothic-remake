@@ -1,6 +1,17 @@
 import type { AgentName, Inventory, InventoryItem, ItemType, WorldState, SimTime } from "./types.js";
+import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import { getAgentNames } from "./world-registry.js";
 import { emitSSE } from "./events.js";
+
+/** German display label for an item id; unknown ids are shown unchanged. */
+export function itemLabel(item: string): string {
+  return ITEM_LABELS[item as ItemType] ?? item;
+}
+
+/** German display label for a skill id; unknown ids are shown unchanged. */
+export function skillLabel(skill: string): string {
+  return (SKILL_LABELS as Record<string, string>)[skill] ?? skill;
+}
 
 // Spoilage durations in ticks (1 day = 16 ticks)
 const SPOIL_TICKS: Partial<Record<ItemType, number>> = {
@@ -86,14 +97,14 @@ export function checkSpoilage(state: WorldState, time: SimTime): void {
     const spoiledTypes: ItemType[] = [];
     inv.items = inv.items.filter(item => {
       if (item.spoilsAtTick && time.tick > item.spoilsAtTick) {
-        spoiled.push(`${item.quantity} ${item.type}`);
+        spoiled.push(`${item.quantity} ${itemLabel(item.type)}`);
         spoiledTypes.push(item.type);
         return false;
       }
       return true;
     });
     if (spoiled.length > 0) {
-      feedbackToAgent(agent, state, `Your ${spoiled.join(", ")} spoiled overnight.`);
+      feedbackToAgent(agent, state, `Über Nacht verdorben: ${spoiled.join(", ")}.`);
       // Cancel any sell orders for spoiled items — their inventory entries are now gone
       for (const itemType of spoiledTypes) {
         const cancelledOrders = state.marketplace.orders.filter(
@@ -103,7 +114,7 @@ export function checkSpoilage(state: WorldState, time: SimTime): void {
           state.marketplace.orders = state.marketplace.orders.filter(
             o => !(o.agentId === agent && o.item === itemType && o.type === "sell")
           );
-          feedbackToAgent(agent, state, `Your sell order for ${itemType} was cancelled (spoiled).`);
+          feedbackToAgent(agent, state, `Dein Verkaufsangebot für ${itemLabel(itemType)} wurde gestrichen (verdorben).`);
           for (const order of cancelledOrders) {
             emitSSE("order:cancelled", { orderId: order.id, agentId: agent, orderType: "sell", item: order.item, quantity: order.quantity, price: order.price });
           }
