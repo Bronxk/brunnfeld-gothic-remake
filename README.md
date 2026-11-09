@@ -856,10 +856,17 @@ npm run reset && npm start
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--villages` | `1` | Number of colonies (1–5): Schlackental, Rabenstollen, Kehlhof, Moosgrund, Aschenbruch |
-| `--agents` | `19` | Agents **per colony** (7–200) |
+| `--neighbour-agents` | `8` | Colonists per **generated neighbour** colony (with `--villages` ≥ 2) |
+| `--agents` | `19` | Only for `--villages=1`: a value other than 19 generates a random cast |
 | `--seed` | random | Integer seed for deterministic generation |
 
-With the defaults (`--villages=1 --agents=19`) the hand-written default cast above is used. Larger or additional colonies get generated agents with German names and procedurally generated profiles (skill, home, starting Groschen, short background).
+Schlackental is always the hand-written cast above (profiles and starting relationships included). Neighbour colonies get generated agents with German names, a themed skill mix and a one-line lore entry: **Rabenstollen** is a rival mining camp across the ridge, **Kehlhof** a poor farming hamlet on the old pass road. Every neighbour has a road to Schlackental, and consecutive neighbours are linked too, so three colonies form a triangle.
+
+A three-colony world (19 + 8 + 8 = 35 colonists) costs roughly 5 ct per tick on Haiku 5.5 (estimate from measured token counts).
+
+```bash
+npx tsx src/generate-world.ts --villages=3 --seed=1109
+```
 
 ### Environment Variables
 
@@ -1133,6 +1140,35 @@ The viewer's events panel lets you inject disruptions into the running simulatio
 Events broadcast a message to affected agents via the message queue, so they respond in character next tick. Active events are shown with a live countdown in the viewer.
 
 The emergency Appell accepts an `agendaType` (`tax_change`, `marketplace_hours`, `banishment`, `general_rule`), a description and an optional target for Karzerstrafe; by default it teleports everyone to the Vogtei.
+
+### War Between Colonies
+
+With two or more colonies, every pair has a relation: **Frieden**, **Spannung** or **Krieg**, plus a tension value from 0 to 100.
+
+- **Stirring trouble (observer):** `POST /api/war/provoke` with `{ from, to, kind }`. The kinds are `grenzstreit`, `diebstahl`, `beleidigung` and `geruecht`. Each raises tension by 20–35 and tells both colonies what happened from their own side. A `diebstahl` really moves a little Groschen or goods. From tension 60 the relation turns to Spannung. From 85 the victim's council is summoned to vote on war; whether they declare it is up to the LLM council.
+- **Hard levers:** `POST /api/war/declare` (`{ aggressor, target }`), `POST /api/war/peace` (`{ a, b }`) and `POST /api/war/tribute` (`{ payer, receiver, amount }`). A peace starts a 24-tick truce.
+- **What colonists can do:**
+  - `ueberfallen` raids an enemy colony. The raider must travel the road and be inside the enemy colony.
+  - `wache_halten` guards their own colony and counts double in defence.
+  - Councils can vote on `declare_war`, `make_peace` (an offer the other council must accept) and `pay_tribute`.
+- **Raid resolution, once per tick:** raiders' strength is compared with present defenders, with a random factor of 0.75–1.25. A won raid takes up to 20 % of the target's market stock and up to 15 % of the defenders' Groschen, at most 60 Groschen per raid. The losing side's fighters may be wounded. Goods and Groschen only change hands; nothing is created.
+- **Trade during war:** enemies are not served at each other's markets.
+- **Prompts:** colonists see a short "Lage" block in their prompt.
+- **Viewer events:** `GET /api/war` lists the relations and the last war events. The viewer gets SSE `war:update`, `war:event` and `war:raid`.
+
+### Director Controls (Regie)
+
+| Route | What it does |
+|---|---|
+| `GET/POST /api/agents/<id>/role` | Read or change a colonist's craft (`skill`, which also moves their workplace), council seat (`council`) and a free-text character note (`character`, stored in the profile under `## Regie-Notiz` and included in the prompt) |
+| `GET/POST /api/agents/models`, `/api/agents/<id>/model` | LLM tier per colonist (see Environment Variables) |
+| `GET /api/sim` | Simulation control status |
+| `POST /api/sim/pause`, `/resume`, `/step` | Pause after the current tick, continue, or run exactly one tick while paused |
+| `POST /api/sim/budget` | `{ "ticks": 10 }` pauses automatically after 10 more ticks (`null` = no limit). Use it to cap spend |
+| `POST /api/sim/speed` | `{ "delayMs": 30000 }` adds a pause between ticks |
+| `GET /api/world/roads`, `/api/world/villages-lore` | Roads and colony lore |
+
+Changes arrive as SSE `agent:role` and `sim:control`. Set `SIM_START_PAUSED=true` to start paused.
 
 ### Agent Interview
 
