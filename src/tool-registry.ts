@@ -884,7 +884,7 @@ const ALL_TOOL_DEFS: ToolDef[] = [
   { name: "cancel_order",   description: "Zieh dein Angebot vom Tauschbrett zurück",                      argsHint: '{"order_id": "ord_123"}' },
   { name: "hire_laborer",   description: "Bezahl jemanden hier, heute für dich zu arbeiten (der Ertrag geht an dich)", argsHint: '{"agent": "Wendel", "wage": 5}' },
   { name: "quit_job",       description: "Kündige deine Anstellung und hör auf, für deinen Arbeitgeber zu arbeiten", argsHint: "{}" },
-  { name: "ueberfallen",    description: "Überfall auf eine feindliche Siedlung, mit der deine im Krieg liegt (du musst dort sein; Ergebnis am Rundenende)", argsHint: '{"village": "Rabenstollen"}' },
+  { name: "ueberfallen",    description: "Kriegszug gegen eine Siedlung, mit der deine im Krieg liegt: startet den Marsch von daheim, Ankunft und Überfall laufen automatisch", argsHint: '{"village": "Rabenstollen"}' },
   { name: "wache_halten",   description: "Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt gegen Angreifer", argsHint: "{}" },
   { name: "call_meeting",   description: "Nur Bergvogt: Berufe einen Appell ein. Bei declare_war/make_peace/pay_tribute: Siedlung in target_village, bei pay_tribute Betrag in value", argsHint: '{"agenda_type": "declare_war", "text": "Krieg gegen Rabenstollen?", "target_village": "Rabenstollen"}' },
   { name: "done",           description: "Beende deine Runde",                                         argsHint: "{}" },

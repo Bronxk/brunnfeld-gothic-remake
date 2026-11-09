@@ -19,8 +19,10 @@ import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAg
 
 /** How `observer` sees `agent`: full name + skill when known, otherwise the registry description. */
 export function describeAgent(agent: AgentName, observer: AgentName, state: WorldState): string {
+  const march = state.war_marches?.[agent];
+  const marchTag = march ? ` (auf dem Kriegszug nach ${villageName(march.target)})` : "";
   const knows = state.acquaintances[observer]?.includes(agent);
-  if (!knows) return `${getDescription(agent)} (unbekannt)`;
+  if (!knows) return `${getDescription(agent)} (unbekannt)${marchTag}`;
 
   const skill = state.economics[agent]?.skill;
   let label = (skill && skill !== "none")
@@ -34,7 +36,7 @@ export function describeAgent(agent: AgentName, observer: AgentName, state: Worl
     const itemLabelText = ITEM_LABELS[latest.item as ItemType] ?? latest.item;
     label += ` (bekannter Dieb — beim Stehlen von ${itemLabelText} bei ${fromName} erwischt)`;
   }
-  return label;
+  return label + marchTag;
 }
 
 // ─── Hunger food hint ─────────────────────────────────────────

@@ -355,6 +355,28 @@ export interface WarEvent {
   success?: boolean;
 }
 
+/**
+ * A war march of one agent. `hin` = walking to the target, `kampf` = arrived this tick and fighting
+ * (raid registered, resolved at tick end), `zurueck` = walking home after the raid.
+ */
+export type WarMarchPhase = "hin" | "kampf" | "zurueck";
+
+export interface WarMarch {
+  target: string;          // target village id
+  phase: WarMarchPhase;
+  road: string;            // road location name, e.g. "Road: A→B"
+  departTick: number;
+  arriveTick: number;
+}
+
+/** SSE `war:march` payload: emitted on departure (hin), arrival (kampf) and return (zurueck / home). */
+export interface WarMarchEvent {
+  agent: AgentName;
+  target: string;          // target village id
+  phase: WarMarchPhase | "heim";   // "heim" = back home, march finished
+  arriveTick: number;
+}
+
 // ─── Action Types ──────────────────────────────────────────
 
 export type AgentActionType =
@@ -521,6 +543,8 @@ export interface WorldState {
   diplomacy?: Record<string, VillageRelation>;     // key `${a}|${b}`, a < b
   war_log?: WarEvent[];                            // capped at 200
   war_actions?: Record<AgentName, { kind: "raid" | "guard"; target?: string; tick: number }>;
+  /** Active war marches (Kriegszug): the agent walks the road, gets no LLM turns until back home. */
+  war_marches?: Record<AgentName, WarMarch>;
 
   // Human player ("der Neue"). Absent until POST /api/player/create; while absent there are
   // no `player` entries in agent_locations/body/economics either (the player is not in the world).

@@ -9,13 +9,14 @@
  */
 
 import type {
-  AgendaType, AgentName, BodyState, ItemType, Marketplace, Stance, VillageRelation, WarEvent, WorldState,
+  AgendaType, AgentName, BodyState, ItemType, Marketplace, Stance, VillageRelation, WarEvent, WarMarch, WarMarchEvent, WorldState,
 } from "./types.js";
 import { ALL_ITEMS } from "./types.js";
-import { normalizeKey } from "./village-map.js";
+import { normalizeKey, isBaseLocation, HUB_LOCATION } from "./village-map.js";
 import {
   getVillages, getVillageMembers, getVillageElder, getVillageTownHall, getAgentVillage,
-  getVillageForLocation, isRoadLocation, getDisplayName, PLAYER_ID,
+  getVillageForLocation, isRoadLocation, getDisplayName, getRoads, getVillageLocations, PLAYER_ID,
+  type RoadConfig,
 } from "./world-registry.js";
 import { addToInventory, removeFromInventory, unreserveInventory, getInventoryQty, feedbackToAgent, itemLabel } from "./inventory.js";
 import { isAgentDead } from "./body.js";
@@ -599,7 +600,7 @@ export const PLAYER_WAR_REFUSAL = "[Geht nicht] Als Beobachter nimmst du an kein
 /** Validate and record a raid / guard action; the outcome is resolved at tick end by resolveWar. */
 export function registerWarAction(
   state: WorldState, tick: number, agent: AgentName, kind: "raid" | "guard", target?: string,
-): { ok: true; text: string } | { ok: false; error: string } {
+): { ok: true; text: string; /** true if this started a war march instead of an immediate raid */ march?: boolean } | { ok: false; error: string } {
   if (agent === PLAYER_ID) return { ok: false, error: PLAYER_WAR_REFUSAL };
   const home = homeVillage(state, agent);
   const loc = state.agent_locations[agent];
@@ -614,8 +615,24 @@ export function registerWarAction(
     if (!rel || rel.stance !== "krieg") {
       return { ok: false, error: `[Geht nicht] Zwischen ${villageName(home)} und ${villageName(tid)} herrscht kein Krieg — ohne Kriegserklärung kein Überfall.` };
     }
+    if (state.war_marches?.[agent]) {
+      return { ok: false, error: `[Geht nicht] Du bist schon auf einem Kriegszug nach ${villageName(state.war_marches[agent]!.target)}.` };
+    }
     if (here !== tid) {
-      return { ok: false, error: `[Geht nicht] Du musst dazu in ${villageName(tid)} selbst sein, nicht auf der Straße oder daheim.` };
+      // Not in the target yet: start a war march (Kriegszug) from the own village or from one of its roads.
+      if (here !== home && !(loc && isRoadLocation(loc))) {
+        return { ok: false, error: `[Geht nicht] Einen Kriegszug nach ${villageName(tid)} kannst du nur aus ${villageName(home)} oder von der Straße aus antreten.` };
+      }
+      const road = findRoadBetween(home, tid);
+      if (!road) {
+        return { ok: false, error: `[Geht nicht] Es gibt keine Straße zwischen ${villageName(home)} und ${villageName(tid)} — ein Kriegszug ist unmöglich.` };
+      }
+      state.war_marches ??= {};
+      state.war_marches[agent] = { target: tid, phase: "hin", road: road.name, departTick: tick, arriveTick: tick + road.transitTicks };
+      delete state.war_actions[agent];                    // a registered guard no longer applies: the agent leaves
+      state.agent_locations[agent] = road.name;
+      emitMarch(agent, state.war_marches[agent]!);
+      return { ok: true, text: `zieht mit nach ${villageName(tid)}. Ankunft in ${road.transitTicks} Stunden.`, march: true };
     }
     state.war_actions[agent] = { kind: "raid", target: tid, tick };
     return { ok: true, text: `stürmt los, um ${villageName(tid)} zu überfallen — wer dort wacht, wird sich wehren. Das Ergebnis kommt am Ende der Stunde.` };
@@ -626,6 +643,98 @@ export function registerWarAction(
   if (here !== home) return { ok: false, error: `[Geht nicht] Wache halten kannst du nur in ${villageName(home)} selbst.` };
   state.war_actions[agent] = { kind: "guard", tick };
   return { ok: true, text: `hält Wache und behält die Wege im Auge.` };
+}
+
+// ─── War march (Kriegszug) ───────────────────────────────────
+
+/** The road that directly connects two villages, if any. */
+export function findRoadBetween(a: string, b: string): RoadConfig | undefined {
+  return getRoads().find(r => r.connectsVillages.includes(a) && r.connectsVillages.includes(b));
+}
+
+/** True while the agent is on a war march (any phase): no LLM turn, not a defender. */
+export function isMarching(state: WorldState, agent: AgentName): boolean {
+  return state.war_marches?.[agent] != null;
+}
+
+function emitMarch(agent: AgentName, m: WarMarch, phase: WarMarchEvent["phase"] = m.phase): void {
+  const payload: WarMarchEvent = { agent, target: m.target, phase, arriveTick: m.arriveTick };
+  emitSSE("war:march", payload);
+}
+
+/** Hub (Zechenplatz) of a village, falling back to its town hall. */
+function villageHub(vid: string): string {
+  return getVillageLocations(vid).find(l => isBaseLocation(l, HUB_LOCATION)) ?? getVillageTownHall(vid);
+}
+
+function turnBack(state: WorldState, tick: number, agent: AgentName, m: WarMarch): void {
+  const road = findRoadBetween(homeVillage(state, agent), m.target);
+  const transit = road?.transitTicks ?? Math.max(1, m.arriveTick - m.departTick);
+  m.phase = "zurueck";
+  m.road = road?.name ?? m.road;
+  m.departTick = tick;
+  m.arriveTick = tick + transit;
+  state.agent_locations[agent] = m.road;
+  emitMarch(agent, m);
+}
+
+/**
+ * Process war marches at the start of a tick (after Karzer enforcement, before agent turns):
+ * cancel marches of dead/jailed agents, let arrivals fight (raid registered for this tick; peace
+ * meanwhile turns the party back) and let returners come home. Call `sendMarchersHome` after resolveWar.
+ */
+export function processWarMarches(state: WorldState, tick: number): void {
+  if (!state.war_marches) return;
+  for (const [agent, m] of Object.entries(state.war_marches)) {
+    const body = state.body[agent];
+    if (!body || isAgentDead(body) || (state.banned?.[agent] != null && tick < state.banned[agent]!)) {
+      delete state.war_marches[agent];
+      if (state.war_actions) delete state.war_actions[agent];
+      console.log(`  ⚔ Kriegszug von ${getDisplayName(agent)} abgebrochen (tot oder im Karzer)`);
+      continue;
+    }
+    const home = homeVillage(state, agent);
+    const tName = villageName(m.target);
+    if (m.phase === "hin" && tick >= m.arriveTick) {
+      if (peekRelation(state, home, m.target)?.stance !== "krieg") {
+        turnBack(state, tick, agent, m);
+        feedbackToAgent(agent, state, `Der Krieg mit ${tName} ist vorbei — du kehrst um, ohne zu kämpfen.`);
+        continue;
+      }
+      m.phase = "kampf";
+      state.agent_locations[agent] = villageHub(m.target);
+      state.war_actions ??= {};
+      state.war_actions[agent] = { kind: "raid", target: m.target, tick };
+      emitMarch(agent, m);
+    } else if (m.phase === "zurueck" && tick >= m.arriveTick) {
+      state.agent_locations[agent] = villageHub(home);
+      delete state.war_marches[agent];
+      feedbackToAgent(agent, state, `Zurück aus ${tName}.`);
+      emitMarch(agent, m, "heim");
+    }
+  }
+  if (Object.keys(state.war_marches).length === 0) delete state.war_marches;
+}
+
+/** After resolveWar: everyone who just fought (phase kampf) marches home. */
+export function sendMarchersHome(state: WorldState, tick: number): void {
+  for (const [agent, m] of Object.entries(state.war_marches ?? {})) {
+    if (m.phase !== "kampf") continue;
+    const body = state.body[agent];
+    if (!body || isAgentDead(body)) { delete state.war_marches![agent]; continue; }
+    turnBack(state, tick, agent, m);
+    feedbackToAgent(agent, state, `Du ziehst von ${villageName(m.target)} wieder heim. Ankunft in ${m.arriveTick - tick} Stunden.`);
+  }
+}
+
+/** One engine log line while marches are active, e.g. "⚔ Kriegszug: 3 unterwegs (Rabenstollen→Kehlhof)". */
+export function warMarchLogLine(state: WorldState): string | null {
+  const marches = Object.entries(state.war_marches ?? {});
+  if (marches.length === 0) return null;
+  const routes = [...new Set(marches.map(([a, m]) => m.phase === "zurueck"
+    ? `${villageName(m.target)}→${villageName(homeVillage(state, a))}`
+    : `${villageName(homeVillage(state, a))}→${villageName(m.target)}`))];
+  return `⚔ Kriegszug: ${marches.length} unterwegs (${routes.join(", ")})`;
 }
 
 /** Trade refusal while the agent stands in a village its own village is at war with. */
@@ -881,6 +990,10 @@ export function warPerceptionLines(state: WorldState, agent: AgentName, withRece
       tense = true;
       const lost = rel.raidsWon[other] ?? 0;
       lines.push(`⚔ Krieg mit ${oName} seit Tag ${dayOf(rel.since)} — ${lost} Überfall${lost === 1 ? "" : "e"} verloren.`);
+      const road = findRoadBetween(vid, other);
+      if (road && agent !== PLAYER_ID) {
+        lines.push(`Kriegszug (ueberfallen ${oName}): hin und zurück ca. ${road.transitTicks * 2} Stunden; gemeinsam ziehen ist stärker.`);
+      }
     } else if (rel.stance === "spannung") {
       tense = true;
       const cause = [...log].reverse().find(e => e.kind === "provocation" && e.villages.includes(rel.a) && e.villages.includes(rel.b));

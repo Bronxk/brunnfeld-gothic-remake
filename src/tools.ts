@@ -15,7 +15,7 @@ import { registerWarAction, warTradeBlock, resolveVillageId, villageName, isWarA
 
 const NO_WAR: WarOffers = { active: false, raid: false, guard: false, agendas: [] };
 
-const RAID_LINE = `\n- ueberfallen: Überfall auf eine feindliche Siedlung (nur im Krieg, du musst dort sein). Felder: target_village (Name). Ergebnis am Ende der Stunde.`;
+const RAID_LINE = `\n- ueberfallen: Kriegszug gegen eine feindliche Siedlung (nur im Krieg): startet den Marsch von daheim, Ankunft und Überfall automatisch. Felder: target_village (Name).`;
 const GUARD_LINE = `\n- wache_halten: Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt, wenn Angreifer kommen.`;
 
 const BASE_AGENDA_TYPES = ["tax_change", "marketplace_hours", "banishment", "general_rule", "grant_tools", "curfew", "trade_restriction", "repeal"];
@@ -639,6 +639,7 @@ export function resolveAction(
         return { ...action, result: r.error, visible: false };
       }
       const tName = villageName(resolveVillageId(raw) ?? String(raw));
+      if (r.march) feedbackToAgent(agent, state, `Du ${r.text}`);
       return { ...action, result: `${name} ${r.text}`, visible: true, text: action.text ?? tName };
     }
 

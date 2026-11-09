@@ -26,7 +26,7 @@ import { resolveMarketplace } from "./marketplace-resolver.js";
 import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
-import { applyWarAgenda, tickDiplomacy, resolveWar, isWarAgenda, warProposal, validTributeAmount } from "./war.js";
+import { applyWarAgenda, tickDiplomacy, resolveWar, isWarAgenda, warProposal, validTributeAmount, processWarMarches, sendMarchersHome, warMarchLogLine } from "./war.js";
 import { gateBeforeTick } from "./sim-control.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
@@ -123,6 +123,7 @@ function enforceOpeningHours(state: WorldState, time: SimTime): void {
   const TAVERN_LOCATION = "Schenke";
   const CURFEW_EXEMPT = new Set([TAVERN_LOCATION, TOWNHALL_LOCATION]);
   for (const agent of getAgentNames()) {
+    if (state.war_marches?.[agent]) continue; // on a war march: not sent home by closing hours
     const loc = state.agent_locations[agent];
     const home = state.economics[agent]?.homeLocation;
     // Marketplace hours law
@@ -564,6 +565,13 @@ async function runTickCore(tick: number): Promise<void> {
     }
   }
 
+  // ── 4d2. WAR MARCHES (Kriegszug): cancel dead/jailed, arrivals fight, returners come home ──
+  try {
+    processWarMarches(state, time.tick);
+  } catch (err) {
+    console.error(`  ⚔ processWarMarches failed: ${(err as Error).stack ?? err}`);
+  }
+
   // ── 4e. AUTO-SCHEDULE DAILY MEETING (per village) ───────
   // Auto-schedule assembly every 5 ticks (per village)
   for (const village of getVillages()) {
@@ -626,7 +634,8 @@ async function runTickCore(tick: number): Promise<void> {
   const activeAgents = getNpcNames().filter(a =>
     !isAgentDead(state.body[a]) &&
     !(state.banned?.[a] != null && time.tick < state.banned[a]!) &&
-    !meetingAttendees.has(a)   // meeting attendees already acted this tick
+    !meetingAttendees.has(a) &&   // meeting attendees already acted this tick
+    !state.war_marches?.[a]       // on a war march: walking or fighting, no LLM turn (saves tokens)
   );
 
   // Build a single pass of sounds based on LAST tick's logged actions (use state objects as proxy)
@@ -836,6 +845,13 @@ async function runTickCore(tick: number): Promise<void> {
     console.error(`  ⚔ resolveWar failed: ${(err as Error).stack ?? err}`);
     state.war_actions = {};
   }
+  try {
+    sendMarchersHome(state, time.tick);
+  } catch (err) {
+    console.error(`  ⚔ sendMarchersHome failed: ${(err as Error).stack ?? err}`);
+  }
+  const marchLine = warMarchLogLine(state);
+  if (marchLine) console.log(`  ${marchLine}`);
   const warEventsThisTick = (state.war_log ?? []).filter(e => e.tick === time.tick);
   if (warEventsThisTick.length > 0) {
     console.log(`  ⚔ Krieg: ${warEventsThisTick.length} Ereignis(se) — ${warEventsThisTick.map(e => e.kind).join(", ")}`);
