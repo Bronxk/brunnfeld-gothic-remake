@@ -348,8 +348,8 @@ const server = createServer(async (req, res) => {
     if (path.startsWith("/assets/")) {
       const ROOT = process.cwd();
       const assetMap: [string, string][] = [
-        ["/assets/units/",     join(ROOT, "Asset_Pack/Units/Blue Units")],
-        ["/assets/buildings/", join(ROOT, "Asset_Pack/Buildings/Blue Buildings")],
+        ["/assets/units/",     join(ROOT, "Asset_Pack/Units/Black Units")],
+        ["/assets/buildings/", join(ROOT, "Asset_Pack/Buildings/Black Buildings")],
         ["/assets/terrain/",   join(ROOT, "Asset_Pack/Terrain/Tileset")],
         ["/assets/ui/",        join(ROOT, "Asset_Pack/UI Elements/UI Elements")],
         ["/assets/items/food/",      join(ROOT, "Items-Assets/Food")],
