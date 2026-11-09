@@ -80,6 +80,15 @@ export function attachLiveTick(state: WorldState, tick: number): void {
   syncTick(state, tick);
 }
 
+/**
+ * The engine's in-memory state while a tick runs (null between ticks). Routes that mutate the
+ * world (war/diplomacy) must change this object in place instead of writing world_state.json,
+ * otherwise the running tick overwrites their change when it persists its own copy.
+ */
+export function getLiveWorldState(): { state: WorldState; tick: number } | null {
+  return live;
+}
+
 /** Engine: call after the tick's state has been written (or the tick failed). */
 export function detachLiveTick(): void {
   live = null;

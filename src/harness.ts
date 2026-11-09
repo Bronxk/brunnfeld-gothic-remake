@@ -8,6 +8,7 @@ import { emitSSE } from "./events.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
 import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall, getAgentModel } from "./world-registry.js";
 import { deliverMessages } from "./messages.js";
+import { warPerceptionLines } from "./war.js";
 import { HUB_LOCATION, isBaseLocation } from "./village-map.js";
 import { tickToTime, SEASON_LABELS } from "./time.js";
 import {
@@ -89,6 +90,9 @@ export function buildSeedContext(config: HarnessConfig, displayName: string): st
     const meetingTime = tickToTime(mtg.scheduledTick);
     lines.push(`Appell: "${mtg.description}" in ${townHall} am ${meetingTime.timeLabel}. Sei dabei.`);
   }
+
+  // War / diplomacy: relations of this village, recent events, what is possible
+  lines.push(...warPerceptionLines(worldState, agentId));
 
   // Action feedback (meeting notices, production results, trade confirmations, etc.)
   const feedback = worldState.action_feedback[agentId] ?? [];

@@ -11,6 +11,7 @@ import { resolveAction, type ResolveContext } from "./tools.js";
 import { getProducibleItems, MULTI_FARM_ITEMS } from "./production.js";
 import { emitSSE } from "./events.js";
 import { getSounds } from "./sounds.js";
+import { isWarRelevant, isWarAgenda, warPerceptionLines } from "./war.js";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -643,8 +644,10 @@ function handleCheckVillage(_args: Record<string, unknown>, config: HarnessToolC
 
   // Laws
   for (const law of (worldState.active_laws ?? [])) {
+    if (isWarAgenda(law.type)) continue; // war lines below carry these
     lines.push(`Ratsbeschluss: ${law.description}`);
   }
+  lines.push(...warPerceptionLines(worldState, agentId));
 
   // Concerns (elder only)
   const elder = getVillageElder(villageId);
@@ -710,6 +713,37 @@ function handleCancelOrder(args: Record<string, unknown>, config: HarnessToolCon
   } as AgentAction, makeContext(config));
   config.executedActions.push(resolved);
   return { text: resolved.result, isInteraction: false, executedAction: resolved };
+}
+
+// ─── War tool handlers ───────────────────────────────────────
+
+function handleUeberfallen(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
+  const resolved = resolveAction({
+    type: "ueberfallen",
+    target_village: String(args.village ?? args.target_village ?? args.target ?? ""),
+  } as AgentAction, makeContext(config));
+  config.executedActions.push(resolved);
+  return { text: resolved.result, isInteraction: true, executedAction: resolved };
+}
+
+function handleWacheHalten(_args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
+  const resolved = resolveAction({ type: "wache_halten" } as AgentAction, makeContext(config));
+  config.executedActions.push(resolved);
+  return { text: resolved.result, isInteraction: true, executedAction: resolved };
+}
+
+/** Elder only: call a council (also the way to put declare_war / make_peace / pay_tribute on the table). */
+function handleCallMeeting(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
+  const resolved = resolveAction({
+    type: "call_meeting",
+    agenda_type: args.agenda_type as AgentAction["agenda_type"],
+    text: args.text as string | undefined,
+    target: args.target as string | undefined,
+    target_village: (args.target_village ?? args.village) as string | undefined,
+    value: args.value != null ? Number(args.value) : undefined,
+  } as AgentAction, makeContext(config));
+  config.executedActions.push(resolved);
+  return { text: resolved.result, isInteraction: true, executedAction: resolved };
 }
 
 // ─── Governance tool handlers (only available when granted by assembly) ───
@@ -825,7 +859,10 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
   give_coin:      handleGiveCoin,
   steal:          handleSteal,
   cancel_order:   handleCancelOrder,
-  fine_agent:     handleFineAgent,
+  ueberfallen:    handleUeberfallen,
+  wache_halten:   handleWacheHalten,
+  call_meeting:   handleCallMeeting,
+  fine_agent:    handleFineAgent,
   seize_goods:    handleSeizeGoods,
   done:           () => ({ text: "Runde beendet.", isInteraction: false }),
 };
@@ -847,7 +884,10 @@ const ALL_TOOL_DEFS: ToolDef[] = [
   { name: "cancel_order",   description: "Zieh dein Angebot vom Tauschbrett zurück",                      argsHint: '{"order_id": "ord_123"}' },
   { name: "hire_laborer",   description: "Bezahl jemanden hier, heute für dich zu arbeiten (der Ertrag geht an dich)", argsHint: '{"agent": "Wendel", "wage": 5}' },
   { name: "quit_job",       description: "Kündige deine Anstellung und hör auf, für deinen Arbeitgeber zu arbeiten", argsHint: "{}" },
-  { name: "done",           description: "Beende deine Runde",                                            argsHint: "{}" },
+  { name: "ueberfallen",    description: "Überfall auf eine feindliche Siedlung, mit der deine im Krieg liegt (du musst dort sein; Ergebnis am Rundenende)", argsHint: '{"village": "Rabenstollen"}' },
+  { name: "wache_halten",   description: "Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt gegen Angreifer", argsHint: "{}" },
+  { name: "call_meeting",   description: "Nur Bergvogt: Berufe einen Appell ein. Bei declare_war/make_peace/pay_tribute: Siedlung in target_village, bei pay_tribute Betrag in value", argsHint: '{"agenda_type": "declare_war", "text": "Krieg gegen Rabenstollen?", "target_village": "Rabenstollen"}' },
+  { name: "done",           description: "Beende deine Runde",                                         argsHint: "{}" },
 ];
 
 export function getToolsForAgent(
@@ -871,6 +911,11 @@ export function getToolsForAgent(
     if (t.name === "steal" && presentOthers.length === 0) return false;
     if (t.name === "hire_laborer" && presentOthers.length === 0) return false;
     if (t.name === "quit_job" && !isHired) return false;
+    if ((t.name === "ueberfallen" || t.name === "wache_halten") && !isWarRelevant(worldState, agentId)) return false;
+    if (t.name === "call_meeting") {
+      const vid = getAgentVillage(agentId);
+      if (agentId !== getVillageElder(vid) || worldState.pending_meetings[vid]?.agendaType !== "general_rule") return false;
+    }
     return true;
   });
 
@@ -901,7 +946,7 @@ export function executeToolCall(
 
 export function formatToolsForPrompt(tools: ToolDef[]): string {
   const obs   = ["check_inventory", "recall", "assess_person"];
-  const act   = ["speak", "negotiate", "produce", "move_to", "post_order", "buy_item", "eat", "send_message", "give_coin", "cancel_order", "hire_laborer", "quit_job"];
+  const act   = ["speak", "negotiate", "produce", "move_to", "post_order", "buy_item", "eat", "send_message", "give_coin", "cancel_order", "hire_laborer", "quit_job", "ueberfallen", "wache_halten", "call_meeting"];
   const plan  = ["done"];
 
   const group = (label: string, names: string[]) => {
@@ -935,6 +980,9 @@ export function getToolSummary(toolName: string, args: Record<string, unknown>):
     give_coin:      a => `gibt ${String(a.to ?? "jemandem")} ${String(a.amount ?? "?")} Groschen`,
     cancel_order:   a => `zieht Angebot ${String(a.order_id ?? "?")} zurück`,
     steal:          a => `stiehlt ${a.item ? itemLabel(String(a.item)) : "etwas"} von ${String(a.target ?? "jemandem")}`,
+    ueberfallen:    a => `überfällt ${String(a.village ?? a.target_village ?? "eine Siedlung")}`,
+    wache_halten:   () => "hält Wache",
+    call_meeting:   a => `ruft einen Appell aus (${String(a.agenda_type ?? "?")})`,
     fine_agent:     a => `bestraft ${String(a.target ?? "jemanden")} mit ${String(a.amount ?? "?")} Groschen`,
     seize_goods:    a => `beschlagnahmt ${a.item ? itemLabel(String(a.item)) : "Waren"} von ${String(a.target ?? "jemandem")}`,
     done:           () => "beendet die Runde",

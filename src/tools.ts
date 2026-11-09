@@ -11,6 +11,12 @@ import { feedbackToAgent, addToInventory, removeFromInventory, getInventoryQty, 
 import { executeTrade, removeOrder, addOrder, generateOrderId } from "./marketplace.js";
 import { emitSSE } from "./events.js";
 import { isLocationBlockedByEvent } from "./god-mode.js";
+import { registerWarAction, warTradeBlock, resolveVillageId, villageName, isWarAgenda } from "./war.js";
+
+const WAR_ACTION_LINES = `\n- ueberfallen: Überfall auf eine feindliche Siedlung (nur im Krieg, du musst dort sein). Felder: target_village (Name). Ergebnis am Ende der Stunde.
+- wache_halten: Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt, wenn Angreifer kommen.`;
+
+const WAR_AGENDA_TYPES = `"declare_war"|"make_peace"|"pay_tribute"`;
 
 const CORE_ACTION_SCHEMA = `WICHTIG: Dein Geldbeutel und dein Inventar oben stimmen genau. Behaupte nicht, Groschen oder Waren zu haben, die du nicht bekommen hast. Mündliche Absprachen übertragen keine Waren — nur post_order und buy_item erzeugen echte Geschäfte.
 
@@ -41,15 +47,17 @@ export function buildActionSchema(
   agent: AgentName,
   hasConcerns: boolean,
   atMeeting = false,
+  warActive = false,
 ): string {
   let schema = CORE_ACTION_SCHEMA;
+  if (warActive && !atMeeting) schema += WAR_ACTION_LINES;
   if (atMeeting) {
     schema += `\n- propose_rule: Schlag eine Regel zur Abstimmung vor. Felder: text (die Regel), value? (Zahl, z. B. 0.15 für den Zehnt-Satz).`;
     schema += `\n- propose_repeal: Beantrage, einen bestehenden Ratsbeschluss aufzuheben. Felder: law_id (der Beschluss), text (Begründung).`;
     schema += `\n- vote: Gib deine Stimme ab. Felder: side ("agree"|"disagree").`;
-  } else if (agent === getVillageElder(getAgentVillage(agent)) && hasConcerns) {
-    schema += `\n- call_meeting: Berufe für den nächsten Morgen einen Appell ein. Felder: agenda_type ("tax_change"|"marketplace_hours"|"banishment"|"general_rule"|"grant_tools"|"curfew"|"trade_restriction"|"repeal"), text (die Tagesordnung), target? (Name, bei banishment/grant_tools).`;
-  } else if (agent !== getVillageElder(getAgentVillage(agent)) && hasConcerns) {
+  } else if (agent === getVillageElder(getAgentVillage(agent)) && (hasConcerns || warActive)) {
+    schema += `\n- call_meeting: Berufe für den nächsten Morgen einen Appell ein. Felder: agenda_type ("tax_change"|"marketplace_hours"|"banishment"|"general_rule"|"grant_tools"|"curfew"|"trade_restriction"|"repeal"|${WAR_AGENDA_TYPES}), text (die Tagesordnung), target? (Name, bei banishment/grant_tools), target_village? (Siedlung, bei declare_war/make_peace/pay_tribute), value? (Tribut in Groschen, bei pay_tribute).`;
+  } else if (agent !== getVillageElder(getAgentVillage(agent)) && (hasConcerns || warActive)) {
     schema += `\n- petition_meeting: Bitte ${getDisplayName(getVillageElder(getAgentVillage(agent)) ?? "den Bergvogt")}, einen Appell einzuberufen. Felder: text (worum es gehen soll).`;
   }
   return schema;
@@ -220,6 +228,8 @@ export function resolveAction(
       return { ...action, location: agentLocation, result: `${name} beginnt mit der Arbeit an ${action.item ? itemLabel(String(action.item)) : "Waren"}. Das Ergebnis kommt am Ende der Runde — schlag dafür noch kein Verkaufsangebot an.`, visible: true };
 
     case "post_order": {
+      const warBlock = warTradeBlock(state, agent);
+      if (warBlock) return { ...action, result: warBlock, visible: false };
       const side = action.side;
       const item = resolveItemInput(action.item);
       const quantity = action.quantity != null ? Number(action.quantity) : undefined;
@@ -311,6 +321,8 @@ export function resolveAction(
 
     // buy_item resolves immediately so the agent can eat in the same turn
     case "buy_item": {
+      const warBlock = warTradeBlock(state, agent);
+      if (warBlock) return { ...action, result: warBlock, visible: false };
       const item = resolveItemInput(action.item);
       const maxPrice = action.max_price != null ? Number(action.max_price) : undefined;
       if (!item || maxPrice == null) {
@@ -507,8 +519,11 @@ export function resolveAction(
       if (agent !== getVillageElder(getAgentVillage(agent))) {
         return { ...action, result: `[Geht nicht] Nur der Bergvogt kann einen Appell einberufen.`, visible: false };
       }
-      if (state.pending_meetings[getAgentVillage(agent)]) {
-        return { ...action, result: `[Geht nicht] Ein Appell ist schon für Stunde ${state.pending_meetings[getAgentVillage(agent)]!.scheduledTick} angesetzt.`, visible: false };
+      const pendingHere = state.pending_meetings[getAgentVillage(agent)];
+      // The routine auto-scheduled Appell (general_rule) makes way for a war agenda.
+      const replacesRoutine = pendingHere?.agendaType === "general_rule" && !!action.agenda_type && isWarAgenda(action.agenda_type);
+      if (pendingHere && !replacesRoutine) {
+        return { ...action, result: `[Geht nicht] Ein Appell ist schon für Stunde ${pendingHere.scheduledTick} angesetzt.`, visible: false };
       }
       const agendaType = action.agenda_type;
       if (!agendaType) {
@@ -520,12 +535,23 @@ export function resolveAction(
         : time.tick + (16 - ticksIntoCurrent);
       const agendaDesc = action.text ?? action.description ?? agendaType.replace("_", " ");
       const villageId = getAgentVillage(agent);
+      let targetVillage: string | undefined;
+      if (isWarAgenda(agendaType)) {
+        const tv = resolveVillageId(action.target_village ?? action.target);
+        if (!tv || tv === villageId) {
+          const others = getVillages().filter(v => v.id !== villageId).map(v => v.name).join(", ");
+          return { ...action, result: `[Geht nicht] ${agendaType} braucht target_village — eine andere Siedlung (${others || "keine bekannt"}).`, visible: false };
+        }
+        targetVillage = tv;
+      }
       state.pending_meetings[villageId] = {
         villageId,
         scheduledTick: nextDawnTick,
         agendaType,
         description: agendaDesc,
-        target: action.target as AgentName | undefined,
+        target: isWarAgenda(agendaType) ? undefined : action.target as AgentName | undefined,
+        ...(targetVillage ? { targetVillage } : {}),
+        ...(agendaType === "pay_tribute" && action.value != null ? { value: Number(action.value) } : {}),
         calledAtTick: time.tick,
       };
       const townHall = getVillageTownHall(villageId);
@@ -595,6 +621,26 @@ export function resolveAction(
         return { ...action, result: `[Geht nicht] vote braucht side: "agree" oder "disagree".`, visible: false };
       }
       return { ...action, result: `${name} stimmt ${voteSide === "agree" ? "dafür" : "dagegen"}.`, visible: true };
+    }
+
+    case "ueberfallen": {
+      const raw = action.target_village ?? action.target ?? action.location ?? action.text;
+      const r = registerWarAction(state, time.tick, agent, "raid", raw);
+      if (!r.ok) {
+        feedbackToAgent(agent, state, r.error);
+        return { ...action, result: r.error, visible: false };
+      }
+      const tName = villageName(resolveVillageId(raw) ?? String(raw));
+      return { ...action, result: `${name} ${r.text}`, visible: true, text: action.text ?? tName };
+    }
+
+    case "wache_halten": {
+      const r = registerWarAction(state, time.tick, agent, "guard");
+      if (!r.ok) {
+        feedbackToAgent(agent, state, r.error);
+        return { ...action, result: r.error, visible: false };
+      }
+      return { ...action, result: `${name} ${r.text}`, visible: true };
     }
 
     default:

@@ -26,6 +26,7 @@ import { resolveMarketplace } from "./marketplace-resolver.js";
 import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
+import { applyWarAgenda, tickDiplomacy, resolveWar } from "./war.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
 // ─── Vote normalisation ──────────────────────────────────────
@@ -155,8 +156,14 @@ function cleanExpiredObjects(state: WorldState, time: SimTime): void {
 
 // ─── Apply passed law effect ──────────────────────────────
 
-function applyLawEffect(law: Law, state: WorldState, time: SimTime): void {
+function applyLawEffect(law: Law, state: WorldState, time: SimTime, villageId?: string): void {
   switch (law.type) {
+    case "declare_war":
+    case "make_peace":
+    case "pay_tribute":
+      if (villageId) applyWarAgenda(state, time.tick, villageId, law.type, law.targetVillage, law.value);
+      else console.warn(`  ⚔ War agenda ${law.type} passed without a village — ignored`);
+      break;
     case "tax_change":
       if (law.value != null) {
         state.tax_rate = law.value;
@@ -339,8 +346,9 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
       type: mtg.agendaType,
       description: proposalText,
       passedTick: time.tick,
-      value: proposalValue,
+      value: proposalValue ?? mtg.value,
       target: mtg.target,
+      ...(mtg.targetVillage ? { targetVillage: mtg.targetVillage } : {}),
     };
     // Populate type-specific fields
     if (mtg.agendaType === "grant_tools" && mtg.target) {
@@ -353,7 +361,7 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
       if (repealTarget) law.repealsLawId = repealTarget;
     }
     state.active_laws.push(law);
-    applyLawEffect(law, state, time);
+    applyLawEffect(law, state, time, villageId);
     lawText = proposalText;
     const passMsg = `Ergebnis des Appells: „${proposalText}" ANGENOMMEN (${agreeCount} dafür, nötig: ${PASS_THRESHOLD}). Neues Gesetz eingetragen.`;
     for (const a of getVillageMembers(villageId)) feedbackToAgent(a, state, passMsg);
@@ -474,6 +482,9 @@ async function runTickCore(tick: number): Promise<void> {
 
   // ── 2. ENFORCE CLOSING HOURS ────────────────────────────────
   enforceOpeningHours(state, time);
+
+  // ── 2b. DIPLOMACY UPKEEP (tension decay, expiring peace offers) ──
+  tickDiplomacy(state, time.tick);
 
   // ── 3. UPDATE BODY STATES ────────────────────────────────────
   for (const agent of getAgentNames()) {
@@ -774,6 +785,17 @@ async function runTickCore(tick: number): Promise<void> {
     feedbackToAgent(result.agent, state, `[Hinweis] Du bist auf dem ${HUB_LOCATION}. Nutze post_order, um Waren am Tauschbrett anzubieten, oder buy_item, um dort zu kaufen. Darüber zu reden, schließt keinen Handel ab.`);
   }
 
+  // ── 8c. WAR: resolve this tick's raids and guards (after all agent actions and economy) ──
+  try {
+    resolveWar(state, time.tick);
+  } catch (err) {
+    console.error(`  ⚔ resolveWar failed: ${(err as Error).stack ?? err}`);
+    state.war_actions = {};
+  }
+  const warEventsThisTick = (state.war_log ?? []).filter(e => e.tick === time.tick);
+  if (warEventsThisTick.length > 0) {
+    console.log(`  ⚔ Krieg: ${warEventsThisTick.length} Ereignis(se) — ${warEventsThisTick.map(e => e.kind).join(", ")}`);
+  }
 
   // ── 9. MEMORY + PERSISTENCE ─────────────────────────────────
   const byLocationForMemory: Record<AgentName, AgentName[]> = {} as Record<AgentName, AgentName[]>;

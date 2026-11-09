@@ -280,7 +280,8 @@ export interface StealRecord {
 
 export type AgendaType =
   | "tax_change" | "marketplace_hours" | "banishment" | "general_rule"
-  | "grant_tools" | "curfew" | "trade_restriction" | "repeal";
+  | "grant_tools" | "curfew" | "trade_restriction" | "repeal"
+  | "declare_war" | "make_peace" | "pay_tribute";
 
 export interface PendingMeeting {
   villageId: string;
@@ -288,6 +289,10 @@ export interface PendingMeeting {
   agendaType: AgendaType;
   description: string;
   target?: AgentName;
+  /** declare_war / make_peace / pay_tribute: the other village (id). */
+  targetVillage?: string;
+  /** pay_tribute: default amount in Groschen if the council proposal names none. */
+  value?: number;
   calledAtTick: number;
 }
 
@@ -298,6 +303,8 @@ export interface Law {
   passedTick: number;
   value?: number;
   target?: AgentName;
+  /** declare_war / make_peace / pay_tribute: the other village (id). */
+  targetVillage?: string;
   // grant_tools: which tools granted to whom
   grantedTools?: string[];
   grantedTo?: AgentName;
@@ -316,6 +323,36 @@ export interface Violation {
   blocked: boolean;
 }
 
+// ─── War / diplomacy ───────────────────────────────────────
+
+export type Stance = "frieden" | "spannung" | "krieg";
+
+export interface VillageRelation {
+  a: string; b: string;            // village ids, a < b (sorted)
+  stance: Stance;
+  tension: number;                 // 0..100
+  since: number;                   // tick the stance last changed
+  peaceOfferBy?: string;           // village id that offered peace
+  peaceOfferTick?: number;
+  truceUntil?: number;             // tick; no war declaration possible before
+  raidsWon: Record<string, number>;
+}
+
+export type WarEventKind = "provocation" | "tension" | "declared" | "raid" | "guard" | "peace_offer" | "peace" | "tribute";
+
+export interface WarEvent {
+  tick: number;
+  kind: WarEventKind;
+  villages: [string, string];
+  text: string;
+  actor?: string;
+  /** provocation: the provocation kind id (grenzstreit, diebstahl, ...). */
+  detail?: string;
+  loot?: { groschen: number; items: Record<string, number> };
+  wounded?: string[];
+  success?: boolean;
+}
+
 // ─── Action Types ──────────────────────────────────────────
 
 export type AgentActionType =
@@ -325,7 +362,8 @@ export type AgentActionType =
   | "produce" | "eat"
   | "post_order" | "buy_item" | "cancel_order"
   | "hire" | "lend_coin" | "give_coin" | "steal" | "call_meeting" | "propose_rule" | "vote"
-  | "propose_repeal" | "fine_agent" | "seize_goods";
+  | "propose_repeal" | "fine_agent" | "seize_goods"
+  | "ueberfallen" | "wache_halten";
 
 export interface AgentAction {
   type: AgentActionType;
@@ -352,8 +390,10 @@ export interface AgentAction {
   amount?: number;
   description?: string;
   // governance
-  agenda_type?: "tax_change" | "marketplace_hours" | "banishment" | "general_rule";
+  agenda_type?: AgendaType;
   value?: number;
+  // war: village name or id (ueberfallen target; call_meeting target for the war agendas)
+  target_village?: string;
 }
 
 export interface ResolvedAction extends AgentAction {
@@ -474,6 +514,11 @@ export interface WorldState {
 
   // Multi-village: per-village marketplaces (absent = single-village mode using `marketplace`)
   marketplaces?: Record<string, Marketplace>;
+
+  // War / diplomacy between settlements (all lazily initialised, see war.ts)
+  diplomacy?: Record<string, VillageRelation>;     // key `${a}|${b}`, a < b
+  war_log?: WarEvent[];                            // capped at 200
+  war_actions?: Record<AgentName, { kind: "raid" | "guard"; target?: string; tick: number }>;
 
   // Human player ("der Neue"). Absent until POST /api/player/create; while absent there are
   // no `player` entries in agent_locations/body/economics either (the player is not in the world).
