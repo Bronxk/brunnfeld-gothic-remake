@@ -10,6 +10,7 @@ import type { WorldState } from "./types.js";
 import { ALL_ITEMS } from "./types.js";
 import { PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION } from "./village-map.js";
 import { eventBus } from "./events.js";
+import { llmBackendLabel } from "./llm.js";
 
 const DATA_DIR = join(process.cwd(), "data");
 const INITIAL_MEMORIES_DIR = join(DATA_DIR, "memory_initial");
@@ -249,6 +250,7 @@ async function main(): Promise<void> {
   }
 
   setupShutdown();
+  console.log(`  LLM backend: ${llmBackendLabel()}`);
   ensureInitialState();
   backupInitialMemories();
 

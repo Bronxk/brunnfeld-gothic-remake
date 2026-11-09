@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ─── Concurrency semaphore ────────────────────────────────────
 
@@ -25,9 +26,11 @@ function releaseSlot(): void {
 
 let totalCalls = 0;
 let totalTokensEstimated = 0;
+/** Measured token usage reported by the Claude API (only the ANTHROPIC_API_KEY backend fills this). */
+const apiUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export function getLLMStats() {
-  return { totalCalls, totalTokensEstimated };
+  return { totalCalls, totalTokensEstimated, apiUsage: { ...apiUsage } };
 }
 
 function estimateTokens(text: string): number {
@@ -272,6 +275,90 @@ async function callCLI(
   });
 }
 
+// ─── Claude API backend (ANTHROPIC_API_KEY) ───────────────────
+
+// Short tiers → current Claude API model IDs. Override per tier with ANTHROPIC_MODEL_HAIKU / _SONNET / _OPUS;
+// any other value (e.g. a full "claude-…" ID in CHARACTER_MODEL) is passed through as-is.
+const API_MODEL_MAP: Record<string, string> = {
+  haiku:  "claude-haiku-5-5",
+  sonnet: "claude-sonnet-5-5",
+  opus:   "claude-opus-5-5",
+};
+
+function resolveApiModel(shortOrFull?: string): string {
+  const tier = shortOrFull ?? "haiku";
+  return process.env[`ANTHROPIC_MODEL_${tier.toUpperCase()}`] ?? API_MODEL_MAP[tier] ?? tier;
+}
+
+const EFFORT_LEVELS = ["low", "medium", "high", "max"] as const;
+type Effort = (typeof EFFORT_LEVELS)[number];
+
+/** Thinking depth per call. Colonist turns are short decisions, so the default is "low" (cheap and fast). */
+function apiEffort(): Effort {
+  const raw = (process.env.ANTHROPIC_EFFORT ?? "low").toLowerCase();
+  if ((EFFORT_LEVELS as readonly string[]).includes(raw)) return raw as Effort;
+  console.warn(`  ⚠ ANTHROPIC_EFFORT="${raw}" is not one of ${EFFORT_LEVELS.join("/")} — using "low".`);
+  return "low";
+}
+
+let _anthropic: Anthropic | null = null;
+function anthropicClient(): Anthropic {
+  // Reads ANTHROPIC_API_KEY from the environment (.env via dotenv). Retries 429/5xx with backoff.
+  _anthropic ??= new Anthropic({ timeout: 90_000, maxRetries: 4 });
+  return _anthropic;
+}
+
+/**
+ * One Messages API call. `staticPrefix` (if given) goes into a cached system block, so the shared
+ * seed/memory/tool context of harness turns is billed at the cache-read rate after the first call.
+ */
+async function callAnthropic(
+  staticPrefix: string | null,
+  prompt: string,
+  options?: { model?: string; onChunk?: (chunk: string) => void },
+): Promise<string> {
+  const model = resolveApiModel(options?.model);
+  await acquireSlot();
+  try {
+    const stream = anthropicClient().messages.stream({
+      model,
+      max_tokens: 8000,
+      output_config: { effort: apiEffort() },
+      ...(staticPrefix
+        ? { system: [{ type: "text" as const, text: staticPrefix, cache_control: { type: "ephemeral" as const } }] }
+        : {}),
+      messages: [{ role: "user", content: prompt }],
+    });
+    if (options?.onChunk) stream.on("text", options.onChunk);
+    const msg = await stream.finalMessage();
+
+    apiUsage.input += msg.usage.input_tokens;
+    apiUsage.output += msg.usage.output_tokens;
+    apiUsage.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
+    apiUsage.cacheWrite += msg.usage.cache_creation_input_tokens ?? 0;
+    totalCalls++;
+    totalTokensEstimated += msg.usage.input_tokens + msg.usage.output_tokens
+      + (msg.usage.cache_read_input_tokens ?? 0) + (msg.usage.cache_creation_input_tokens ?? 0);
+
+    if (msg.stop_reason === "refusal") {
+      const details = (msg as unknown as { stop_details?: { category?: string | null } }).stop_details;
+      throw new Error(`Claude API refused the request (${model}, category: ${details?.category ?? "unknown"})`);
+    }
+    if (msg.stop_reason === "max_tokens") {
+      console.warn(`  ⚠ Claude API hit max_tokens (${model}) — the answer may be cut off.`);
+    }
+    const text = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map(b => b.text)
+      .join("")
+      .trim();
+    if (!text) throw new Error(`Empty response from Claude API (${model}, stop_reason=${msg.stop_reason})`);
+    return text;
+  } finally {
+    releaseSlot();
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────
 
 export function usingOpenRouter(): boolean {
@@ -282,12 +369,25 @@ export function usingLocalLLM(): boolean {
   return !!process.env.LOCAL_LLM_BASE_URL;
 }
 
+/** Direct Claude API with ANTHROPIC_API_KEY (billed to the key, not to a Claude subscription). */
+export function usingAnthropicAPI(): boolean {
+  return !usingLocalLLM() && !usingOpenRouter() && !!process.env.ANTHROPIC_API_KEY;
+}
+
+export function llmBackendLabel(): string {
+  if (usingLocalLLM()) return `local LLM (${process.env.LOCAL_LLM_BASE_URL})`;
+  if (usingOpenRouter()) return "OpenRouter";
+  if (usingAnthropicAPI()) return `Claude API (${resolveApiModel(process.env.CHARACTER_MODEL || "haiku")}, effort ${apiEffort()})`;
+  return "Claude Code CLI (subscription)";
+}
+
 export async function callClaude(
   prompt: string,
   options?: { model?: string; onChunk?: (chunk: string) => void },
 ): Promise<string> {
   if (usingLocalLLM()) return callLocalLLM(prompt, options);
   if (usingOpenRouter()) return callOpenRouter(prompt, options);
+  if (usingAnthropicAPI()) return callAnthropic(null, prompt, options);
   return callCLI(prompt, options);
 }
 
@@ -338,6 +438,8 @@ export async function callClaudeWithPrefix(
   if (usingLocalLLM()) {
     return callLocalLLM(staticPrefix + "\n\n" + dynamicSuffix, options);
   }
+
+  if (usingAnthropicAPI()) return callAnthropic(staticPrefix, dynamicSuffix, options);
 
   // Claude Code CLI — use --system for the prefix (gets cached by Claude Code itself)
   return callCLIWithSystem(staticPrefix, dynamicSuffix, options);

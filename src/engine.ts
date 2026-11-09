@@ -854,6 +854,10 @@ async function runTickCore(tick: number): Promise<void> {
   const trades = tickLog.trades.length;
   const prods = tickLog.productions.length;
   console.log(`  Calls: ${stats.totalCalls} | Trades: ${trades} | Productions: ${prods}`);
+  const u = stats.apiUsage;
+  if (u.input + u.output + u.cacheRead + u.cacheWrite > 0) {
+    console.log(`  Claude API tokens (total, measured): in ${u.input} | out ${u.output} | cache read ${u.cacheRead} | cache write ${u.cacheWrite}`);
+  }
   if (time.isFirstTickOfDay) console.log(`  ${getEconomySummary(state)}`);
 }
 

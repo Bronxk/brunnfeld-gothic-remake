@@ -783,11 +783,22 @@ The simulation starts at tick 1 (Frühling, Montag 06:00) and streams live to `h
 
 ### LLM Backend
 
-Schlackental supports three backends. Pick one.
+Schlackental supports four backends. Pick one. Precedence: `LOCAL_LLM_BASE_URL` → `OPENROUTER_API_KEY` → `ANTHROPIC_API_KEY` → Claude Code CLI.
+
+#### Option 0 — Claude API key (billed to the key, not to a subscription)
+
+```env
+# .env — direct Claude API
+ANTHROPIC_API_KEY=sk-ant-...
+CHARACTER_MODEL=haiku       # haiku → claude-haiku-5-5 · sonnet → claude-sonnet-5-5 · opus → claude-opus-5-5
+ANTHROPIC_EFFORT=low        # low · medium · high · max (thinking depth per call)
+```
+
+Uses the official `@anthropic-ai/sdk` with streaming. In harness mode the static prefix (seed, memory, tools) sits in a cached system block, so repeated turns read it from the prompt cache. Each tick logs the measured token usage. Per-tier model overrides: `ANTHROPIC_MODEL_HAIKU` / `_SONNET` / `_OPUS`.
 
 #### Option A — Claude Code CLI (no API key needed)
 
-If you have [Claude Code](https://claude.ai/code) installed and authenticated, you're done. Leave `OPENROUTER_API_KEY` unset in `.env` and the simulation uses the `claude` CLI directly.
+If you have [Claude Code](https://claude.ai/code) installed and authenticated, you're done. Leave `OPENROUTER_API_KEY` and `ANTHROPIC_API_KEY` unset in `.env` and the simulation uses the `claude` CLI directly (counts against your Claude subscription).
 
 ```env
 # .env — CLI mode
@@ -855,6 +866,9 @@ With the defaults (`--villages=1 --agents=19`) the hand-written default cast abo
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENROUTER_API_KEY` | — | If set, enables OpenRouter backend with live streaming |
+| `ANTHROPIC_API_KEY` | — | If set (and no OpenRouter/local LLM), calls the Claude API directly with prompt caching |
+| `ANTHROPIC_EFFORT` | `low` | Thinking depth for Claude API calls: `low` / `medium` / `high` / `max` |
+| `ANTHROPIC_MODEL_HAIKU` / `_SONNET` / `_OPUS` | `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` | Claude API model per tier |
 | `CHARACTER_MODEL` | `haiku` | Model tier for agents: `haiku` / `sonnet` / `opus` (CLI) or any OpenRouter model ID |
 | `INTERVIEW_MODEL` | `haiku` | Model for the agent interview endpoint |
 | `USE_HARNESS` | unset (= classic) | `true` enables harness mode (multi-call tool loop per agent); `.env.example` sets it to `true` |
