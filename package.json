@@ -1,7 +1,7 @@
 {
-  "name": "brunnfeld",
+  "name": "schlackental",
   "version": "1.0.0",
-  "description": "Medieval village economy simulation — up to 1000 LLM agents across multiple villages, driven by supply chains, hunger, tool degradation and market pressure.",
+  "description": "Grim mining colony simulation — up to 1000 LLM agents across multiple colonies, driven by supply chains, hunger, tool wear and market pressure. Playable as der Neue.",
   "license": "MIT",
   "type": "module",
   "scripts": {

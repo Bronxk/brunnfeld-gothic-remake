@@ -1,39 +1,44 @@
-# Brunnfeld 🌾
+# Schlackental ⛏️
 
-![Brunnfeld Banner](banner.png)
+![Schlackental Banner](banner.png)
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![OpenRouter](https://img.shields.io/badge/OpenRouter-compatible-orange)](https://openrouter.ai)
 
-![Brunnfeld](cover.png)
+![Schlackental](cover.png)
 
-**A medieval village economy that runs itself.**
+**A grim mining colony that runs itself — and you can walk into it.**
 
-Up to 1000 LLM agents live in a 22-location village. They receive no behavioral instructions, no trading strategies, no economic goals. Each agent gets a short background — name, skill, home, starting goods — and a structured world that enforces physics: hunger, tool degradation, seasonal yields, locked doors, expiring orders, spoiling food, debt.
+The Schlackental is a remote mountain valley where the sovereign has sent convicts to dig iron ore for years. Last winter a landslide buried the Kehlpass, the only way out. No supply carts have come since. Convicts, guards and settlers have to feed themselves, and ore is suddenly worth less than bread. **Bergvogt Reinhart** keeps order together with the **Rat der Rottmeister**. Only smugglers on a break-neck goat path still bring goods into the valley now and then.
 
-The agents produce interesting economic behavior because two things collide: what the LLM already knows about the world, and what the engine will actually allow. The LLM knows what a miller does. The engine enforces that only Gerda has the skill and the location. Neither alone produces what you see — pretraining without constraints is generic roleplay; constraints without pretraining is random noise. Together, they produce a miller who actually blocks bread production when she stops coming to market.
+Up to 1000 LLM agents can live in the colony (19 in the default world). They receive no behavioral instructions, no trading strategies, no economic goals. Each agent gets a short background — name, skill, home, starting goods — and a structured world that enforces physics: hunger, tool wear, seasonal yields, locked doors, expiring orders, spoiling food, debt, curfew.
+
+Everything the agents (and you) read is **German**: prompts, perceptions, tool descriptions, feedback, memory files and the viewer UI. Code, comments and this README are English.
+
+The agents produce interesting economic behavior because two things collide: what the LLM already knows about the world, and what the engine will actually allow. The LLM knows what a miller does. The engine enforces that only Irmel has the skill and the location. Pretraining without constraints is generic roleplay; constraints without pretraining is random noise. Together they produce a miller who actually blocks bread production when she stops coming to the market.
 
 **What makes it different:**
 
 - **No behavioral instructions** — agents receive only a structured world state, not goals or strategies
-- **Hard supply chains** — wheat → mill → flour → bakery → bread; one missing link halts production
-- **Real economics** — live order book, rolling price index, tool degradation, spoilage, seasonal yields, debt
-- **Village governance** — pressure accumulates in the elder's perception until he calls a meeting; council votes pass laws that take immediate effect
+- **Hard supply chains** — Gerste → Mühle → Mehl → Backstube → Brot; one missing link halts production
+- **Real economics** — live order book (the *Tauschbrett*), rolling price index, tool wear, spoilage, seasonal yields, debt
+- **Colony governance** — pressure accumulates in the Bergvogt's perception until he calls an *Appell*; the Rat der Rottmeister votes, passed laws take immediate effect
 - **Persistent memory** — each agent's markdown file is written by the engine and read back every turn
-- **Scalable** — generate worlds with up to 1000 agents across 5 villages via a single API call
+- **Playable** — join as *der Neue*, the last convict brought in before the pass collapsed, with exactly the same tools and rules as the NPCs
+- **Scalable** — generate worlds with up to 5 colonies (Schlackental, Rabenstollen, Kehlhof, Moosgrund, Aschenbruch) via a single script
 
 ---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/marcopatzelt/brunnfeld
-cd brunnfeld
+git clone https://github.com/Bronxk/brunnfeld-gothic-remake schlackental
+cd schlackental
 npm install
 cp .env.example .env    # add OPENROUTER_API_KEY, or leave blank to use Claude CLI
-npm start               # streams live to http://localhost:3333
+npm start               # builds the viewer, streams live to http://localhost:3333
 ```
 
 Reset to tick 1 at any time:
@@ -46,10 +51,6 @@ Full setup options (LLM backends, model recommendations, env vars) → [Setup](#
 
 ---
 
-> **The key insight**: LLM agents behave like the people they know how to be — millers mill, bakers bake — but without a physics layer those are just words. Brunnfeld's engine enforces that *only Gerda has the skill and the location*. Neither alone is interesting. Together they produce a miller who actually blocks bread production when she stops coming to market.
-
----
-
 ## How It Works
 
 ### The Core Loop
@@ -59,11 +60,11 @@ Every simulated hour, the engine builds a perception for each agent, calls the L
 ```mermaid
 flowchart TD
     A[Engine: runTick] --> B[Dawn Phase]
-    B --> B1[Weather · Body drift · Tool degradation]
+    B --> B1[Weather · Body drift · Tool wear]
     B --> B2[Spoilage · Auto-eat if starving]
-    B --> B3[Loan reminders · Monday tax]
+    B --> B3[Loan reminders · Monday Zehnt]
 
-    B1 & B2 & B3 --> C[Enforce Closing Hours]
+    B1 & B2 & B3 --> C[Enforce Closing Hours + Sperrstunde]
     C --> D[Update Body States: hunger · energy]
     D --> E[Build Perceptions per Agent]
 
@@ -85,47 +86,44 @@ The agent sees the world. The agent acts. The engine resolves. That's it.
 
 ### What the Agent Actually Receives
 
-This is the **entire prompt** for one agent turn. No system prompt. No strategy instructions.
+This is the **entire prompt** for one agent turn in classic mode (taken from a real run; the list of colony craftspeople is abridged). No system prompt, no strategy instructions — just one rule line that keeps talk and trade apart.
 
 ```
-You are Anselm.
+REGEL: Reden bewegt NIE Waren oder Geld. Nur post_order und buy_item lösen echte Übergaben aus. "Hier sind 4 Groschen" zu sagen bewirkt nichts.
 
-[3-sentence profile from data/profiles/anselm.md]
+Du bist Brakel.
+Ort: Unterfeld. Montag, 10:00. Frühling, Tag 1/7.
+Wetter: Mild, 12 °C, teils bewölkt
 
-Locations in the village: Village Square, Bakery, Mill, Tavern, ...
+Du bist hier allein.
 
-[memory file: People · Experiences · Important]
+Inventar: Gerste ×8, Brot ×3 (1 reserviert — wird bei Kauf übergeben) [verdirbt bald]
+Geldbeutel: 30 Groschen
+Werkzeug: Zustand 80/100
+Hier kannst du herstellen:
+- produce "gerste" → 4 Gerste [jetzt möglich]
+- produce "eier" → 2 Eier [jetzt möglich]
+- produce "rueben" → 3 Rüben [jetzt möglich]
+Deine aktiven Angebote:
+BIETE Rüben x2 für je 4 Groschen (id: o3, läuft ab in 20 Stunden)
+Handwerker der Kolonie:
+Ottmar (Hirte) — Ziegenweide
+Wenzel (Feldarbeiter) — Oberfeld
+Irmel (Müller) — Mühle
+Bodo (Bäcker) — Backstube
+…
 
----
-
-Spring, Monday 08:00. Bakery. Day 1/7.
-Weather: Clear, 12°C.
-
-Gerda is here.
-(You're hungry.)
-Inventory: flour ×2, bread ×3
-Wallet: 32 coin
-Tools: Rolling Pin — 87% durability
-
-You can produce here:
-- produce "bread" → 4 bread [ready now]
-
-Marketplace board:
-  SELL: wheat ×8 at 2c (by Hans, expires in 15 ticks)
-  WANT: flour ×3, paying up to 6c (Gerda)
-
-IMPORTANT: Your wallet and inventory shown above are exact.
-Verbal agreements do not transfer goods — only post_order
-and buy_item create actual trades.
-
-{ "actions": [...] }
+Tauschbrett:
+  BIETE: Mehl ×4 für 6 Groschen (von Irmel, läuft ab in 15 Stunden)
+  SUCHE: Gerste ×5, zahlt bis zu 3 Groschen (Bodo)
+  BIETE: Rüben ×2 für 4 Groschen (von Brakel, läuft ab in 20 Stunden)
 ```
 
-That's **~300 tokens of structure** plus memory. No "you are a profit-seeking merchant." No "you should sell bread when prices are high." The environment creates those behaviors:
+Plus the agent's memory file and a JSON action schema. No "you are a profit-seeking merchant." No "sell bread when prices are high." The environment creates those behaviors:
 
-- Anselm has flour → he can produce bread right now
-- Gerda wants flour at 6c and is standing next to him → he can negotiate
-- He's hungry → he might eat his own bread before selling it
+- Brakel can produce Gerste right now, and Bodo is *looking for* Gerste at 3 Groschen
+- Irmel offers Mehl for 6 Groschen on the Tauschbrett, so Bodo can bake
+- Brakel's Brot is partly reserved by an open order — he can't eat what he already offered
 
 Everything the agent *can do* comes from what the engine allows. Whether it *does* those things, and in what order, comes from the LLM. The engine is the economy. The LLM is the person living in it.
 
@@ -143,10 +141,10 @@ Everything the agent *can do* comes from what the engine allows. Whether it *doe
 │  · Time · Season · Weather  │                     │  · Choose action    │                      │  · Validate world rules     │
 │  · Hunger · Energy · Sleep  │                     │  · Speak · Produce  │                      │  · Update inventory/wallet  │
 │  · Opening hours · Routing  │ ◄───────────────────│  · Trade · Move     │                      │  · Write memory file        │
-│  · Tool degradation         │    state changes    │  · Negotiate prices │                      │  · Emit SSE events          │
+│  · Tool wear                │    state changes    │  · Negotiate prices │                      │  · Emit SSE events          │
 │  · Order book · Spoilage    │                     │  · Form alliances   │                      │                             │
 │  · Recipe validation        │                     │                     │                      └─────────────────────────────┘
-│  · Loans · Tax · Death      │                     └─────────────────────┘
+│  · Loans · Zehnt · Death    │                     └─────────────────────┘
 └─────────────────────────────┘
 ```
 
@@ -155,50 +153,49 @@ The split is intentional. The engine handles **everything that would otherwise r
 | Without engine enforcement | With engine enforcement |
 |---|---|
 | "Only produce items matching your skill" | Recipe validator checks skill + location + inputs + tool |
-| "You should eat when hungry" | `(You're hungry.)` + cheapest food hint injected into perception |
+| "You should eat when hungry" | `(Du hast Hunger.)` + cheapest food hint injected into perception |
 | "Don't go to closed locations" | Closing-hour enforcement ejects agents, sends them home |
 | "Remember what you traded yesterday" | Memory file rebuilt from actions each tick |
-| "Wheat needs milling before baking" | `[Can't eat] Wheat must be milled into flour first` |
+| "Barley needs milling before baking" | `[Nicht essbar] Gerste muss in der Mühle zu Mehl gemahlen und in der Backstube zu Brot gebacken werden.` |
 | "Post competitive prices" | Agents see the full live order book — market pressure is visible |
-| "Your tools will break if you don't replace them" | Tool durability shown in perception; broken tools block production |
+| "Your tools will break if you don't replace them" | Tool condition shown in perception; broken tools block production |
 
 Every row is a **prompt instruction that was never written** because the engine handles it structurally.
 
-### The 14-Phase Tick
+### The Tick
 
 ```
 1 tick = 1 simulated hour, 6am–9pm (16 ticks/day)
 Night is skipped: body resets, sleep memory injected
 
-Tick 1   = Spring, Monday 6am, Day 1
-Tick 16  = Spring, Monday 9pm
-Tick 17  = Spring, Tuesday 6am
-Tick 112 = Spring, Sunday 9pm
-Tick 113 = Summer, Monday 6am  (new season)
-Tick 448 = Winter, Sunday 9pm  (end of year 1)
+Tick 1   = Frühling, Montag 06:00, Tag 1
+Tick 16  = Frühling, Montag 21:00
+Tick 17  = Frühling, Dienstag 06:00
+Tick 112 = Frühling, Sonntag 21:00
+Tick 113 = Sommer, Montag 06:00  (new season)
+Tick 448 = Winter, Sonntag 21:00 (end of year 1)
 ```
 
 Each `runTick()` executes in order:
 
-1. **Dawn phase** (first tick of day only): weather update, auto-eat starving agents, degrade tools, check food spoilage, clean expired notes, pay loan reminders, Monday tax collection by Otto (10% from all agents), auto-schedule daily village assembly
-2. **Enforce closing hours** — eject agents from closed locations, route home
+1. **Dawn phase** (first tick of day only): weather update, auto-eat starving agents, wear tools, check food spoilage, clean expired notes, loan reminders, **Zehnt** collection by the Bergvogt on Mondays (10% of every wallet by default, changeable by council vote), auto-schedule the daily Appell
+2. **Enforce closing hours** — eject agents from closed locations, route home; enforce Sperrstunde if a law is active
 3. **Update body states** — hunger +1 every 4 hours, energy decay after 2pm
 4. **Clear last tick's feedback** — save for perception, reset for next tick
-5. **God Mode events** — expire events, apply bandit theft, expire old petitions
-6. **Player turn** — process any queued player actions immediately
-7. **Banishment enforcement** — move banned agents to Prison, release expired bans
-8. **Village meeting phase** — if a meeting is scheduled for this tick, run quorum check, discussion rounds, vote, and resolution before any normal agent turns. Attendees are excluded from step 10.
-9. **Pre-meeting nudge** — if a meeting is scheduled next tick, inject `[URGENT]` feedback to all agents
-10. **Build perceptions** — full perception string per alive non-meeting agent; Otto's perception additionally receives `[Village concern]` and `[Petition]` lines computed from world state
-11. **Decision phase** — group by location, run LLM calls (solo / multi-agent rounds)
-12. **Social resolution** — apply moves, build acquaintances from co-location speech
-13. **Production resolution** — validate and execute produce actions
-14. **Marketplace resolution** — post_order, cancel_order, expire stale orders
-15. **Economic checks** — starvation check (death at tick 3 of hunger=5)
-16. **Memory update** — write agent markdown files (experiences, people, important)
-17. **Economy snapshot** (first tick of day) — wealth, Gini, GDP, scarcity
-18. **Write state** — persist world_state.json to disk
-19. **Write tick log + SSE broadcast** — stream to web viewer; meeting ticks include full `meeting` field with discussion, votes, and outcome
+5. **World events** — expire events, apply Wegelagerer theft, expire old petitions
+6. **Karzerstrafe enforcement** — move sentenced agents to the Karzer, release when the term ends
+7. **Appell phase** — if an assembly is scheduled for this tick, run quorum check, discussion rounds, vote, and resolution before any normal agent turns. Attendees are excluded from the normal turns.
+8. **Pre-Appell nudge** — if an assembly is scheduled next tick, inject `[DRINGEND]` feedback to all agents
+9. **Build perceptions** — full perception string per alive non-assembly agent; the Bergvogt additionally receives `[Sorge der Kolonie]` and `[Gesuch]` lines computed from world state
+10. **Decision phase** — group by location, run LLM calls (solo / multi-agent rounds); **the player's queued actions** (e.g. `produce`) join the same resolution
+11. **Social resolution** — apply moves, build acquaintances from co-location speech
+12. **Production resolution** — validate and execute produce actions
+13. **Marketplace resolution** — post_order, cancel_order, expire stale orders
+14. **Economic checks** — soft death for the player, starvation check for NPCs (death at tick 3 of hunger=5)
+15. **Memory update** — write agent markdown files (Erlebnisse, Personen, Wichtig)
+16. **Economy snapshot** (first tick of day) — wealth, Gini, GDP, scarcity
+17. **Write state** — persist world_state.json to disk
+18. **Write tick log + SSE broadcast** — stream to web viewer; assembly ticks include a full `meeting` field with discussion, votes and outcome
 
 ### Perception Builder
 
@@ -212,18 +209,19 @@ world_state.json
 │  Perception Builder │
 └─────────────────────┘
       │
-      ├─ Time ·············· "Spring, Monday 08:00, Day 1/7"
-      ├─ Location ·········· "Bakery"
-      ├─ Weather ··········· "Clear, 12°C"
-      ├─ Others ··········· "Gerda is here."
-      ├─ Body ·············· "(You're hungry.)"
-      ├─ Inventory ········· "flour ×2, bread ×3 (1 reserved)"
-      ├─ Wallet ············ "32 coin"
-      ├─ Loans ············· "You owe 10c to Hans (due day 7)"
-      ├─ Producible ········ "- produce bread → 4 bread [ready now]"
-      ├─ Marketplace ······· "SELL: wheat ×8 at 2c (Hans)..."
-      ├─ Messages ·········· "From Hans: do you have any bread?"
-      └─ Feedback ·········· "[No match] Cheapest bread: 3c from Anselm."
+      ├─ Time ·············· "Montag, 10:00. Frühling, Tag 1/7"
+      ├─ Location ·········· "Unterfeld"
+      ├─ Weather ··········· "Mild, 12 °C, teils bewölkt"
+      ├─ Others ··········· "Wendel (Feldarbeiter) ist hier."
+      ├─ Body ·············· "(Du hast Hunger.)"
+      ├─ Inventory ········· "Gerste ×8, Brot ×3 (1 reserviert)"
+      ├─ Wallet ············ "30 Groschen"
+      ├─ Loans ············· "Darlehen: Du schuldest Irmel 5 Groschen (fällig an Tag 3)"
+      ├─ Laws ·············· "Ratsbeschlüsse: Zehnt 15 % · Sperrstunde 18:00"
+      ├─ Producible ········ "- produce "brot" → 4 Brot [jetzt möglich]"
+      ├─ Tauschbrett ······· "BIETE: Mehl ×4 für 6 Groschen (von Irmel)"
+      ├─ Messages ·········· "Von Irmel: Ich brauche Gerste."
+      └─ Feedback ·········· "[Kein Angebot] Kein Verkaufsangebot für Brot bis 5 Groschen."
             │
             ▼
      Perception String → Agent Prompt
@@ -231,10 +229,10 @@ world_state.json
 
 Key design decisions:
 
-- **Acquaintance gating**: Agents who haven't spoken don't know each other by name. The engine substitutes `"the miller from the Mill"` until they've spoken.
-- **Feedback injection**: Failed actions return `[Can't do that] reason` into the next perception. Agents learn from rejection without any instruction.
-- **Supply chain hints**: When a hungry agent tries to eat raw wheat, the engine returns `[Can't eat] Wheat must be milled into flour (at the Mill) then baked into bread (at the Bakery).`
-- **Hunger routing**: When an agent has no food and no market food exists, the engine injects specialist knowledge — which villagers sell food, their current location, whether they're home.
+- **Acquaintance gating**: Agents who haven't spoken don't know each other by name. The engine substitutes `die Müllerin aus der Mühle` until they've spoken.
+- **Feedback injection**: Failed actions return `[Geht nicht] <reason>` into the next perception. Agents learn from rejection without any instruction.
+- **Supply chain hints**: When a hungry agent tries to eat raw barley, the engine returns `[Nicht essbar] Gerste muss in der Mühle zu Mehl gemahlen und in der Backstube zu Brot gebacken werden. Kauf lieber Brot.`
+- **Hunger routing**: When an agent has no food and no market food exists, the engine injects specialist knowledge — who sells food, where they currently are, whether they're home.
 
 ---
 
@@ -242,15 +240,12 @@ Key design decisions:
 
 `USE_HARNESS=true` replaces the single-call decision loop with a **multi-call tool-use harness**. Instead of returning a full JSON actions array in one shot, each agent gets a budget of 3–8 tool calls per tick and works through them step by step — observing, thinking, then acting.
 
-This matches how Claude naturally reasons: see the situation, decide, do one thing, see the result, decide again.
-
 ### Classic mode vs. Harness mode
 
 | | Classic | Harness |
 |---|---|---|
 | LLM calls per agent | 1 | 3–8 |
 | Agent sees action results | Next tick | Same tick |
-| Observation phase | None | Explicit tools |
 | Reaction to co-located agents | None | Round-robin yield |
 | Response format | `{"actions": [...]}` | `{"tool": "name", "args": {...}}` |
 
@@ -261,38 +256,42 @@ Budget is assigned per tick based on agent state:
 | Condition | Budget |
 |---|---|
 | Energy ≤ 2 (exhausted) | 3 calls |
-| At Village Square / Marketplace | 8 calls |
+| At the Zechenplatz (market square) | 8 calls |
 | Default | 5 calls |
-
-The prompt enforces "use at most 2 observation tools, then act."
 
 ### Available Tools
 
+Tool names and argument keys stay English (machine contract); the descriptions agents actually see are German. English glosses below.
+
 | Category | Tool | Args | Description |
 |---|---|---|---|
-| Observe | `look_around` | `{}` | Who is here, what's been said |
-| Observe | `check_inventory` | `{}` | Your inventory and wallet |
-| Observe | `check_prices` | `{"item": "flour"}` | Market prices for an item |
-| Observe | `check_body` | `{}` | Hunger, energy, health |
-| Observe | `recall` | `{"topic": "wheat trade"}` | Search your memory |
-| Observe | `assess_person` | `{"name": "Anselm"}` | What you know about someone (must be acquainted) |
+| Observe | `check_inventory` | `{}` | Show inventory and wallet |
+| Observe | `recall` | `{"topic": "gerste handel"}` | Search your memory file |
+| Observe | `assess_person` | `{"name": "Bodo"}` | What you know about someone (must be acquainted) |
 | Act | `speak` | `{"text": "..."}` | Say something aloud (max 15 words, others must be present) |
-| Act | `negotiate` | `{"agent":"Anselm","item":"flour","price":6,"qty":3}` | Structured trade offer |
-| Act | `produce` | `{"item": "flour"}` | Craft item at your work location |
-| Act | `move_to` | `{"location": "Village Square"}` | Move to a location |
-| Act | `post_order` | `{"side":"sell","item":"flour","qty":3,"price":6}` | Post a market order |
-| Act | `buy_item` | `{"item":"bread","max_price":5}` | Buy from market (must be at Village Square) |
-| Act | `eat` | `{"item":"bread","qty":1}` | Eat food from inventory |
-| Act | `hire_laborer` | `{"agent":"Pabo","wage":5}` | Pay someone here to work for you today — their output routes to your inventory |
+| Act | `negotiate` | `{"agent":"Bodo","item":"mehl","price":6,"qty":3}` | Fixed trade offer to someone present |
+| Act | `produce` | `{"item": "mehl"}` | Craft an item at your work location |
+| Act | `move_to` | `{"location": "Zechenplatz"}` | Go to a location |
+| Act | `post_order` | `{"side":"sell","item":"mehl","qty":3,"price":6}` | Post an order on the Tauschbrett |
+| Act | `buy_item` | `{"item":"brot","max_price":5}` | Buy from the Tauschbrett (must be on the Zechenplatz) |
+| Act | `eat` | `{"item":"brot","qty":1}` | Eat food from inventory |
+| Act | `send_message` | `{"to":"Bodo","text":"..."}` | Written message, arrives next round |
+| Act | `give_coin` | `{"to":"Bodo","amount":5}` | Give Groschen to someone present |
+| Act | `steal` | `{"target":"Kasper","item":"brot"}` | Steal from someone present — you can get caught |
+| Act | `cancel_order` | `{"order_id":"ord_123"}` | Withdraw your order |
+| Act | `hire_laborer` | `{"agent":"Wendel","wage":5}` | Pay someone present to work for you today — their output goes to you |
 | Act | `quit_job` | `{}` | Quit your current job (only shown when employed) |
-| Plan | `think` | `{"text": "..."}` | Inner thought — not heard by others |
 | Plan | `done` | `{}` | End your turn |
+| Granted by law | `fine_agent` | `{"target":"Kasper","amount":5,"reason":"..."}` | Fine someone present; the money goes to the Bergvogt's treasury |
+| Granted by law | `seize_goods` | `{"target":"Kasper","item":"gerste","qty":3,"reason":"..."}` | Confiscate goods from someone present |
+
+`fine_agent` and `seize_goods` are not available by default. They appear in an agent's tool list only after the Rat der Rottmeister passes a `grant_tools` law for that agent.
 
 ### Prompt structure
 
 The harness splits the prompt for LLM cache efficiency:
 
-- **Static prefix** (built once per tick): agent identity + memory + tool list — cache hits ~75% of tokens
+- **Static prefix** (built once per tick): agent identity + memory + tool list
 - **Dynamic suffix** (rebuilt each call): remaining budget + action history so far
 
 ### Round-robin interleaving
@@ -306,177 +305,196 @@ USE_HARNESS=true
 CHARACTER_MODEL=haiku    # or any OpenRouter model ID
 ```
 
-> Harness mode uses 5–8× more LLM calls per tick. See [Performance & Scaling](#performance--scaling) for timing expectations.
+> Harness mode uses several times more LLM calls per tick. See [Performance & Scaling](#performance--scaling).
 
 ---
 
-## The Village
+## The Colony
 
 ```
-Brunnfeld
+Schlackental
 
 ┌──────────────────────────────────────────────┐
-│  Resources    │  Forest · Mine               │
-│               │  Farm 1 · Farm 2 · Farm 3    │
+│  Resources    │  Köhlerwald · Erzstollen     │
+│               │  Unterfeld · Ziegenweide     │
+│               │  Oberfeld                    │
 ├───────────────┼──────────────────────────────┤
-│  Production   │  Mill (7am–4pm)              │
-│               │  Bakery (6am–2pm)            │
-│               │  Forge (7am–4pm)             │
-│               │  Carpenter Shop (7am–4pm)    │
-│               │  Seamstress Cottage          │
-│               │  Healer's Hut (7am–5pm)      │
+│  Production   │  Mühle (7am–4pm)             │
+│               │  Backstube (6am–2pm)         │
+│               │  Schmiede (7am–4pm)          │
+│               │  Zimmerei (7am–4pm)          │
+│               │  Flickstube                  │
+│               │  Baderhütte (7am–5pm)        │
 ├───────────────┼──────────────────────────────┤
-│  Commerce     │  Village Square (always)     │
-│               │  Tavern (10am–9pm)           │
+│  Commerce     │  Zechenplatz (always)        │
+│               │  Schenke (10am–9pm)          │
+│               │  Schmugglerpfad (Schmugglerzug only) │
 ├───────────────┼──────────────────────────────┤
-│  Commerce     │  Merchant Camp (caravan only)│
+│  Governance   │  Vogtei                      │
+│               │  Vogtshaus                   │
+│               │  Karzer                      │
 ├───────────────┼──────────────────────────────┤
-│  Governance   │  Town Hall                   │
-│               │  Elder's House               │
-│               │  Prison                      │
-├───────────────┼──────────────────────────────┤
-│  Residential  │  Cottages 1–9                │
+│  Residential  │  Baracken 1–9                │
 └───────────────┴──────────────────────────────┘
 
-All trade happens at Village Square.
-Non-adjacent moves route through Village Square (2 ticks).
+All trade happens at the Zechenplatz (Tauschbrett).
+Non-adjacent moves route through the Zechenplatz (2 ticks).
 ```
 
-### Multi-Village Worlds
+| Location | Type | Notes |
+|---|---|---|
+| Zechenplatz | square | Market square and hub; the Tauschbrett hangs here |
+| Backstube | bakery | Open 06:00–14:00 |
+| Schenke | tavern | Open 10:00–21:00 |
+| Schmiede | forge | Open 07:00–16:00 |
+| Zimmerei | carpenter | Open 07:00–16:00 |
+| Mühle | mill | Open 07:00–16:00 |
+| Flickstube | seamstress | — |
+| Baderhütte | healer | Open 07:00–17:00 |
+| Unterfeld · Ziegenweide · Oberfeld | farms | Barley, turnips, eggs, goat products |
+| Köhlerwald | forest | Timber, firewood, herbs |
+| Erzstollen | mine | Iron ore, coal |
+| Vogtei | townhall | Where the Appell takes place |
+| Vogtshaus | elder | Home of the Bergvogt |
+| Karzer | prison | Karzerstrafe is served here |
+| Baracke 1–9 | cottage | Homes |
+| Schmugglerpfad | merchant | Only populated while a Schmugglerzug is in the valley |
 
-Brunnfeld supports multiple villages connected by named roads. Each village has its own location namespace, agents, and order book.
+### Multi-Colony Worlds
+
+Schlackental supports multiple settlements connected by named roads. Each has its own location namespace, agents, and order book. Generated worlds use these names, in order:
 
 ```
-Brunnfeld ──── Road: Brunnfeld→Norddorf ──── Norddorf
+Schlackental ── Rabenstollen ── Kehlhof ── Moosgrund ── Aschenbruch
 ```
 
-Villages are generated with the `generate-world` script (see [World Generation](#world-generation)). A Norddorf agent's locations are prefixed: `Norddorf:Village Square`, `Norddorf:Bakery`, etc. Cross-village teleportation is blocked — agents must route through the road. If an agent tries to move directly to another village's location, the engine returns their local equivalent:
+Villages are generated with the `generate-world` script (see [World Generation](#world-generation)). A Rabenstollen agent's locations are prefixed: `Rabenstollen:Zechenplatz`, `Rabenstollen:Backstube`, etc. Cross-colony teleportation is blocked — agents must walk the connecting road (`Road: Schlackental→Rabenstollen`). If an agent tries to move directly to another colony's location, the engine returns the local equivalent and asks them to go there instead (`[Dort geht's nicht hin]`).
 
-```
-[Can't go there] "Village Square" is in another village.
-Your local equivalent is "Norddorf:Village Square" — go there instead.
-```
-
-Cross-village trade is possible: an agent can travel to the other village's marketplace and post orders there.
+Cross-colony trade is possible: an agent can travel to the other settlement's Zechenplatz and post orders there.
 
 ### The 19 Agents
 
-| Agent | Skill | Home | Starting Coin | Role |
-|-------|-------|------|--------------|------|
-| **Hans** ★ | farmer | Farm 1 | 30c | Primary wheat producer |
-| **Heinrich** | farmer | Farm 1 | 25c | Wheat + eggs |
-| **Ulrich** | farmer | Farm 3 | 20c | Vegetables |
-| **Bertram** | farmer | Farm 1 | 15c | Wheat (subsistence) |
-| **Konrad** | cattle | Farm 2 | 40c | Milk + meat |
-| **Gerda** ★ | miller | Mill | 45c | Wheat → flour (sole supplier) |
-| **Anselm** ★ | baker | Bakery | 32c | Flour → bread (sole supplier) |
-| **Liesel** | tavern | Tavern | 55c | Ale + meals |
-| **Volker** ★ | blacksmith | Forge | 60c | Iron ore + coal → tools |
-| **Wulf** | carpenter | Carpenter Shop | 35c | Timber → furniture |
-| **Friedrich** | woodcutter | Cottage 7 | 22c | Timber + firewood |
-| **Dieter** | miner | Cottage 8 | 18c | Iron ore + coal |
-| **Rupert** | miner | Cottage 3 | 20c | Iron ore + coal |
-| **Sybille** | healer | Healer's Hut | 28c | Herbs → medicine |
-| **Elke** | seamstress | Seamstress Cottage | 30c | Cloth production |
-| **Ida** | — | Cottage 2 | 12c | No production skill |
-| **Magda** | — | Cottage 8 | 10c | No production skill |
-| **Otto** ★ | elder | Elder's House | 120c | Tax collector (10% every Monday); chairs the village council |
-| **Pater Markus** | priest | Town Hall | 25c | No economic role |
+| Agent | Skill | Home | Starting Groschen | Role |
+|-------|-------|------|:---:|------|
+| **Brakel** ★ | Feldarbeiter | Baracke 1 | 30 | Rottmeister of the field gang; primary Gerste producer |
+| **Wendel** | Feldarbeiter | Baracke 1 | 25 | Gerste + Eier |
+| **Wenzel** | Feldarbeiter | Baracke 4 | 20 | Rüben (Oberfeld) |
+| **Kasper** | Feldarbeiter | Baracke 5 | 15 | Gerste (subsistence); wants to flee over the goat path |
+| **Ottmar** | Hirte | Ziegenweide | 40 | Ziegenmilch + Fleisch; free settler |
+| **Irmel** ★ | Müller | Mühle | 45 | Gerste → Mehl (sole supplier) |
+| **Bodo** ★ | Bäcker | Backstube | 32 | Mehl → Brot (sole supplier) |
+| **Grete** | Wirt | Schenke | 55 | Dünnbier + Eintopf; knows every rumor |
+| **Eckhart** ★ | Schmied | Schmiede | 60 | Eisenerz + Kohle → Werkzeug |
+| **Lenz** | Zimmermann | Zimmerei | 35 | Bauholz → Hausrat |
+| **Jost** | Holzfäller | Baracke 7 | 22 | Bauholz + Brennholz |
+| **Mattis** | Knappe | Baracke 8 | 18 | Eisenerz + Kohle |
+| **Gisbert** | Knappe | Baracke 3 | 20 | Eisenerz + Kohle; old miner with dust lung |
+| **Walburga** | Bader | Baderhütte | 28 | Kräuter → Arznei; revives the starving |
+| **Minna** | Flickerin | Flickstube | 30 | Leinen |
+| **Rike** | ohne Handwerk | Baracke 2 | 12 | No production skill |
+| **Vroni** | ohne Handwerk | Baracke 8 | 10 | No production skill; broker on the Zechenplatz |
+| **Vogt Reinhart** ★ | ohne Handwerk | Vogtshaus | 120 | Bergvogt; collects the Zehnt, chairs the Rat der Rottmeister |
+| **Bruder Anno** | ohne Handwerk | Vogtei | 25 | Chaplain; no economic role |
 
-★ = village council member
+★ = member of the Rat der Rottmeister
 
-**Skillless agents** (Ida, Magda, and any generated `villager` agents) have no production recipes. They can trade, speak, and move — but to produce anything they must be hired by a skilled agent via `hire_laborer`. When hired, they inherit their employer's skill, go to the employer's work location, and produce — with output routing directly to the employer's inventory.
+**Skillless agents** (Rike, Vroni, and any generated `villager` agents) have no production recipes. They can trade, speak, and move — but to produce anything they must be hired by a skilled agent via `hire_laborer`. When hired, they inherit their employer's skill, go to the employer's work location, and produce — with output routing directly to the employer's inventory.
 
-**Pre-existing acquaintances** (day 1): Hans↔Heinrich, Gerda↔Anselm, Volker↔Wulf, Friedrich↔Rupert, Dieter↔Rupert, Dieter↔Magda, Liesel↔Otto, Otto↔Pater Markus
+**Pre-existing acquaintances** (day 1): Brakel↔Wendel, Irmel↔Bodo, Eckhart↔Lenz, Jost↔Gisbert, Mattis↔Gisbert, Mattis↔Vroni, Grete↔Reinhart, Reinhart↔Bruder Anno
+
+Character sketches live in `data/profiles/`, the full cast and terminology in [`docs/schlackental.md`](docs/schlackental.md).
 
 ### Supply Chains
 
-The village has hard bottlenecks that create economic pressure without any prompting:
+The colony has hard bottlenecks that create economic pressure without any prompting:
 
 ```
-Wheat (farmers) ──→ Mill (Gerda only) ──→ Flour ──→ Bakery (Anselm only) ──→ Bread
-                                                         ↑
-                                               Firewood (woodcutters)
+Gerste (Feldarbeiter) ──→ Mühle (Irmel only) ──→ Mehl ──→ Backstube (Bodo only) ──→ Brot
 
-Iron Ore + Coal (miners) ──→ Forge (Volker only) ──→ Iron Tools
+Eisenerz + Kohle (Knappen) ──→ Schmiede (Eckhart only) ──→ Werkzeug
     ↑
-  Mine
+  Erzstollen
 
-Timber (woodcutters) ──→ Carpenter Shop (Wulf only) ──→ Furniture
+Bauholz (Holzfäller) ──→ Zimmerei (Lenz only) ──→ Hausrat
+
+Kräuter ──→ Baderhütte (Walburga only) ──→ Arznei
+
+Fleisch + Rüben ──→ Schenke (Grete only) ──→ Eintopf
+Gerste ──→ Schenke (Grete only) ──→ Dünnbier
 ```
 
-If Gerda doesn't sell flour, Anselm can't bake. If Volker doesn't make tools, farmers can't harvest. The supply chain is the motivation.
+If Irmel doesn't sell Mehl, Bodo can't bake. If Eckhart doesn't make Werkzeug, the field gang can't harvest. The supply chain is the motivation.
 
 ---
 
 ## The Production System
 
-14 recipes, each locked by skill + location + inputs. Agents produce once per hour maximum.
+Recipes are locked by skill + location + inputs. Agents produce once per hour maximum.
 
 | Item | Skill | Location | Inputs | Output | Tool required |
-|------|-------|----------|--------|--------|---------------|
-| wheat | farmer | Farm 1/2/3 | — | 4× | ✓ |
-| vegetables | farmer | Farm 1/2/3 | — | 3× | ✓ |
-| eggs | farmer | Farm 1/2/3 | — | 2× | ✗ |
-| milk | cattle | Farm 2 | — | 3× | ✗ |
-| meat | cattle | Farm 2 | — | 2× | ✓ |
-| timber | woodcutter | Forest | — | 3× | ✓ |
-| firewood | woodcutter | Forest | — | 4× | ✓ |
-| iron_ore | miner | Mine | — | 3× | ✓ |
-| coal | miner | Mine | — | 2× | ✓ |
-| herbs | healer | Forest | — | 2× | ✗ |
-| flour | miller | Mill | 3 wheat | 2× | ✗ |
-| bread | baker | Bakery | 1 flour | 4× | ✗ |
-| ale | tavern | Tavern | 2 wheat | 4× | ✗ |
-| meal | tavern | Tavern | 1 meat + 1 veg | 3× | ✗ |
-| medicine | healer | Healer's Hut | 3 herbs | 1× | ✗ |
-| furniture | carpenter | Carpenter Shop | 3 timber | 1× | ✓ |
-| iron_tools | blacksmith | Forge | 2 ore + 1 coal | 1× | ✗ |
-| cloth | seamstress | Seamstress Cottage | — | 1× | ✗ |
+|------|-------|----------|--------|--------|:---:|
+| Gerste | Feldarbeiter | Unterfeld / Ziegenweide / Oberfeld | — | 4× | ✓ |
+| Rüben | Feldarbeiter | Unterfeld / Ziegenweide / Oberfeld | — | 3× | ✓ |
+| Eier | Feldarbeiter | Unterfeld / Ziegenweide / Oberfeld | — | 2× | ✗ |
+| Ziegenmilch | Hirte | Ziegenweide | — | 3× | ✗ |
+| Fleisch | Hirte | Ziegenweide | — | 2× | ✓ |
+| Bauholz | Holzfäller | Köhlerwald | — | 3× | ✓ |
+| Brennholz | Holzfäller | Köhlerwald | — | 4× | ✓ |
+| Eisenerz | Knappe | Erzstollen | — | 3× | ✓ |
+| Kohle | Knappe | Erzstollen | — | 2× | ✓ |
+| Kräuter | Bader | Köhlerwald | — | 2× | ✗ |
+| Mehl | Müller | Mühle | 3 Gerste | 2× | ✗ |
+| Brot | Bäcker | Backstube | 1 Mehl | 4× | ✗ |
+| Dünnbier | Wirt | Schenke | 2 Gerste | 4× | ✗ |
+| Eintopf | Wirt | Schenke | 1 Fleisch + 1 Rüben | 3× | ✗ |
+| Arznei | Bader | Baderhütte | 3 Kräuter | 1× | ✗ |
+| Hausrat | Zimmermann | Zimmerei | 3 Bauholz | 1× | ✓ |
+| Werkzeug | Schmied | Schmiede | 2 Eisenerz + 1 Kohle | 1× | ✗ |
+| Leinen | Flickerin | Flickstube | — | 1× | ✗ |
 
-**Tool system**: Tools degrade 3 durability points per use (0–100 scale). Broken tools block production. Only Volker produces `iron_tools`. If the blacksmith dies or stops producing, the whole village eventually loses production capacity.
+**Tool system**: Tools wear 3 condition points per use (0–100 scale). Broken tools block production, and production that needs a tool is halved without one. Only Eckhart produces `werkzeug`. If the smith dies or stops producing, the whole colony eventually loses production capacity.
 
-**Seasonal yields**: Spring/Autumn are full yield. Summer benefits cattle (milk, meat). Winter disables most crop production — only miners, woodcutters, and specialists keep working.
+**Seasonal yields**: Spring/Autumn are full yield. Summer benefits the goat herds. Winter disables most field work — only miners, woodcutters and specialists keep working.
 
-**Spoilage**: Milk (2 days), meat (3 days). The engine removes expired items silently. No warning; agents just find their inventory shorter.
+**Spoilage**: Ziegenmilch (2 days), Fleisch (3 days). The engine removes expired items silently. No warning; agents just find their inventory shorter.
 
 ---
 
-## The Marketplace
+## The Marketplace (Tauschbrett)
 
-Every trade in Brunnfeld happens through the order book at Village Square.
+Every trade in Schlackental happens through the order book on the Zechenplatz.
 
 ```mermaid
 sequenceDiagram
-    participant A as Anselm (baker)
+    participant B as Bodo (Bäcker)
     participant E as Engine
-    participant H as Hans (farmer)
+    participant W as Wendel (Feldarbeiter)
 
-    A->>E: post_order: SELL bread ×4 at 3c
-    E->>E: Reserve 4 bread in Anselm's inventory
+    B->>E: post_order: sell brot ×4 at 3
+    E->>E: Reserve 4 Brot in Bodo's inventory
     E->>E: Broadcast order to all agent perceptions
 
-    H->>E: buy_item: bread, max_price 4c
-    note over H: Hans must be at Village Square
-    E->>E: Find cheapest matching sell order (3c ≤ 4c)
-    E->>E: executeTrade: transfer bread + coin
-    E->>H: feedback: "Hans bought 4 bread for 12 coin."
-    E->>A: feedback: "Sold 4 bread to Hans for 12 coin."
+    W->>E: buy_item: brot, max_price 4
+    note over W: Wendel must be on the Zechenplatz
+    E->>E: Find cheapest matching sell order (3 ≤ 4)
+    E->>E: executeTrade: transfer Brot + Groschen
+    E->>W: feedback: Gekauft: Wendel kauft 4 Brot für 12 Groschen.
+    E->>B: feedback: Verkauft: 4 Brot an Wendel für 12 Groschen.
     E->>E: Update priceIndex rolling average
 ```
 
 **Key mechanics**:
 - Orders expire after 16 ticks (1 day)
-- Sell orders reserve inventory; buy orders do not reserve coin
+- Sell orders reserve inventory; buy orders do not reserve Groschen
 - `buy_item` resolves immediately (not deferred), so agents can buy food and eat in the same turn
 - Price index is a rolling 10-trade average per item — the market self-prices
-- When `[No match]` fires, the engine tells the agent the actual cheapest available price: `Cheapest available: 5c from Anselm. Raise your max_price.`
+- When `[Kein Angebot]` fires, the message includes the actual cheapest available price (if any) so the agent can raise their max price
 
 **Economy tracking** (captured once per day at dawn):
-- Total village wealth
+- Total colony wealth
 - Gini coefficient (wealth inequality 0–1)
 - GDP (sum of all trades in last 16 ticks)
-- Scarcity alerts (items with <3 units on market)
+- Scarcity alerts (items with <3 units on the board)
 - Wealth distribution per agent
 
 ---
@@ -489,7 +507,7 @@ Hunger and energy create natural pressure without any goal-setting prompt.
 - Increases +1 every 4 simulated hours
 - Slight reduction at dawn (overnight rest)
 - Auto-eat fires at dawn if hunger ≥4 (cheapest available food by price index)
-- Starvation: hunger=5 for 3+ consecutive ticks → agent dies (removed from simulation)
+- Starvation: hunger=5 for 3+ consecutive ticks → NPC dies (removed from simulation)
 
 **Energy** (0–10):
 - Resets each dawn: good sleep → 9, fair → 7, poor → 5
@@ -500,13 +518,13 @@ Hunger and energy create natural pressure without any goal-setting prompt.
 
 | Item | Hunger reduction |
 |------|-----------------|
-| meal (tavern) | −3 |
-| bread, meat | −2 |
-| vegetables, eggs, milk | −1 |
-| ale | 0 (no hunger reduction) |
-| wheat, flour | ✗ not edible |
+| Eintopf (Schenke) | −3 |
+| Brot, Fleisch | −2 |
+| Rüben, Eier, Ziegenmilch | −1 |
+| Dünnbier | 0 (no hunger reduction) |
+| Gerste, Mehl | ✗ not edible |
 
-**Health**: Sickness and injury (0–3) heal 1 point per day. Sybille produces medicine — the only treatment.
+**Health**: Sickness and injury (0–3) heal 1 point per day. Walburga produces Arznei — the only treatment.
 
 ---
 
@@ -517,20 +535,20 @@ When 2 or more agents are at the same location, the engine runs sequential conve
 ```mermaid
 sequenceDiagram
     participant E as Engine
-    participant G as Gerda (miller)
-    participant A as Anselm (baker)
+    participant I as Irmel (Müllerin)
+    participant B as Bodo (Bäcker)
 
-    E->>G: Perception + "Anselm is here."
-    G->>E: speak: "I have flour, 6c a unit — interested?"
+    E->>I: Perception + "Bodo (Bäcker) ist hier."
+    I->>E: speak: "Ich hab Mehl, 6 Groschen das Stück — Interesse?"
     E->>E: Append to conversation context
 
-    E->>A: Perception + conversation so far
-    A->>E: speak: "Three units. I'll post a buy order."
-    A->>E: post_order: BUY flour ×3 at 6c
+    E->>B: Perception + conversation so far
+    B->>E: speak: "Drei Stück. Ich schlag ein Gesuch an."
+    B->>E: post_order: buy mehl ×3 at 6
 
     note over E: Round 2
-    E->>G: Conversation context
-    G->>E: post_order: SELL flour ×3 at 6c
+    E->>I: Conversation context
+    I->>E: post_order: sell mehl ×3 at 6
     E->>E: Orders match → executeTrade automatically
 ```
 
@@ -538,7 +556,7 @@ sequenceDiagram
 
 **Observer handling**: When 5+ agents are present, the first 4 are full participants. Remaining agents each get one solo round, see the full conversation, but don't add to it.
 
-**Acquaintance formation**: Agents who speak at the same location become acquaintances. From that point on, they know each other by name. Before that: "the farmer from Farm 1."
+**Acquaintance formation**: Agents who speak at the same location become acquaintances. From that point on, they know each other by name. Before that: "die Müllerin aus der Mühle."
 
 ---
 
@@ -549,10 +567,10 @@ Agents can extend credit to each other. The engine tracks it.
 Agents negotiate loans through speech and then use `give_coin` for transfers. The engine tracks the record.
 
 ```typescript
-// Engine loan record (created when agents negotiate a lend_coin deal):
+// Engine loan record (created when agents negotiate a lend deal):
 Loan {
-  creditor: "anselm",
-  debtor: "hans",
+  creditor: "bodo",
+  debtor: "brakel",
   amount: 10,
   issuedTick: 47,
   dueTick: 159,       // 7 simulated days
@@ -560,9 +578,9 @@ Loan {
 }
 ```
 
-- Overdue reminder injected into debtor's perception at dawn
+- Overdue reminder injected into the debtor's perception at dawn
 - Repayment via `give_coin` (no automatic collection — agents must negotiate)
-- Loan status shown in both parties' perceptions: `"You owe 10c to Anselm (due day 7)"`
+- Loan status shown in both parties' perceptions: `Darlehen: Du schuldest Bodo 10 Groschen (fällig an Tag 7)`
 
 ---
 
@@ -571,55 +589,47 @@ Loan {
 Each agent has a markdown file that the engine writes and the agent reads every turn.
 
 ```markdown
-# Anselm
+# Bodo
 
-## People
-- Gerda: reliable supplier, comes by mornings
-- Hans: owes me bread money from last week
+## Personen
+- Irmel: Müllerin, sie liefert dir das Mehl für die Backstube.
 
-## Experiences
-Spring Monday 06:00. Bakery. Produced 4 bread.
-Spring Monday 08:00. Bakery. Gerda was there. Sold 3 flour for 18c.
-Spring Monday 10:00. Village Square. Posted SELL bread ×4 at 3c.
-Spring Monday 12:00. Bakery. You are alone. (Hungry.)
-Night. Slept (well). New day.
-Spring Tuesday 06:00. Bakery. Produced 4 bread.
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-- Hans posted a buy order for bread at 2c — too low.
+## Wichtig
+*(Nichts)*
 ```
 
-The engine writes to this file after each tick. The agent reads it at the start of every turn. This creates a memory loop without any scaffolding:
+The engine appends to this file after each tick (Erlebnisse), tracks acquaintances (Personen) and keeps notable events (Wichtig). The agent reads it at the start of every turn. This creates a memory loop without any scaffolding: Bodo buys Mehl from Irmel → the engine records it → next tick Bodo knows who supplies him and at what price — whether he acts on it is up to the LLM.
 
-1. Anselm sells flour to Gerda → engine writes `"Sold 3 flour for 18c"` to memory
-2. Next tick, Anselm reads his memory → knows Gerda buys flour in the morning
-3. Next tick Anselm reads his memory — he has what he needs to anticipate demand, though whether he acts on it is up to the LLM
+**Compression**: The 20 most recent entries stay verbatim. Older entries are batch-summarized by the engine. This prevents context overflow while preserving economic history.
 
-**Compression**: The 20 most recent entries stay verbatim. Older entries are batch-summarized by the engine: `[Monday]: Produced bread. Traded with Gerda. Wallet +18c.` This prevents context overflow while preserving economic history.
+The human player has no memory file — you remember things yourself.
 
 ---
 
 ## The Action Schema
 
-Agents respond with a JSON array of actions. The engine validates each one against world state.
+In classic mode agents respond with a JSON array of actions. The engine validates each one against world state.
 
-The schema is **contextual** — agents only see actions that are relevant to their current situation. The core schema has 11 actions. Governance actions are injected only when conditions apply.
+The schema is **contextual** — agents only see actions that are relevant to their current situation.
 
 **Core actions (every tick):**
 
 ```json
 { "actions": [
-    { "type": "think",        "text": "flour running low" },
-    { "type": "speak",        "text": "Gerda, I need three units by tomorrow." },
-    { "type": "move_to",      "location": "Village Square" },
-    { "type": "produce",      "item": "bread" },
-    { "type": "eat",          "item": "bread", "quantity": 1 },
-    { "type": "post_order",   "side": "sell", "item": "bread", "quantity": 4, "price": 3 },
-    { "type": "buy_item",     "item": "flour", "max_price": 6 },
+    { "type": "think",        "text": "Mehl wird knapp" },
+    { "type": "speak",        "text": "Irmel, ich brauche drei Stück bis morgen." },
+    { "type": "move_to",      "location": "Zechenplatz" },
+    { "type": "produce",      "item": "brot" },
+    { "type": "eat",          "item": "brot", "qty": 1 },
+    { "type": "post_order",   "side": "sell", "item": "brot", "qty": 4, "price": 3 },
+    { "type": "buy_item",     "item": "mehl", "max_price": 6 },
     { "type": "cancel_order", "order_id": "ord_001" },
-    { "type": "send_message", "to": "Hans", "text": "Do you have wheat to sell?" },
-    { "type": "give_coin",    "to": "Gerda", "amount": 10 },
-    { "type": "steal",        "target": "Anselm", "item": "bread" }
+    { "type": "send_message", "to": "Brakel", "text": "Hast du Gerste zu verkaufen?" },
+    { "type": "give_coin",    "to": "Irmel", "amount": 10 },
+    { "type": "steal",        "target": "Bodo", "item": "brot" }
 ]}
 ```
 
@@ -627,89 +637,86 @@ The schema is **contextual** — agents only see actions that are relevant to th
 
 | Action | Appears when |
 |--------|-------------|
-| `call_meeting` | Otto only, when village concerns are active |
-| `petition_meeting` | Non-Otto agents, when village concerns are active |
-| `propose_rule` | At Town Hall during a meeting discussion phase |
-| `vote` | At Town Hall during a meeting vote phase |
+| `call_meeting` | Bergvogt only, when concerns are active — summons an Appell for the next morning |
+| `petition_meeting` | Everyone else, when concerns are active — asks the Bergvogt to call an Appell |
+| `propose_rule` | In the Vogtei during an Appell's discussion phase |
+| `vote` | In the Vogtei during an Appell's vote phase |
+
+`call_meeting` takes an `agenda_type`: `tax_change`, `marketplace_hours`, `banishment`, `general_rule`, `grant_tools`, `curfew`, `trade_restriction` or `repeal`.
 
 **Action constraints the engine enforces**:
 
 | Action | Rejection condition |
 |--------|-------------------|
-| `produce "bread"` | Wrong location · wrong skill · missing inputs · broken tool |
-| `buy_item "bread"` | Not at Village Square · no matching sell order · insufficient coin |
-| `move_to "Bakery"` | Bakery closed (after 2pm) · already moved this tick |
+| `produce "brot"` | Wrong location · wrong skill · missing inputs · broken tool |
+| `buy_item "brot"` | Not on the Zechenplatz · no matching sell order · insufficient Groschen |
+| `move_to "Backstube"` | Backstube closed (after 2pm) · already moved this tick |
 | `speak "..."` | Nobody else at location |
-| `eat "wheat"` | `[Can't eat] Wheat must be milled into flour first` |
-| `steal` | May fail silently · or fire `[Caught stealing]` into both parties' perceptions |
+| `eat "gerste"` | `[Nicht essbar] Gerste muss in der Mühle zu Mehl gemahlen …` |
+| `steal` | May fail silently · or fire a caught-stealing notice into both parties' perceptions |
 
-All rejections return as `[Can't do that] reason` in the next tick's perception. The agents learn from failed actions without being taught.
+All rejections return as `[Geht nicht] <reason>` (or a more specific tag such as `[Zu teuer]`, `[Nicht essbar]`, `[Kann nicht herstellen]`, `[Verboten per Ratsbeschluss]`) in the next perception. The agents learn from failed actions without being taught.
 
 ---
 
-## Village Governance
+## Colony Governance
 
-Meetings emerge from real village pressure — the engine doesn't schedule them; the environment creates the conditions that make them necessary.
+Appelle emerge from real pressure — the engine doesn't schedule them; the environment creates the conditions that make them necessary.
 
-### Village Concerns
+### Concerns
 
-Every tick the engine scans world state and generates concern lines that are injected **only into Otto's perception**:
+Every tick the engine scans world state and generates concern lines that are injected **only into the Bergvogt's perception**:
 
 ```
-[Village concern] 4 villagers have broken tools and cannot produce: Hans, Ulrich, Bertram, Heinrich.
-[Village concern] 3 villagers are going hungry.
-[Village concern] No food is listed on the marketplace — 3 hungry villagers have nowhere to buy.
-[Village concern] Volker holds 34% of all village coin (180c of 530c total).
-[Petition] Hans: "We need a meeting about tool scarcity — farmers cannot work"
-[Petition] Ulrich: "Volker won't sell tools at fair prices. This is a crisis."
+[Sorge der Kolonie] 4 Kolonisten haben kaputtes Werkzeug und können nichts herstellen: Brakel, Wenzel, Kasper, Wendel.
+[Sorge der Kolonie] 3 Kolonisten haben Hunger.
+[Sorge der Kolonie] Auf dem Tauschbrett wird kein Essen angeboten — 3 hungrige Kolonisten können nirgends kaufen.
+[Sorge der Kolonie] Eckhart besitzt 34 % aller Groschen der Kolonie (180 von 530 Groschen).
+[Gesuch] Brakel: „Wir brauchen einen Appell wegen Werkzeugmangel"
 ```
 
-Otto sees the pressure. He decides whether it warrants a meeting. The engine doesn't tell him to act.
+Reinhart sees the pressure. He decides whether it warrants an Appell. The engine doesn't tell him to act.
 
 **Concern thresholds**:
 
 | Concern | Threshold |
 |---------|-----------|
-| Broken tools | 2+ agents with 0% durability |
-| Critical tools | 3+ agents with ≤20% durability |
+| Broken tools | 2+ agents with 0% condition |
+| Critical tools | 3+ agents with ≤20% condition |
 | Hunger | 2+ agents dangerously hungry (4/5) or 3+ moderately hungry (3/5) |
-| Food drought | No food on marketplace + 2+ hungry agents |
-| Poverty | 3+ agents with fewer than 3 coin |
-| Wealth concentration | One agent holds 30%+ of all village coin |
+| Food drought | No food on the Tauschbrett + 2+ hungry agents |
+| Poverty | 3+ agents with fewer than 3 Groschen |
+| Wealth concentration | One agent holds 30%+ of all Groschen |
+| Theft | A theft was reported (suggests granting fine/seize powers or calling an Appell) |
 
-### Petitions
+### Petitions (Gesuche)
 
-Any non-Otto agent can use `petition_meeting` to send a formal request to Otto. Petitions appear in his perception for 1 in-game day (16 ticks). If multiple agents petition on the same topic independently, Otto sees the pattern and can act.
+Any agent other than the Bergvogt can use `petition_meeting` to send a formal request to him. Petitions appear in his perception for 1 in-game day (16 ticks). If several agents petition on the same topic independently, Reinhart sees the pattern and can act.
 
-### The Village Council
+### The Rat der Rottmeister
 
-Five seats are held by the trades the village cannot function without: Otto (chair), Gerda (miller), Anselm (baker), Volker (blacksmith), and Hans (senior farmer). The council is a structural fact — the seats are embedded in their profiles, not elected.
+Five seats are held by the trades the colony cannot function without: Reinhart (chair), Irmel (Müller), Bodo (Bäcker), Eckhart (Schmied) and Brakel (Rottmeister of the fields). The council is a structural fact — the seats are embedded in their profiles, not elected.
 
-The engine summons council members the evening before each meeting:
-```
-[Council duty] Village council meets tomorrow at dawn at the Town Hall. Your attendance is required.
-```
+The engine summons council members the evening before each Appell. Whether they actually show up is up to the LLM.
 
-Council members know the meeting is their responsibility. Whether they actually show up is up to the LLM.
+### The Appell
 
-### Village Meetings
+The Bergvogt calls an Appell with `call_meeting` (scheduled for the next dawn); the **Grubenglocke** rings when it opens and pulls people toward the Vogtei. God Mode can also trigger an emergency Appell. After each assembly the next daily one is scheduled automatically.
 
-Otto calls a meeting with `call_meeting` (scheduled for next dawn). God Mode can also trigger an emergency meeting that teleports all agents to the Town Hall immediately. After each meeting concludes, the next daily assembly is automatically scheduled.
+**Flow**:
 
-**Meeting flow**:
+1. **Quorum check** — At least 3 of 5 council members must be in the Vogtei (`[Beschlussfähigkeit]`). If fewer attend, the Appell fails. Other colonists may be present but do not count toward quorum.
+2. **Discussion** — 3 rounds with up to 5 participants (council members first, then general attendees fill remaining slots). Anyone can `propose_rule` with a concrete text and optional numeric value.
+3. **Vote** — All attendees vote `agree` or `disagree` on the first proposal. A simple majority + 1 of total attendees passes it.
+4. **Resolution** — Passed laws take immediate effect: Zehnt rate changes, Tauschbrett hours adjust, Sperrstunde, trade restrictions, tool grants (`fine_agent` / `seize_goods` for a named agent), Karzerstrafe, repeal of earlier laws.
 
-1. **Quorum check** — At least 3 of 5 council members must be at Town Hall. If fewer attend, the meeting fails. General villagers may also be present but do not count toward quorum.
-2. **Discussion** — 3 rounds with up to 5 participants (council members go first, then general attendees fill remaining slots). Agents speak their mind; anyone can `propose_rule` with a concrete text and optional numeric value.
-3. **Vote** — All attendees vote `agree` or `disagree` on the first proposal. Needs a simple majority + 1 of total attendees to pass.
-4. **Resolution** — Passed laws take immediate effect: tax rate changes, marketplace hours adjust, agents are banished to Prison.
+Attendees are **excluded from normal tick processing** while the Appell runs. Discussion, vote breakdown and outcome are recorded in the tick log under the `meeting` field.
 
-Meeting attendees are **excluded from normal tick processing** while the meeting runs — they can't farm or trade during a meeting. The full discussion, vote breakdown, and outcome are recorded in the tick log under the `meeting` field.
+**Active laws** persist across ticks and show up in every agent's perception under `Ratsbeschlüsse:`, together with recent violations.
 
-**Active laws** persist across ticks and are shown to all agents in their perception.
+### Karzerstrafe
 
-### Banishment
-
-If a banishment vote passes, the target is moved to Prison for a fixed duration (set by the law's value). Banned agents are force-routed to Prison each tick and released when the term expires.
+If a banishment law passes, the target is locked in the Karzer for 2 days. Sentenced agents are force-routed there each tick and released when the term ends.
 
 ## Seasons & Weather
 
@@ -717,30 +724,30 @@ If a banishment vote passes, the target is moved to Prison for a fixed duration 
 
 | Season | Temperature | Notes |
 |--------|-------------|-------|
-| Spring | 9–14°C | Full agricultural yield; simulation starts here |
-| Summer | 18–25°C | Peak cattle output; reduced timber |
-| Autumn | 5–10°C | Harvest season; similar to Spring |
-| Winter | −8 to 0°C | Crop production fails; only miners, woodcutters, specialists work |
+| Frühling | 9–14°C | Full agricultural yield; simulation starts here |
+| Sommer | 18–25°C | Peak herd output; reduced timber |
+| Herbst | 5–10°C | Harvest season; Dünnbier brewed most |
+| Winter | −8 to 0°C | Field work impossible; only miners, woodcutters, specialists work |
 
-**Production multipliers**: The engine applies season coefficients to output quantities. A farmer trying to harvest wheat in winter sees `[Can't produce] wheat is not available in winter.`
+**Production multipliers**: The engine applies season coefficients to output quantities. A field worker trying to harvest Gerste in winter gets a `[Kann nicht herstellen]` message instead.
 
 ---
 
-## What Emerges
+## Structural Pressure (What to Watch)
 
-These patterns arise from structural constraints colliding with LLM priors — not from instructions, and not from the constraints alone:
+These patterns are structurally possible; whether they happen is up to the LLMs:
 
-**1. The miller becomes a power broker** — Gerda is the only agent who can convert wheat to flour. Anselm needs flour to bake. If Gerda doesn't come to the marketplace, bread production stops. Her structural position creates a bottleneck the engine enforces — whether she exercises leverage through pricing is up to the LLM.
+**1. The miller is a bottleneck** — Irmel is the only agent who can turn Gerste into Mehl. Bodo needs Mehl to bake. If Irmel stops coming to the Zechenplatz, bread production stops. Whether she exercises leverage through pricing is up to the LLM.
 
-**2. Tool collapse cascades** — Tools degrade 3 points per use. Volker (blacksmith) is the only source of new tools. If he runs out of ore, or stops selling, farmers lose production capacity over time. Tool scarcity spreads through the supply chain.
+**2. Tool collapse cascades** — Tools wear 3 points per use. Eckhart is the only source of new Werkzeug. If he runs out of Eisenerz or Kohle, or stops selling, producers lose capacity over time.
 
-**3. Otto's Monday tax redistributes wealth** — 10% of every agent's wallet moves to Otto every week. This slowly impoverishes low-earners and enriches the richest agent. No agent is told this happens; it's just in the world state.
+**3. The Zehnt redistributes wealth** — 10% of every wallet moves to the Bergvogt every Monday (unless a law changes the rate). No agent is told this happens; it's just in the world state.
 
-**4. Starvation is a coordination problem** — Hungry agents with no food must find a seller, go to Village Square, and have coin. All three can fail simultaneously. Agents who built no trading relationships during productive ticks have no one to ask when hungry.
+**4. Starvation is a coordination problem** — A hungry agent with no food must find a seller, go to the Zechenplatz, and have Groschen. All three can fail at once. Agents who built no trading relationships have no one to ask.
 
-**5. Agents who die change the supply chain** — If Anselm starves, bread production stops. If Gerda dies, flour stops. The simulation has no safety nets. Death is permanent. The village can collapse.
+**5. Death changes the supply chain** — If Bodo starves, bread stops. If Irmel dies, Mehl stops. NPC death is permanent and the colony has no safety net.
 
-**6. Village governance emerges from scarcity** — Otto's perception accumulates `[Village concern]` lines as real thresholds are crossed: broken tools, hunger, poverty, wealth concentration. Other agents can file petitions. When enough pressure builds, Otto calls a meeting. The meeting outcome — a tax change, a forced sale, a banishment — feeds back into the supply chain the next tick.
+**6. Governance emerges from scarcity** — The Bergvogt's perception accumulates `[Sorge der Kolonie]` lines as thresholds are crossed. Others file Gesuche. When pressure builds, an Appell is called, and its outcome — a Zehnt change, a Sperrstunde, a Karzerstrafe — feeds back into the supply chain the next tick.
 
 ---
 
@@ -754,36 +761,36 @@ These patterns arise from structural constraints colliding with LLM priors — n
 ### Quick Start
 
 ```bash
-git clone <repo>
-cd brunnfeld
+git clone https://github.com/Bronxk/brunnfeld-gothic-remake schlackental
+cd schlackental
 npm install
 cp .env.example .env
 # Configure your LLM backend (see below)
 npm start
 ```
 
-If you want the Web UI:
+`npm start` / `npm run dev` build the viewer first. To build or develop the viewer by hand:
 
 ```bash
 cd viewer
 npm install
-npm run build
+npm run build        # or: npm run dev  (Vite on http://localhost:5173)
 ```
 
-The simulation starts at tick 1 (Spring, Monday 6am) and streams live to `http://localhost:3333`.
+The simulation starts at tick 1 (Frühling, Montag 06:00) and streams live to `http://localhost:3333`.
 
 ---
 
 ### LLM Backend
 
-Brunnfeld supports two backends. Pick one.
+Schlackental supports three backends. Pick one.
 
 #### Option A — Claude Code CLI (no API key needed)
 
 If you have [Claude Code](https://claude.ai/code) installed and authenticated, you're done. Leave `OPENROUTER_API_KEY` unset in `.env` and the simulation uses the `claude` CLI directly.
 
 ```env
-# .env — CLI mode (default)
+# .env — CLI mode
 CHARACTER_MODEL=haiku       # haiku · sonnet · opus
 INTERVIEW_MODEL=haiku
 ```
@@ -797,36 +804,15 @@ Set `OPENROUTER_API_KEY` and the simulation switches to OpenRouter automatically
 ```env
 # .env — OpenRouter mode
 OPENROUTER_API_KEY=sk-or-...
-CHARACTER_MODEL=minimax/minimax-m2.5:free
-INTERVIEW_MODEL=minimax/minimax-m2.5:free
+CHARACTER_MODEL=minimax/minimax-m2.7
+INTERVIEW_MODEL=minimax/minimax-m2.7
 ```
 
-To use free models, go to [openrouter.ai/settings/privacy](https://openrouter.ai/settings/privacy) and enable:
-- **"Enable free endpoints that may train on inputs"**
-- **"Enable free endpoints that may publish prompts"**
+`.env.example` ships with a recommended setup (MiniMax M2.7, harness on, concurrency 100). Other model IDs from [openrouter.ai/models](https://openrouter.ai/models) work too; free models require the privacy opt-ins at [openrouter.ai/settings/privacy](https://openrouter.ai/settings/privacy). Check current prices there — they change.
 
-**Recommended OpenRouter models:**
+#### Option C — Local model
 
-| Model | Input $/M | Output $/M | Notes |
-|---|---|---|---|
-| `minimax/minimax-m2.5:free` | $0 | $0 | Free — requires privacy opt-in above |
-| `minimax/minimax-m2.5` | $0.20 | $1.20 | Best value paid — ~$0.05/tick |
-| `minimax/minimax-m2.7` | $0.30 | $1.20 | Newest MiniMax, multi-agent focused |
-| `google/gemini-2.5-flash` | $0.30 | $2.50 | 1M context, fast |
-| `deepseek/deepseek-v3.2` | $0.26 | $0.38 | Extremely cheap, strong reasoning |
-| `meta-llama/llama-3.3-70b-instruct:free` | $0 | $0 | Free Llama — rate-limited at 20 req/min |
-| `anthropic/claude-haiku-4-5` | $1.00 | $5.00 | Original Haiku via OpenRouter |
-| `anthropic/claude-sonnet-4-6` | $3.00 | $15.00 | Best quality, highest cost |
-
-**Cost per tick** (45 agent calls, ~2K input / ~600 output tokens each):
-
-| Model | ~Cost/tick | ~Cost/sim week |
-|---|---|---|
-| Free models | $0 | $0 |
-| minimax-m2.5 | ~$0.05 | ~$5.60 |
-| deepseek-v3.2 | ~$0.03 | ~$3.00 |
-| claude-haiku-4-5 | ~$0.23 | ~$25 |
-| claude-sonnet-4-6 | ~$1.50 | ~$168 |
+Set `LOCAL_LLM_BASE_URL` (LM Studio, Ollama, any OpenAI-compatible server) and optionally `LOCAL_LLM_MODEL`.
 
 ---
 
@@ -840,25 +826,29 @@ To use free models, go to [openrouter.ai/settings/privacy](https://openrouter.ai
 | `npm run dev:resume` | Build viewer + resume (alias) |
 | `npm run tick` | Run exactly one tick |
 | `npm run reset` | Wipe state, restore initial memories |
-| `npm run server` | Start HTTP server only (viewer, no simulation) |
+| `npm run server` | Start HTTP server only (viewer + API, no simulation) |
+| `npm run viewer:dev` | Viewer dev server (Vite) |
+| `npm run viewer:build` | Build the viewer |
 | `npm run typecheck` | TypeScript check |
+| `npm run build` | Compile TypeScript to `dist/` (needed for `generate-world`) |
 
 ### World Generation
 
-Generate a custom world configuration (overwrites `data/world_config.json`):
+Generate a custom world configuration (overwrites `data/world_config.json` and `data/world_state.json`):
 
 ```bash
+npm run build
 node dist/generate-world.js --villages=2 --agents=30 --seed=42
 npm run reset && npm start
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--villages` | `1` | Number of villages (1–5) |
-| `--agents` | `19` | Total agents distributed across villages |
+| `--villages` | `1` | Number of colonies (1–5): Schlackental, Rabenstollen, Kehlhof, Moosgrund, Aschenbruch |
+| `--agents` | `19` | Agents **per colony** (7–200) |
 | `--seed` | random | Integer seed for deterministic generation |
 
-Generated agents are assigned names from a pool of ~300 medieval German names and get procedurally generated profiles (skill, home, starting coin, one-paragraph background).
+With the defaults (`--villages=1 --agents=19`) the hand-written default cast above is used. Larger or additional colonies get generated agents with German names and procedurally generated profiles (skill, home, starting Groschen, short background).
 
 ### Environment Variables
 
@@ -867,8 +857,8 @@ Generated agents are assigned names from a pool of ~300 medieval German names an
 | `OPENROUTER_API_KEY` | — | If set, enables OpenRouter backend with live streaming |
 | `CHARACTER_MODEL` | `haiku` | Model tier for agents: `haiku` / `sonnet` / `opus` (CLI) or any OpenRouter model ID |
 | `INTERVIEW_MODEL` | `haiku` | Model for the agent interview endpoint |
-| `USE_HARNESS` | `false` | Enable agentic harness mode (multi-call tool loop per agent) |
-| `OPENROUTER_MODEL` | — | Override all tiers with one OpenRouter model ID (e.g. `deepseek/deepseek-v3.2`) |
+| `USE_HARNESS` | unset (= classic) | `true` enables harness mode (multi-call tool loop per agent); `.env.example` sets it to `true` |
+| `OPENROUTER_MODEL` | — | Override all tiers with one OpenRouter model ID |
 | `OPENROUTER_MODEL_HAIKU` | — | OpenRouter model for haiku-tier calls only |
 | `OPENROUTER_MODEL_SONNET` | — | OpenRouter model for sonnet-tier calls only |
 | `OPENROUTER_MODEL_OPUS` | — | OpenRouter model for opus-tier calls only |
@@ -888,61 +878,41 @@ Generated agents are assigned names from a pool of ~300 medieval German names an
 
 ## Performance & Scaling
 
-### Tick duration
-
-Locations run in parallel (`Promise.all`), but agents within the same location are sequential (round-robin for interaction). Tick time is dominated by the **longest single-location group × calls per agent × LLM latency**.
-
-**Classic mode** (1 call per agent, OpenRouter Haiku):
-
-| Agents | `CLAUDE_CONCURRENCY` | ~Tick time |
-|---|---|---|
-| 20 | 4 | 8–15s |
-| 100 | 20 | 15–30s |
-| 500 | 50 | 30–60s |
-
-**Harness mode** (avg 5 calls per agent, OpenRouter Haiku):
-
-| Agents | `CLAUDE_CONCURRENCY` | ~Tick time |
-|---|---|---|
-| 20 | 10 | 40–90s |
-| 100 | 50 | 60–120s |
-| 500+ | 100 | 5–15 min |
-
-### The CLAUDE_CONCURRENCY ceiling
-
-`CLAUDE_CONCURRENCY` controls the semaphore on outbound HTTP requests. It helps when many locations run in parallel, but **cannot help agents within the same location** — they must be sequential so each sees what the others said.
-
-Practical ceiling:
+Locations run in parallel (`Promise.all`), but agents within the same location are sequential (round-robin for interaction). Tick time is dominated by the **longest single-location group × calls per agent × LLM latency**:
 
 ```
 tick_time ≈ max(agents at any one location) × avg_calls_per_agent × avg_latency_per_call
 ```
 
-Example: 50 agents at Village Square × 5 calls × 1.5s/call via OpenRouter ≈ **375 seconds**, regardless of concurrency.
+`CLAUDE_CONCURRENCY` controls the semaphore on outbound HTTP requests. It helps when many locations run in parallel, but **cannot help agents within the same location** — they must be sequential so each sees what the others said. Harness mode multiplies calls per agent by roughly 3–8 compared to classic mode.
+
+Example: 50 agents at the Zechenplatz × 5 calls × 1.5 s/call ≈ 375 seconds, regardless of concurrency. (Back-of-envelope arithmetic, not a benchmark.)
 
 ### Reducing tick time
 
 | Approach | Impact |
 |---|---|
-| Use a faster model (`deepseek-v3.2`, `minimax-m2.5`) | Largest — 3–5× faster |
+| Use a faster/cheaper model | Largest |
 | Use a local model via `LOCAL_LLM_BASE_URL` | Eliminates network latency |
 | Distribute agents across more locations | Reduces the longest group |
 | Lower harness budget (edit `budgetForAgent` in `harness.ts`) | Fewer calls per agent |
-| Use classic mode (`USE_HARNESS=false`) | ~5× fewer calls total |
+| Use classic mode (leave `USE_HARNESS` unset) | Far fewer calls in total |
 
 ---
 
 ## Project Structure
 
 ```
-brunnfeld/
+schlackental/
+├── docs/
+│   └── schlackental.md        # World bible: premise, terms, cast, items, German prompt glossary
 ├── src/
-│   ├── engine.ts              # Main loop — 14-phase runTick()
+│   ├── engine.ts              # Main loop — runTick()
 │   ├── agent-runner.ts        # Classic mode: perception builder · LLM calls · action dispatch
 │   ├── harness.ts             # Harness mode: tool-calling loop · budget · round-robin interleaving
-│   ├── tool-registry.ts       # 15 harness tools · per-tool validation + execution
+│   ├── tool-registry.ts       # Harness tools · per-tool validation + execution (shared with the player)
 │   ├── tools.ts               # Classic action schema + inline resolution
-│   ├── types.ts               # WorldState · AgentAction · Loan · all interfaces
+│   ├── types.ts               # WorldState · AgentAction · Loan · skill/item labels · all interfaces
 │   ├── index.ts               # CLI · initWorldState · reset logic
 │   ├── production.ts          # Recipe registry · production resolution · getProducibleItems
 │   ├── marketplace.ts         # Order book · price index · trade execution
@@ -952,13 +922,13 @@ brunnfeld/
 │   ├── memory.ts              # Agent markdown I/O · compression · migration
 │   ├── time.ts                # Tick ↔ SimTime conversion
 │   ├── village-map.ts         # Locations · adjacency · opening hours
-│   ├── world-registry.ts      # Multi-village registry · location lookup · village routing
+│   ├── world-registry.ts      # Multi-colony registry · location lookup · routing
 │   ├── location-context.ts    # Per-location state snapshot for harness (presence, conversation)
 │   ├── events.ts              # SSE EventEmitter
 │   ├── server.ts              # HTTP server · /api routes · static viewer
 │   ├── llm.ts                 # OpenRouter + Claude CLI + Local LLM · streaming · <think> stripping
-│   ├── god-mode.ts            # God Mode events · agent interview · whisper · meeting trigger
-│   ├── village-concerns.ts    # Village concern computation injected into Otto's perception
+│   ├── god-mode.ts            # World events · agent interview · whisper · Appell trigger
+│   ├── village-concerns.ts    # Concern computation injected into the Bergvogt's perception
 │   ├── economy-tracker.ts     # Economy snapshots · Gini coefficient · GDP
 │   ├── trade-scanner.ts       # Trade opportunity detection for harness agents
 │   ├── seasons.ts             # Season production multipliers
@@ -966,19 +936,18 @@ brunnfeld/
 │   ├── sounds.ts              # Sound event emission
 │   ├── messages.ts            # send_message queuing
 │   ├── doors.ts               # lock / unlock / knock resolution
-│   ├── player.ts              # Player init · immediate action resolution · soft death revive
+│   ├── player.ts              # "Der Neue": creation · action budget · /api/player logic · soft death
 │   ├── tools-degradation.ts   # Tool wear tracking
 │   └── generate-world.ts      # World generation CLI (--villages, --agents, --seed)
-├── viewer/                    # Web viewer (Vite + React + Canvas)
+├── viewer/                    # Web viewer (Vite + React + Canvas), German UI
 │   └── src/
-│       ├── canvas/            # Pixel art renderer: map · agents · decorations · animations
-│       ├── components/        # AgentPanel · MarketPanel · EconomyPanel · GodModePanel
-│       │                      # CharacterCreation · PlayerHUD · Feed
-│       └── hooks/             # SSE connection · state management (Zustand)
+│       ├── canvas/            # Lamp-lit dusk map · black slate buildings · agents · animations
+│       ├── components/        # Agent panel · market · economy · world events · feed · Vogtei view
+│       └── hooks/             # SSE connection · state management
 ├── data/
-│   ├── world_config.json      # Village/agent configuration (edited by generate-world or by hand)
+│   ├── world_config.json      # Colony/agent configuration (written by generate-world or by hand)
 │   ├── world_state.json       # Full simulation state (mutated every tick)
-│   ├── profiles/              # Agent background files (read-only, ~5 sentences each)
+│   ├── profiles/              # Agent background files (read-only, German, a few sentences each)
 │   ├── memory/                # Live agent memory files (written every tick)
 │   ├── memory_initial/        # Clean memory templates (restored on reset)
 │   └── logs/                  # Per-tick JSON logs (tick_00001.json, ...)
@@ -998,150 +967,160 @@ brunnfeld/
 | `GET /api/ticks` | GET | List of available tick log IDs |
 | `GET /api/tick/:id` | GET | Single tick log (locations, trades, productions, movements, meeting?) |
 | `GET /stream` | GET | SSE stream of live simulation events |
-| `POST /api/events/trigger` | POST | Inject a god mode event `{ eventType }` |
-| `POST /api/events/trigger-meeting` | POST | Call emergency village meeting `{ agendaType, description, target? }` |
+| `POST /api/events/trigger` | POST | Inject a world event `{ eventType }` |
+| `POST /api/events/trigger-meeting` | POST | Call an emergency Appell `{ agendaType, description, target? }` |
 | `POST /api/interview/:agent` | POST | Stream in-character agent response `{ question }` |
 | `POST /api/whisper/:agent` | POST | Queue a message to an agent `{ message }` |
-| `POST /api/player/create` | POST | Create player character `{ name, skill, location }` |
-| `POST /api/player/action` | POST | Execute a player action immediately `{ action }` |
-| `DELETE /api/player/action` | DELETE | Clear any pending player actions |
+| `GET /api/player` | GET | Player view incl. perception (see [Play as der Neue](#play-as-der-neue)) |
+| `GET /api/player/tools` | GET | Tools the player may use right now |
+| `POST /api/player/create` | POST | Create the player character `{ name, skill, force? }` |
+| `POST /api/player/action` | POST | Execute a tool `{ tool, args }` |
 
-**Player action types** (all execute immediately, no tick wait):
+**SSE event types**: `tick`, `action`, `trade`, `production`, `economy`, `order`, `thinking`, `stream`, `event`, `event_expired`, `meeting:start`, `meeting:phase`, `meeting:vote`, `meeting:result`, `meeting:end`, `meeting:quorum_fail`, `player:update`, `agent:thinking` (harness: agent started its turn), `harness:tool` (harness: agent called a tool `{agent, name, tool, summary}`)
+
+---
+
+## Play as der Neue
+
+You can walk into the colony yourself. You are **der Neue / die Neue** — the last convict brought in before the Kehlpass collapsed. You are a colonist like any other: you use the **same tools, the same handlers, the same validation, the same German feedback and the same engine pipeline** as the NPCs. No cheats, no shortcuts. The NPCs see you like any colonist: they hear what you say, answer your offers, and can trade with, hire or steal from you.
+
+### Character creation
+
+Pick a name (2–20 characters; letters, spaces, `.`, `-`, `'`; not the name of an NPC) and one of four skills:
+
+| `skill` | Label | Work location | Produces |
+|---|---|---|---|
+| `bauer` | Feldarbeiter | Unterfeld | Gerste, Rüben, Eier |
+| `knappe` | Knappe | Erzstollen | Eisenerz, Kohle |
+| `holzfaeller` | Holzfäller | Köhlerwald | Bauholz, Brennholz |
+| `none` | ohne Handwerk | Zechenplatz | nothing — trade and `hire_laborer` only |
+
+Everyone starts the same way: on the **Zechenplatz** with **15 Groschen**, **2 Brot**, a sleeping place in **Baracke 6**, and — if the skill needs a tool — a fresh Werkzeug (100/100). Hunger starts at 1, energy at 8. The Rat der Rottmeister seats, the supply chain bottlenecks and the Zehnt apply to you as to everybody else.
+
+### 5 actions per hour
+
+Every simulated hour (tick) you get a budget of **5 actions**. The budget resets when the next tick starts.
+
+- `check_inventory` and `assess_person` are free (read-only).
+- A **failed** action (any `[Geht nicht]`, `[Zu teuer]`, `[Nicht essbar]` …) costs nothing — it changed nothing.
+- Everything else costs 1 action. Over budget → HTTP `429` with `Du bist für diese Stunde erschöpft — warte auf die nächste Stunde.`
+- Same rules as NPCs: one move per hour, one production per hour. `produce` is queued and resolved by the engine at the end of the hour, together with the NPCs' production.
+- `done`, `think` and `recall` are not offered to the player (loop controls / NPC memory).
+
+### Soft death
+
+NPCs that starve die for good. You don't: if your hunger sits at 5 for two consecutive ticks, Walburga takes you in. You wake up in the **Baderhütte** with hunger 2 and energy 4 and **10 Groschen** poorer (the fee goes to Walburga; less if you have less). A `[Hinweis]` message tells you what happened.
+
+### API
+
+All endpoints are on the same server as the viewer (`http://localhost:3333`). Errors are German strings.
+
+**`POST /api/player/create`** — body `{ "name": string, "skill": "bauer" | "knappe" | "holzfaeller" | "none", "force"?: boolean }` (`skill` defaults to `none`). If a character already exists you get `409` unless you pass `"force": true`, which replaces it (your orders and loans vanish).
 
 ```bash
-# Move
-curl -X POST localhost:3333/api/player/action \
+curl -X POST localhost:3333/api/player/create \
   -H 'Content-Type: application/json' \
-  -d '{"action":{"type":"move_to","location":"Village Square"}}'
-
-# Produce
-curl -X POST localhost:3333/api/player/action \
-  -d '{"action":{"type":"produce","item":"iron_ore"}}'
-
-# Buy from marketplace
-curl -X POST localhost:3333/api/player/action \
-  -d '{"action":{"type":"buy_item","item":"bread","max_price":9999}}'
-
-# Post a sell order
-curl -X POST localhost:3333/api/player/action \
-  -d '{"action":{"type":"post_order","side":"sell","item":"iron_ore","quantity":3,"price":4}}'
-
-# Eat
-curl -X POST localhost:3333/api/player/action \
-  -d '{"action":{"type":"eat","item":"bread","quantity":1}}'
+  -d '{"name":"Jorn","skill":"knappe"}'
 ```
 
-**SSE event types**: `tick`, `action`, `trade`, `production`, `economy`, `order`, `thinking`, `stream`, `event`, `event_expired`, `player:created`, `player:update`, `player:revived`, `agent:thinking` (harness: agent started its turn), `harness:tool` (harness: agent called a tool `{agent, name, tool, summary}`)
-
----
-
-## Playing as a Villager
-
-You can join the simulation as a playable character and compete against the 20 NPC agents to earn more coin.
-
-### Character Creation
-
-When you open the viewer before creating a character, a full-screen creation overlay appears. Pick a name, a skill, and a starting location — or click **Just Watch** to observe without playing.
-
-| Skill | Starting Coin | Work Location | Produces |
-|-------|:---:|---|---|
-| Farmer | 20c | Farm 1 | wheat, vegetables, eggs |
-| Baker | 20c | Bakery | bread (needs flour) |
-| Miner | 20c | Mine | iron_ore, coal |
-| Carpenter | 20c | Carpenter Shop | furniture (needs timber) |
-| Blacksmith | 20c | Forge | iron_tools (needs iron_ore + coal) |
-| Merchant | 30c | Village Square | nothing — trade only |
-
-### The Player HUD
-
-Once created, a 200px sidebar appears on the left with:
-
-```
-┌──────────────────┐
-│ Klaus            │  name + skill + location
-│ Miner · Mine     │
-│ 20c              │  wallet
-│ ████░ Hunger     │  5-bar indicators
-│ ████████░ Energy │
-├──────────────────┤
-│ ACT NOW          │
-│ [Move To ▼]  Go  │  instant teleport + walk animation
-│ [Produce ▼] Do   │  craft immediately
-│ [Buy Item ▼] Buy │  buy from marketplace now
-│ [Post Order]     │  list item for sale
-│ [Eat (bread)]    │  eat from inventory
-│ [Rest]           │
-├──────────────────┤
-│ INVENTORY        │
-│ iron_ore ×3      │
-├──────────────────┤
-│ LEADERBOARD      │
-│ 1. Hans   142c   │
-│ 2. Ida    118c   │
-│ 3. You     23c ← │
-└──────────────────┘
+```json
+{
+  "ok": true,
+  "created": true,
+  "name": "Jorn",
+  "skill": "knappe",
+  "skillLabel": "Knappe",
+  "location": "Zechenplatz",
+  "home": "Baracke 6",
+  "work": "Erzstollen",
+  "body": { "hunger": 1, "energy": 8, "sleep_quality": "good" },
+  "wallet": 15,
+  "inventory": [{ "type": "brot", "quantity": 2 }],
+  "tool": { "type": "werkzeug", "durability": 100 },
+  "budgetLeft": 5,
+  "budget": 5,
+  "tick": 1,
+  "time": "...",
+  "perception": "Du bist Jorn. Ort: Zechenplatz. ..."
+}
 ```
 
-### Immediate Actions
+(`time` is the hour label, `perception` the exact text an NPC at your spot would get.) Errors: `400` with `{ "ok": false, "error": "..." }` for a bad name or skill.
 
-All player actions execute **instantly** when you click — no waiting for the next tick:
+**`GET /api/player`** — the same view as above incl. `perception`. Before creation it returns `{ "created": false, ... }`.
 
-- **Move** → location updates on the map with a walk animation
-- **Produce** → crafted immediately using your current location + skill
-- **Buy** → marketplace trade executes right now
-- **Post Order** → sell listing appears on the order board immediately
-- **Eat / Rest** → hunger and energy update instantly
+**`GET /api/player/tools`** — what you may do right now; the list depends on place and situation, like for NPCs.
 
-The engine still runs NPC ticks concurrently. Player actions are resolved against live world state the moment the button is clicked, then broadcast to the viewer via SSE.
+```json
+{
+  "tools": [
+    { "name": "move_to", "description": "Geh an einen Ort", "argsHint": "{\"location\": \"Zechenplatz\"}", "free": false },
+    { "name": "check_inventory", "description": "Zeig dein Inventar und deinen Geldbeutel", "argsHint": "{}", "free": true }
+  ],
+  "budgetLeft": 5,
+  "budget": 5
+}
+```
 
-### Soft Death
+`409` `{ "ok": false, "error": "Du bist noch nicht in der Kolonie angekommen." }` before creation.
 
-If your hunger reaches 5 for 3 consecutive ticks, Pater Markus revives you at the Healer's Hut at a cost of **−10 coin**.
+**`POST /api/player/action`** — body `{ "tool": string, "args"?: object }`. `tool` is one of the names from `/api/player/tools`; `args` as in the tool tables above.
 
----
+```bash
+# Walk to the mine, dig, come back, sell
+curl -X POST localhost:3333/api/player/action -H 'Content-Type: application/json' \
+  -d '{"tool":"move_to","args":{"location":"Erzstollen"}}'
+curl -X POST localhost:3333/api/player/action -H 'Content-Type: application/json' \
+  -d '{"tool":"produce","args":{"item":"eisenerz"}}'
+curl -X POST localhost:3333/api/player/action -H 'Content-Type: application/json' \
+  -d '{"tool":"post_order","args":{"side":"sell","item":"eisenerz","qty":3,"price":4}}'
+curl -X POST localhost:3333/api/player/action -H 'Content-Type: application/json' \
+  -d '{"tool":"speak","args":{"text":"Gisbert, hast du Kohle übrig?"}}'
+```
+
+```json
+{
+  "ok": true,
+  "text": "<German result string of the tool>",
+  "player": { "created": true, "name": "Jorn", "location": "Erzstollen", "wallet": 15, "budgetLeft": 4, "budget": 5, "...": "..." }
+}
+```
+
+`text` is the German result string exactly as an NPC would receive it; `ok` is `false` when it starts with a failure tag such as `[Geht nicht]`. `player` is the updated view (without `perception`). Status codes: `200` done (also for in-world failures, see `ok`), `400` unknown/unavailable tool or bad body, `409` no character yet, `429` budget used up. `text` of player speech is clamped to one line of 240 characters because it ends up in NPC prompts.
+
+**SSE `player:update`** — `GET /stream` pushes `{ "type": "player:update", ...view }` (the same view as `GET /api/player`, without `perception`) after creation, after every action, and when the engine changes your state (new hour, soft death). The viewer uses it to keep your panel live.
+
+Without a running simulation (`npm run server`) the player API reads and writes `world_state.json` directly; while `npm start` runs, actions act on the live tick state.
 
 ---
 
 ## God Mode & Agent Interview
 
-The viewer's **Events tab** lets you inject disruptions into the running simulation and watch the consequences ripple through the economy tick by tick.
+The viewer's events panel lets you inject disruptions into the running simulation and watch the consequences ripple through the economy tick by tick. (Event ids in the API stay English.)
 
-### God Mode Events
+### World Events
 
-| Event | Effect | Duration |
+| Event (`eventType`) | Effect | Duration |
 |---|---|---|
-| 🌵 **Drought** | Farm yields halved | 3 sim days (48 ticks) |
-| 🐪 **Caravan** | Merchant arrives with cheap goods at 70% market price | 1 sim day (16 ticks) |
-| ⛏ **Mine Collapse** | Ore production blocked entirely | 2 sim days (32 ticks) |
-| 🌾 **Double Harvest** | Farm yields doubled | 1 sim day (16 ticks) |
-| ☠ **Plague Rumor** | Medicine demand surges, agents panic-buy | 2 sim days (32 ticks) |
-| 🗡 **Bandit Threat** | 5% per-tick theft risk for all agents | 2 sim days (32 ticks) |
-| 🏛 **Call Village Meeting** | Teleports all agents to Town Hall immediately; meeting fires next tick | instant |
+| **Dürre** (`drought`) | Field and herd yields halved | 3 sim days (48 ticks) |
+| **Schmugglerzug** (`caravan`) | Smugglers arrive over the goat path with cheap goods at 70% market price | 1 sim day (16 ticks) |
+| **Stolleneinbruch** (`mine_collapse`) | Eisenerz and Kohle production blocked entirely | 2 sim days (32 ticks) |
+| **Reiche Ernte** (`double_harvest`) | Farm yields doubled | 1 sim day (16 ticks) |
+| **Fiebergerücht** (`plague_rumor`) | Arznei demand surges, agents panic-buy | 2 sim days (32 ticks) |
+| **Wegelagerer** (`bandit_threat`) | 5% per-tick theft risk for all agents | 2 sim days (32 ticks) |
+| **Appell einberufen** | Emergency assembly (`POST /api/events/trigger-meeting`) | instant |
 
-Events broadcast a message to affected agents via the message queue, so they respond in-character next tick. Active events are shown with a live countdown in the viewer.
+Events broadcast a message to affected agents via the message queue, so they respond in character next tick. Active events are shown with a live countdown in the viewer.
 
-The **Call Village Meeting** button accepts an agenda type, description, and optional banishment target. All agents are teleported to Town Hall and the meeting fires on the next tick — quorum is guaranteed.
+The emergency Appell accepts an `agendaType` (`tax_change`, `marketplace_hours`, `banishment`, `general_rule`), a description and an optional target for Karzerstrafe; by default it teleports everyone to the Vogtei.
 
 ### Agent Interview
 
-Click any villager → scroll to **Interview** → ask them anything. The response streams live in character, grounded in their actual memory, inventory, wallet, and current village events.
-
-```
-"Hans, how are your crops?"
-→ "The wheat's been thin this week — drought hit us bad, and my tools
-   are near worn through. I've twenty coin left and Volker wants twelve
-   for a new set. I'll manage, God willing."
-```
+Click any colonist → **Interview** → ask them anything. The response streams live in character, grounded in their actual memory, inventory, wallet and current events.
 
 ### Whisper
 
 Type a rumor into the **Whisper** field while an agent is selected. They receive it as a message next tick and may act on it — adjust prices, hoard goods, warn others.
-
-```
-"Whisper to Anselm: bread prices will triple by winter"
-→ Anselm receives: "A villager whispered: bread prices will triple by winter"
-→ Watch his next-tick behavior
-```
 
 ---
 
@@ -1149,13 +1128,12 @@ Type a rumor into the **Whisper** field while an agent is selected. They receive
 
 The web viewer at `http://localhost:5173` (dev) or `http://localhost:3333` (production build) renders the simulation in real time:
 
-- **Canvas map** — 22 locations, pixel-art buildings, agent sprites with walk animations
-- **Terrain decorations** — rocks and bushes placed at stable seeded positions throughout the map (mine area, riverbanks, forest, farms, between cottages)
-- **Day/night cycle** — darkness overlay from 6pm, lifted at dawn
-- **Agent sprites** — pawn/warrior/monk sprites per role; your character uses an inverted-color samurai sprite with a gold ring
-- **Right panel** — Agent detail, marketplace, economy charts, God Mode events
-- **Activity drawer** — collapsible scene chronicle at the bottom
-- **Economy strip** — always-visible wealth bar across the bottom
+- **Lamp-lit dusk map** — black slate buildings, warm lamp light, soot and rust; pixel-art units with walk animations
+- **German UI** — every label, tooltip and feed entry
+- **Mobile layout** — on phones the side panel becomes a bottom sheet under the map; the chronicle is a tab in that sheet
+- **Right panel** — agent detail, Tauschbrett, economy charts, world events
+- **Activity drawer** — collapsible scene chronicle
+- **Economy strip** — always-visible wealth bar
 
 ---
 
@@ -1163,29 +1141,25 @@ The web viewer at `http://localhost:5173` (dev) or `http://localhost:3333` (prod
 
 Most agent setups give LLMs goals and hope economic behavior follows. This project inverts it: **build the supply chain, not the trading strategy.**
 
-The engine enforces the physics: wheat must be milled before baking, tools degrade per use, hunger builds every four hours, bakeries close at 2pm. These constraints are real — they block actions, create scarcity, cause cascades. They're not metaphors.
+The engine enforces the physics: barley must be milled before baking, tools wear per use, hunger builds every four hours, the Backstube closes at 2pm, a Sperrstunde sends you home. These constraints are real — they block actions, create scarcity, cause cascades. They're not metaphors.
 
-The LLM brings the rest: it knows what a miller does, what starvation feels like, what unpaid debts mean. The two-line background activates those priors. You don't need to instruct Gerda to price her flour competitively — the LLM already knows that's what millers do. You just need to make flour actually necessary for bread production.
-
-What you can't get from either alone: Hans paying Konrad 30 coin across two transactions, Konrad claiming no record of either payment, Hans threatening the village court. No pretraining pattern exists for that specific chain. It required the LLM's understanding of debt and fraud colliding with the engine's actual wallet ledger producing actual discrepancies. That's the demo.
-
-**The honest claim**: when you build a real economy around LLMs, they do economics. Not because they discover it from first principles. Because they already know what economics looks like, and now the consequences are real.
+The LLM brings the rest: it knows what a miller does, what starvation feels like, what an unpaid debt means. A few sentences of background activate those priors. You don't need to instruct Irmel to price her Mehl competitively — the LLM already knows what millers do. You just need to make Mehl actually necessary for bread.
 
 ---
 
 ## Contributing
 
-The engine is intentionally small (~3K lines of TypeScript). Good areas to contribute:
+The engine is intentionally small. Good areas to contribute:
 
-- New production recipes or seasonal events
-- Additional village archetypes (market town, mining camp, port)
+- New production recipes or world events
+- Additional settlement archetypes beyond the five colonies
 - Viewer improvements (trade graph, wealth chart, agent timeline)
 - New LLM backends or model configs
 
-Open an issue before large PRs — the design constraints are load-bearing.
+Open an issue before large PRs — the design constraints are load-bearing. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Author
+## Credits
 
-Built by **Marco Patzelt** — [marcopatzelt7@gmail.com](mailto:marcopatzelt7@gmail.com)
+Forked from [Brunnfeld](https://github.com/marcopatzelt/brunnfeld) by marcopatzelt (MIT License, see [LICENSE](./LICENSE)). The engine foundation comes from there; the setting (Schlackental), the characters, the story, the German texts and the viewer look are original.
