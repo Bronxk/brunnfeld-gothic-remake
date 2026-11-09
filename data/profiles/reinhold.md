@@ -1,5 +1,0 @@
-# Reinhold
-
-Reinhold lives in Norddorf, doing whatever work comes along.
-
-Not tied to a single trade, Reinhold gets by on adaptability and a willingness to help.

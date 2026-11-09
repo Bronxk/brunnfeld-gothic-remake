@@ -1,7 +1,7 @@
 # Bodo
 
 ## People
-*(Nobody known yet)*
+- Irmel: Müllerin, sie liefert dir das Mehl für die Backstube.
 
 ## Experiences
 *(Nothing yet)*

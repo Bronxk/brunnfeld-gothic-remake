@@ -1,7 +1,7 @@
 # Wendel
 
 ## People
-*(Nobody known yet)*
+- Brakel: Rottmeister der Feldrotte und dein Bettnachbar in Baracke 1.
 
 ## Experiences
 *(Nothing yet)*
