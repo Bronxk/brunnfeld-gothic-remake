@@ -1148,13 +1148,13 @@ With two or more colonies, every pair has a relation: **Frieden**, **Spannung** 
 - **Stirring trouble (observer):** `POST /api/war/provoke` with `{ from, to, kind }`. The kinds are `grenzstreit`, `diebstahl`, `beleidigung` and `geruecht`. Each raises tension by 20–35 and tells both colonies what happened from their own side. A `diebstahl` really moves a little Groschen or goods. From tension 60 the relation turns to Spannung. From 85 the victim's council is summoned to vote on war; whether they declare it is up to the LLM council.
 - **Hard levers:** `POST /api/war/declare` (`{ aggressor, target }`), `POST /api/war/peace` (`{ a, b }`) and `POST /api/war/tribute` (`{ payer, receiver, amount }`). A peace starts a 24-tick truce.
 - **What colonists can do:**
-  - `ueberfallen` raids an enemy colony. The raider must travel the road and be inside the enemy colony.
+  - `ueberfallen` starts a **Kriegszug** (war march) from the home colony or a road. The raiders walk the road for its transit time without LLM turns (no token cost), raid on arrival and walk home afterwards. Several raiders on the same tick march and fight together. If peace is made meanwhile, the party turns back without fighting.
   - `wache_halten` guards their own colony and counts double in defence.
   - Councils can vote on `declare_war`, `make_peace` (an offer the other council must accept) and `pay_tribute`.
 - **Raid resolution, once per tick:** raiders' strength is compared with present defenders, with a random factor of 0.75–1.25. A won raid takes up to 20 % of the target's market stock and up to 15 % of the defenders' Groschen, at most 60 Groschen per raid. The losing side's fighters may be wounded. Goods and Groschen only change hands; nothing is created.
 - **Trade during war:** enemies are not served at each other's markets.
 - **Prompts:** colonists see a short "Lage" block in their prompt.
-- **Viewer events:** `GET /api/war` lists the relations and the last war events. The viewer gets SSE `war:update`, `war:event` and `war:raid`.
+- **Viewer events:** `GET /api/war` lists the relations and the last war events. The viewer gets SSE `war:update`, `war:event`, `war:raid` and `war:march` (`{ agent, target, phase, arriveTick }`, phases `hin`, `kampf`, `zurueck`, `heim`).
 
 ### Director Controls (Regie)
 
@@ -1190,6 +1190,17 @@ The web viewer at `http://localhost:5173` (dev) or `http://localhost:3333` (prod
 - **Right panel** — agent detail, Tauschbrett, economy charts, world events
 - **Activity drawer** — collapsible scene chronicle
 - **Economy strip** — always-visible wealth bar
+
+### 3D view
+
+The **2D / 3D** switch in the top bar opens a 3D diorama of all colonies (three.js, loaded only on demand; the choice is remembered in the browser).
+
+- **Fly around:** drag to orbit, right-drag / Shift-drag / WASD to pan, wheel or pinch to zoom. The buttons on the right zoom, reset the view and focus the selected colonist.
+- **Follow-cam:** click a figure (or a colonist in the list) and the camera follows them.
+- **Auto-Tour:** the camera drifts between lively scenes on its own, including raids.
+- **Day and night:** the slider top left sets the time of day; *Auto* follows the simulation clock.
+- **War:** raids show as fire and smoke in the target colony; speech bubbles and model badges float over the figures.
+- During an Appell the scene stays in 3D; a button opens the Vogtei view.
 
 ---
 
