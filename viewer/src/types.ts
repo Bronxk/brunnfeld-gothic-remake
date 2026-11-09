@@ -179,6 +179,8 @@ export interface SimStatus {
   /** Pause between two ticks in ms (0 = as fast as possible). */
   tickDelayMs: number;
   pausedReason?: string;
+  /** Fresh world that has not started yet; "Weiter"/"1 Tick" start it. */
+  awaitingStart?: boolean;
 }
 
 // ─── Regie: live role of a colonist (backend: GET/POST /api/agents/<id>/role, SSE agent:role) ───

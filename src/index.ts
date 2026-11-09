@@ -10,6 +10,7 @@ import type { WorldState } from "./types.js";
 import { ALL_ITEMS } from "./types.js";
 import { PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION } from "./village-map.js";
 import { eventBus } from "./events.js";
+import { setAwaitingStart } from "./sim-control.js";
 import { llmBackendLabel } from "./llm.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -283,7 +284,9 @@ async function main(): Promise<void> {
   }
 
   console.log("  Waiting for world configuration… Open http://localhost:3333");
+  setAwaitingStart(true);
   await new Promise<void>(resolve => eventBus.once("sim:start", resolve));
+  setAwaitingStart(false);
 
   await runSimulation();
 }

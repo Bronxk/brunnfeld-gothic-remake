@@ -6,7 +6,7 @@
  * Env SIM_START_PAUSED=true starts the simulation paused.
  */
 
-import { emitSSE } from "./events.js";
+import { emitSSE, eventBus } from "./events.js";
 import { clearPendingRoleSync } from "./world-registry.js";
 
 export interface SimControlStatus {
@@ -15,6 +15,23 @@ export interface SimControlStatus {
   budget: number | null;
   tickDelayMs: number;
   pausedReason?: string;
+  /** Fresh world: the loop has not started yet; resume/step start it. */
+  awaitingStart?: boolean;
+}
+
+/** True while index.ts waits for "sim:start" before the very first tick. */
+let awaitingStart = false;
+
+export function setAwaitingStart(value: boolean): void {
+  awaitingStart = value;
+  emit();
+}
+
+/** Fires "sim:start" once if the loop is still waiting for it (same as POST /api/start). */
+function startIfWaiting(): void {
+  if (!awaitingStart) return;
+  awaitingStart = false;
+  eventBus.emit("sim:start");
 }
 
 const MAX_DELAY_MS = 600_000;
@@ -39,6 +56,9 @@ function emit(): void {
 }
 
 export function getSimControl(): SimControlStatus {
+  if (awaitingStart) {
+    return { paused: true, budget, tickDelayMs, pausedReason: "Wartet auf den Start.", awaitingStart: true };
+  }
   const status: SimControlStatus = { paused, budget, tickDelayMs };
   if (paused && pausedReason) status.pausedReason = pausedReason;
   return status;
@@ -56,12 +76,22 @@ export function resumeSim(): void {
   pausedReason = undefined;
   stepRequested = false;
   if (budget === 0) budget = null; // resuming after an exhausted budget means "no cap" until a new one is set
+  startIfWaiting();
   wake();
   emit();
 }
 
 /** Run exactly one tick while paused (no effect on a running simulation). */
 export function requestStep(): void {
+  if (awaitingStart) {
+    // Start the loop held: exactly the first tick runs, then it waits for the observer.
+    paused = true;
+    pausedReason = "Vom Beobachter pausiert.";
+    stepRequested = true;
+    startIfWaiting();
+    emit();
+    return;
+  }
   if (!paused) return;
   stepRequested = true;
   wake();

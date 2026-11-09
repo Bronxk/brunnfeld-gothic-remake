@@ -100,7 +100,7 @@ function SimSection() {
       <div className="evc" data-tone={tone}>
         <span className="eico">{sim ? <SimGlyph kind={paused ? "pause" : "play"} /> : <Icon name="hourglass" />}</span>
         <div>
-          <h3>{!sim ? "Status unbekannt" : paused ? "Pausiert" : "Läuft"}</h3>
+          <h3>{!sim ? "Status unbekannt" : sim.awaitingStart ? "Bereit zum Start" : paused ? "Pausiert" : "Läuft"}</h3>
           <p>
             {!sim ? "Keine Verbindung zur Sim-Steuerung."
               : paused ? (sim.pausedReason ?? "Die Simulation wartet.")
@@ -122,7 +122,7 @@ function SimSection() {
           disabled={!sim || busy !== null}
           onClick={() => void run("toggle", () => simCommand(paused ? "resume" : "pause"))}
         >
-          <SimGlyph kind={paused ? "play" : "pause"} />{paused ? "Weiter" : "Pause"}
+          <SimGlyph kind={paused ? "play" : "pause"} />{sim?.awaitingStart ? "Starten" : paused ? "Weiter" : "Pause"}
         </button>
         <button
           className="btn"

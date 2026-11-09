@@ -97,7 +97,7 @@ export default function TimeHUD() {
         disabled={!sim || ppBusy}
         onClick={() => void togglePause()}
         aria-label={paused ? "Simulation fortsetzen" : "Simulation pausieren"}
-        title={!sim ? "Sim-Steuerung nicht erreichbar" : paused ? `Pausiert${sim.pausedReason ? `: ${sim.pausedReason}` : ""} – klicken zum Fortsetzen` : "Läuft – klicken zum Pausieren"}
+        title={!sim ? "Sim-Steuerung nicht erreichbar" : sim.awaitingStart ? "Bereit – klicken zum Starten" : paused ? `Pausiert${sim.pausedReason ? `: ${sim.pausedReason}` : ""} – klicken zum Fortsetzen` : "Läuft – klicken zum Pausieren"}
       >
         <SimGlyph kind={paused ? "play" : "pause"} />
       </button>
