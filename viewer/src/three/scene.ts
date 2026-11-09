@@ -89,6 +89,8 @@ export class ColonyScene {
   private bursts: FireBurst[] = [];
   private labels: { el: HTMLElement; pos: THREE.Vector3 }[] = [];
   private walkers = new Map<string, Walker>();
+  /** Agents currently on a war march (get a banner). */
+  private marchers = new Set<string>();
   private rings: { sel: THREE.Mesh; hov: THREE.Mesh };
   private selected: string | null = null;
   private hoverFig: string | null = null;
@@ -369,6 +371,7 @@ export class ColonyScene {
       if (prev.craft !== info.craft || w.fig.craft !== info.craft) w.fig.setCraft(info.craft);
       w.fig.setBadge(info.badge);
       w.fig.setVitals(info.vitals);
+      w.fig.setMarching(this.marchers.has(info.id));
       if (w.loc !== info.loc && this.layout) {
         if (info.vitals === "dead") this.placeWalker(w, info.loc, true);
         else this.walkTo(w, info.loc);
@@ -406,6 +409,12 @@ export class ColonyScene {
     w.speed = Math.max(5.5, len / 16);
     w.loc = loc;
     if (this.reduced) { w.pos = { ...to }; w.route = []; }
+  }
+
+  /** Mark the agents on a war march with a red banner. */
+  setMarchers(ids: string[]): void {
+    this.marchers = new Set(ids);
+    for (const [id, w] of this.walkers) w.fig.setMarching(this.marchers.has(id));
   }
 
   setSelected(id: string | null): void {

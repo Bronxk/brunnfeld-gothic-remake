@@ -85,6 +85,8 @@ export interface Figure {
   /** "alive" normal, "sleep" lying + dimmed, "dead" lying + very dark. */
   setVitals(v: "alive" | "sleep" | "dead"): void;
   setEmissive(hex: number): void;
+  /** War march (Kriegszug): carries a red banner on a pole. */
+  setMarching(on: boolean): void;
   anim(state: FigureAnim, t: number, phase: number): void;
   dispose(): void;
 }
@@ -141,6 +143,17 @@ export function makeFigure(id: string, craft: string): Figure {
   badge.visible = false;
   root.add(badge);
 
+  // War banner (hidden unless on a march): pole beside the figure, red flag on top.
+  const banner = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.3, 5), new THREE.MeshLambertMaterial({ color: 0x4a3a28 }));
+  pole.position.y = 1.15;
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.03), new THREE.MeshBasicMaterial({ color: 0xc02a1e }));
+  flag.position.set(0.33, 2.0, 0);
+  banner.add(pole, flag);
+  banner.position.set(0.5, 0, 0.05);
+  banner.visible = false;
+  root.add(banner);
+
   const fig: Figure = {
     id, group: root, hit, badge, craft, lying: false,
     setCraft(c) {
@@ -179,6 +192,7 @@ export function makeFigure(id: string, craft: string): Figure {
       fig.lying = v !== "alive";
     },
     setEmissive(hex) { for (const m of litMats) m.emissive.setHex(hex); },
+    setMarching(on) { banner.visible = on; },
     anim(state, t, ph) {
       if (fig.lying) { legL.p.rotation.x = legR.p.rotation.x = armL.p.rotation.x = armR.p.rotation.x = 0; return; }
       const w = state === "walk";
@@ -192,6 +206,8 @@ export function makeFigure(id: string, craft: string): Figure {
     dispose() {
       root.traverse((o) => { (o as THREE.Mesh).geometry?.dispose(); });
       for (const m of mats.values()) m.dispose();
+      (pole.material as THREE.Material).dispose();
+      (flag.material as THREE.Material).dispose();
       (badge.material as THREE.SpriteMaterial).dispose();
     },
   };

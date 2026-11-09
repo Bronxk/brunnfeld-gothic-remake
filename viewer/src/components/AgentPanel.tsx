@@ -222,6 +222,109 @@ function ModelPicker({ agent }: { agent: AgentName }) {
   );
 }
 
+// ─── Role editor (Regie: craft, council seat, director's note) ─
+
+const CHARACTER_MAX = 600;
+
+function RoleEditor({ agent }: { agent: AgentName }) {
+  const role = useVillageStore((s) => s.agentRoles[agent]);
+  const skills = useVillageStore((s) => s.roleSkills);
+  const loadAgentRole = useVillageStore((s) => s.loadAgentRole);
+  const saveAgentRole = useVillageStore((s) => s.saveAgentRole);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [busy, setBusy] = useState<"skill" | "council" | "character" | null>(null);
+  const [draft, setDraft] = useState("");
+  const first = AGENT_DISPLAY[agent].split(" ")[0];
+
+  // Load on selection; a cached role is shown right away and refreshed.
+  useEffect(() => {
+    let alive = true;
+    setLoadFailed(false);
+    void loadAgentRole(agent).then((ok) => { if (alive && !ok) setLoadFailed(true); });
+    return () => { alive = false; };
+  }, [agent, loadAgentRole]);
+
+  // Follow the server value (initial load, SSE agent:role, save).
+  useEffect(() => { setDraft(role?.character ?? ""); }, [agent, role?.character]);
+
+  if (!role) {
+    return loadFailed ? (
+      <div className="sec">
+        <div className="sec-h"><span>Rolle</span></div>
+        <div className="note bad" role="alert"><Icon name="warn" />Rolle konnte nicht geladen werden.</div>
+      </div>
+    ) : null;
+  }
+
+  async function run(what: "skill" | "council" | "character", patch: { skill?: string; council?: boolean; character?: string }) {
+    setBusy(what);
+    try {
+      await saveAgentRole(agent, patch);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const dirty = draft !== role.character;
+
+  return (
+    <div className="sec">
+      <div className="sec-h"><span>Rolle</span><small>Regie · wirkt ab dem nächsten Tick</small></div>
+      <div className="talk">
+        <label className="fld">
+          <span className="fld-l">Handwerk</span>
+          <select
+            className="inp"
+            aria-label={`Handwerk von ${first}`}
+            value={role.skill}
+            disabled={busy !== null}
+            onChange={(e) => void run("skill", { skill: e.target.value })}
+          >
+            {!skills.some((o) => o.id === role.skill) && <option value={role.skill}>{skillLabel(role.skill)}</option>}
+            {skills.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </label>
+
+        <div className="togrow">
+          <span>
+            <b>Ratsmitglied</b>
+            <small className="muted">
+              {role.isElder ? "Der Älteste sitzt immer im Rat." : role.council ? "Wird zum Appell geladen." : "Bleibt dem Appell fern."}
+            </small>
+          </span>
+          <button
+            type="button"
+            className="sw"
+            role="switch"
+            aria-checked={role.council}
+            aria-label={`${first} ist Ratsmitglied`}
+            disabled={role.isElder || busy !== null}
+            title={role.isElder ? "Der Älteste kann nicht aus dem Rat entfernt werden." : undefined}
+            onClick={() => void run("council", { council: !role.council })}
+          />
+        </div>
+
+        <label className="fld">
+          <span className="fld-l">Charakter-Notiz <small className="muted">{draft.length}/{CHARACTER_MAX}</small></span>
+          <textarea
+            className="inp"
+            rows={4}
+            maxLength={CHARACTER_MAX}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={`Regieanweisung für ${first}, z. B. „misstrauisch gegenüber Fremden, hütet ein Geheimnis“ …`}
+            aria-label={`Charakter-Notiz für ${first}`}
+          />
+        </label>
+        <button className="btn block" disabled={!dirty || busy !== null} onClick={() => void run("character", { character: draft.trim() })}>
+          <Icon name={busy === "character" ? "hourglass" : "check"} className={busy === "character" ? "spin" : ""} />
+          {busy === "character" ? "Speichert …" : dirty ? "Notiz speichern" : "Notiz gespeichert"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Colonist detail ──────────────────────────────────────────
 
 const THOUGHT_META: Record<string, { label: string; icon: IconName }> = {
@@ -478,6 +581,7 @@ export default function AgentPanel() {
       {/* The human player is not an LLM agent: no interview, no whispering. */}
       {selectedAgent !== "player" && (<>
       <ModelPicker agent={selectedAgent} />
+      <RoleEditor agent={selectedAgent} />
 
       <div className="sec">
         <div className="sec-h"><span>{first} befragen</span></div>

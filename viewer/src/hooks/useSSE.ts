@@ -33,6 +33,8 @@ export function useSSE(): void {
     void useVillageStore.getState().loadAgentModels();
     // War relations between settlements (silently empty when the backend has no war support)
     void useVillageStore.getState().loadWar();
+    // Sim control (paused / budget / tempo); logs its own errors. Live changes arrive as SSE sim:control.
+    void useVillageStore.getState().loadSim();
 
     // 2. Load available tick IDs and seed the feed with recent history
     fetch("/api/ticks")
@@ -63,7 +65,13 @@ export function useSSE(): void {
 
     function connect() {
       es = new EventSource("/stream");
-      es.onopen = () => setConnected(true);
+      es.onopen = () => {
+        setConnected(true);
+        // Events may have been missed while offline: refresh the Regie state.
+        const st = useVillageStore.getState();
+        void st.loadSim();
+        void st.loadWar();
+      };
       es.onmessage = (ev) => {
         try {
           const event = JSON.parse(ev.data) as SSEEvent;

@@ -4,18 +4,18 @@ import { useIsMobile } from "../theme";
 import AgentPanel from "./AgentPanel";
 import MarketPanel from "./MarketPanel";
 import StockMarketPanel from "./StockMarketPanel";
-import GodModePanel from "./GodModePanel";
+import RegiePanel from "./RegiePanel";
 import { ChronikPane } from "./ActivityDrawer";
 import Icon, { type IconName } from "./Icon";
 
-type TabId = "kolonist" | "tausch" | "wirtschaft" | "ereignisse" | "chronik";
+type TabId = "kolonist" | "tausch" | "wirtschaft" | "regie" | "chronik";
 type Sheet = "closed" | "half" | "full";
 
 const TABS: { id: TabId; label: string; icon: IconName; mobileOnly?: boolean }[] = [
   { id: "kolonist", label: "Kolonist", icon: "user" },
   { id: "tausch", label: "Tauschbrett", icon: "swap" },
   { id: "wirtschaft", label: "Wirtschaft", icon: "chart" },
-  { id: "ereignisse", label: "Ereignisse", icon: "bell" },
+  { id: "regie", label: "Regie", icon: "gavel" },
   { id: "chronik", label: "Chronik", icon: "book", mobileOnly: true },
 ];
 
@@ -83,7 +83,7 @@ export default function RightPanel() {
           {activeTab === "kolonist" && <AgentPanel />}
           {activeTab === "tausch" && <MarketPanel />}
           {activeTab === "wirtschaft" && <StockMarketPanel />}
-          {activeTab === "ereignisse" && <GodModePanel />}
+          {activeTab === "regie" && <RegiePanel />}
           {activeTab === "chronik" && <ChronikPane />}
         </section>
       </div>

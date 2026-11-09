@@ -106,6 +106,7 @@ export default function ThreeView({ onOpenMeeting }: ThreeViewProps) {
   const selected = useVillageStore((s) => s.selectedAgent);
   const agentModels = useVillageStore((s) => s.agentModels);
   const warRelations = useVillageStore((s) => s.warRelations);
+  const warMarches = useVillageStore((s) => s.warMarches);
   const activeMeeting = useVillageStore((s) => s.activeMeeting);
   const setViewMode = useVillageStore((s) => s.setViewMode);
   const simHour = useVillageStore((s) => parseHour(s.world?.current_time, s.currentTick));
@@ -187,6 +188,7 @@ export default function ThreeView({ onOpenMeeting }: ThreeViewProps) {
   useEffect(() => { if (ready) sceneRef.current?.setHour(simHour); }, [ready, simHour]);
   useEffect(() => { if (ready) sceneRef.current?.setOverride(override); }, [ready, override]);
   useEffect(() => { if (ready && layout) sceneRef.current?.setWar(warRelations); }, [ready, warRelations, layout]);
+  useEffect(() => { if (ready) sceneRef.current?.setMarchers(Object.keys(warMarches)); }, [ready, warMarches, layout]);
 
   /* The 2D map is unmounted in 3D, so this view must take over its animation queue and commit the new locations. */
   const animCount = useVillageStore((s) => s.pendingAnimations.length);

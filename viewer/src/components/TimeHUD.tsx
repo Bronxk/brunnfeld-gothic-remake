@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useVillageStore, colonistIds } from "../store";
 import { SEASON_LABELS, EVENT_LABELS, DAYS_PER_SEASON } from "../types";
 import Icon from "./Icon";
+import { SimGlyph } from "./RegiePanel";
 
 export default function TimeHUD() {
   const world = useVillageStore((s) => s.world);
@@ -8,12 +10,26 @@ export default function TimeHUD() {
   const openCreation = useVillageStore((s) => s.openCreation);
   const viewMode = useVillageStore((s) => s.viewMode);
   const setViewMode = useVillageStore((s) => s.setViewMode);
+  const sim = useVillageStore((s) => s.sim);
+  const simCommand = useVillageStore((s) => s.simCommand);
+  const [ppBusy, setPpBusy] = useState(false);
 
   const tick = world?.current_tick ?? 0;
   const season = world?.season ? SEASON_LABELS[world.season] : "";
   // current_time arrives as "Montag, 09:00" (German, from the backend); tick 0 is a status text.
   const timeText = world?.current_time?.replace(/,\s*/, " ") ?? "—";
-  const clock = tick > 0 ? `${season}, ${timeText} · Tag ${world?.day_of_season ?? 1}/${DAYS_PER_SEASON}` : timeText;
+  const clock = tick > 0 ? `${season}, ${timeText}` : timeText;
+  const dayText = tick > 0 ? ` · Tag ${world?.day_of_season ?? 1}/${DAYS_PER_SEASON}` : "";
+  const paused = sim?.paused ?? false;
+
+  async function togglePause() {
+    setPpBusy(true);
+    try {
+      await simCommand(paused ? "resume" : "pause");
+    } finally {
+      setPpBusy(false);
+    }
+  }
   const colonists = world ? colonistIds(world).length : 0;
 
   return (
@@ -28,7 +44,7 @@ export default function TimeHUD() {
 
       <div className="tb-item tb-time" title="Spielzeit">
         <Icon name="clock" />
-        <span>{clock}</span>
+        <span>{clock}<span className="tb-day">{dayText}</span></span>
       </div>
 
       <div className="tb-item tb-weather" title="Wetter">
@@ -65,7 +81,7 @@ export default function TimeHUD() {
 
       {world && world.player?.created !== true && (
         <button type="button" className="btn sm tb-play" onClick={openCreation} title="Eine eigene Figur ins Schlackental schicken">
-          <Icon name="flag" />Mitspielen
+          <Icon name="flag" /><span className="tb-play-l">Mitspielen</span>
         </button>
       )}
 
@@ -73,6 +89,18 @@ export default function TimeHUD() {
         <Icon name="user" />
         <span>{colonists} Kolonisten</span>
       </div>
+
+      <button
+        type="button"
+        className="iconbtn tb-pp"
+        data-paused={paused}
+        disabled={!sim || ppBusy}
+        onClick={() => void togglePause()}
+        aria-label={paused ? "Simulation fortsetzen" : "Simulation pausieren"}
+        title={!sim ? "Sim-Steuerung nicht erreichbar" : paused ? `Pausiert${sim.pausedReason ? `: ${sim.pausedReason}` : ""} – klicken zum Fortsetzen` : "Läuft – klicken zum Pausieren"}
+      >
+        <SimGlyph kind={paused ? "play" : "pause"} />
+      </button>
 
       <div className={`tb-live${connected ? "" : " off"}`} title={connected ? "Verbunden mit der Simulation" : "Keine Verbindung zum Server"}>
         <i />

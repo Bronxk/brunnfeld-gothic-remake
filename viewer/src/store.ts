@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier, WarRelation, WarLogEntry, WarRaidEvent, WarState } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier, WarRelation, WarLogEntry, WarRaidEvent, WarState, WarMarchInfo, SimStatus, AgentRole, AgentRoleResponse, SkillOption } from "./types";
 import { itemLabel, gr } from "./types";
 
 export type { MeetingState } from "./types";
@@ -347,7 +347,28 @@ interface VillageStore {
   warLog: WarLogEntry[];
   /** Recent raids (newest last), for the 3D fire bursts and the auto-tour. */
   warRaids: WarRaidEvent[];
+  /** Settlements and provocation kinds as listed by GET /api/war (for the Regie selects). */
+  warVillages: { id: string; name: string }[];
+  warProvokeKinds: { id: string; label: string }[];
+  /** Running war marches by agent (removed on phase "heim"). */
+  warMarches: Record<AgentName, WarMarchInfo>;
   loadWar: () => Promise<void>;
+  /** POST /api/war/<action>. Toasts the backend's German error; returns true on success. Reloads the war state. */
+  warCommand: (action: "provoke" | "declare" | "peace" | "tribute" | "raid", body: Record<string, unknown>, okText: string) => Promise<boolean>;
+
+  // Regie: simulation control (pause / budget / speed)
+  sim: SimStatus | null;
+  loadSim: () => Promise<void>;
+  /** POST /api/sim/<action>. Toasts errors; returns true on success. */
+  simCommand: (action: "pause" | "resume" | "step" | "budget" | "speed", body?: Record<string, unknown>) => Promise<boolean>;
+
+  // Regie: live roles (skill / council / director's note)
+  /** Last known role per colonist (loaded on selection, updated by SSE agent:role). */
+  agentRoles: Record<string, AgentRole>;
+  roleSkills: SkillOption[];
+  loadAgentRole: (agent: AgentName) => Promise<boolean>;
+  /** POST /api/agents/<id>/role with a partial patch. Toasts errors; returns true on success. */
+  saveAgentRole: (agent: AgentName, patch: { skill?: string; council?: boolean; character?: string }) => Promise<boolean>;
 
   // LLM model per colonist
   agentModels: AgentModelsInfo | null;
@@ -462,6 +483,9 @@ export const useVillageStore = create<VillageStore>((set, get) => {
   warRelations: [],
   warLog: [],
   warRaids: [],
+  warVillages: [],
+  warProvokeKinds: [],
+  warMarches: {},
   loadWar: async () => {
     try {
       const res = await fetch("/api/war");
@@ -471,9 +495,113 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       set({
         warRelations: Array.isArray(data.relations) ? data.relations.filter(isRelation) : [],
         warLog: Array.isArray(data.log) ? data.log.slice(-40) : [],
+        warVillages: Array.isArray(data.villages) ? data.villages : [],
+        warProvokeKinds: Array.isArray(data.provokeKinds) ? data.provokeKinds : [],
       });
     } catch (err) {
       console.warn("[viewer] loading /api/war failed", err);
+    }
+  },
+
+  warCommand: async (action, body, okText) => {
+    try {
+      const res = await fetch(`/api/war/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      // A missing route answers 404 or (SPA fallback) HTML instead of JSON.
+      const isJson = (res.headers.get("content-type") ?? "").includes("json");
+      if (action === "raid" && (res.status === 404 || !isJson)) {
+        console.warn(`[viewer] POST /api/war/raid -> HTTP ${res.status} ${isJson ? "json" : "non-JSON"} (route missing on the server)`);
+        get().pushToast("Kriegszug-Route fehlt im Server.", "bad");
+        return false;
+      }
+      const data = await readJson(res);
+      if (!res.ok || data.ok !== true) {
+        const error = typeof data.error === "string" ? data.error : `HTTP ${res.status}`;
+        console.warn(`[viewer] POST /api/war/${action} rejected: ${error}`);
+        get().pushToast(error.replace(/^\[[^\]]+\]\s*/, ""), "bad"); // drop the "[Geht nicht]" tag meant for the LLM
+        return false;
+      }
+      get().pushToast(action === "raid" && typeof data.text === "string" && data.text ? data.text : okText, "good");
+      void get().loadWar();
+      return true;
+    } catch (err) {
+      console.error(`[viewer] POST /api/war/${action} failed`, err);
+      get().pushToast("Keine Verbindung zum Server.", "bad");
+      return false;
+    }
+  },
+
+  sim: null,
+  loadSim: async () => {
+    try {
+      const res = await fetch("/api/sim");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      set({ sim: (await res.json()) as SimStatus });
+    } catch (err) {
+      console.error("[viewer] loading /api/sim failed", err);
+    }
+  },
+  simCommand: async (action, body) => {
+    try {
+      const res = await fetch(`/api/sim/${action}`, {
+        method: "POST",
+        ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) {
+        const error = typeof data.error === "string" ? data.error : `HTTP ${res.status}`;
+        console.warn(`[viewer] POST /api/sim/${action} rejected: ${error}`);
+        get().pushToast(error, "bad");
+        return false;
+      }
+      if (data.status) set({ sim: data.status as SimStatus });
+      return true;
+    } catch (err) {
+      console.error(`[viewer] POST /api/sim/${action} failed`, err);
+      get().pushToast("Keine Verbindung zum Server.", "bad");
+      return false;
+    }
+  },
+
+  agentRoles: {},
+  roleSkills: [],
+  loadAgentRole: async (agent) => {
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(agent)}/role`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { skills, ...role } = (await res.json()) as AgentRoleResponse;
+      set((s) => ({ agentRoles: { ...s.agentRoles, [agent]: role }, roleSkills: Array.isArray(skills) ? skills : s.roleSkills }));
+      return true;
+    } catch (err) {
+      console.error(`[viewer] loading role of ${agent} failed`, err);
+      return false;
+    }
+  },
+  saveAgentRole: async (agent, patch) => {
+    const name = AGENT_DISPLAY[agent] ?? agent;
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(agent)}/role`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) {
+        const error = typeof data.error === "string" ? data.error : `HTTP ${res.status}`;
+        console.warn(`[viewer] POST role of ${agent} rejected: ${error}`);
+        get().pushToast(`Rolle von ${name} nicht geändert: ${error}`, "bad");
+        return false;
+      }
+      if (data.role) set((s) => ({ agentRoles: { ...s.agentRoles, [agent]: data.role as AgentRole } }));
+      get().pushToast(`Rolle von ${name} gespeichert. Wirkt ab dem nächsten Tick.`, "good");
+      return true;
+    } catch (err) {
+      console.error(`[viewer] POST role of ${agent} failed`, err);
+      get().pushToast(`Rolle von ${name} nicht geändert: keine Verbindung zum Server.`, "bad");
+      return false;
     }
   },
 
@@ -644,7 +772,7 @@ export const useVillageStore = create<VillageStore>((set, get) => {
 
   setWorld: (world) => {
     if (world.player?.created) AGENT_DISPLAY_BASE.player = world.player.name;
-    set({ world });
+    set({ world, warMarches: { ...(world.war_marches ?? {}) } });
   },
   selectAgent: (selectedAgent) => set((s) => ({ selectedAgent, selectedAgentVersion: s.selectedAgentVersion + 1 })),
   setConnected: (connected) => set({ connected }),
@@ -719,6 +847,7 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       }
       set({
         world: e.state,
+        warMarches: { ...(e.state.war_marches ?? {}) },
         currentTick: e.state.current_tick,
         orderFeed: fills,
         latestEconomy: lastSnap,
@@ -1054,6 +1183,33 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       const rels = cands.filter(isRelation);
       if (rels.length === 0) { console.warn("[viewer] war:update without a usable relation", e); return; }
       set((s) => ({ warRelations: rels.reduce((acc, r) => mergeRelation(acc, r), s.warRelations) }));
+      return;
+    }
+
+    if (e.type === "sim:control") {
+      const { type: _type, ...status } = e;
+      set({ sim: status });
+      return;
+    }
+
+    if (e.type === "agent:role") {
+      if (!e.agent || !e.role) { console.warn("[viewer] agent:role without agent/role", e); return; }
+      set((s) => ({ agentRoles: { ...s.agentRoles, [e.agent]: e.role } }));
+      return;
+    }
+
+    if (e.type === "war:march") {
+      if (!e.agent) { console.warn("[viewer] war:march without agent", e); return; }
+      if (e.phase === "heim") {
+        set((s) => {
+          if (!(e.agent in s.warMarches)) return {};
+          const { [e.agent]: _gone, ...rest } = s.warMarches;
+          return { warMarches: rest };
+        });
+      } else {
+        const march: WarMarchInfo = { target: e.target, phase: e.phase, arriveTick: e.arriveTick };
+        set((s) => ({ warMarches: { ...s.warMarches, [e.agent]: march } }));
+      }
       return;
     }
 

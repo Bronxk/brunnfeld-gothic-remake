@@ -101,6 +101,8 @@ export interface WorldState {
   acquaintances: Record<AgentName, AgentName[]>;
   economy_snapshots: EconomySnapshot[];
   loans?: Loan[];
+  /** Running war marches (Kriegszüge) per agent; absent when nobody marches. */
+  war_marches?: Record<AgentName, { target: string; phase: WarMarchPhase; arriveTick: number }>;
   /** Human player character; `created` flips to true once a human creates one (until then the "player" agent is a hidden placeholder). */
   player?: { created: boolean; name: string; skill: string; createdTick: number };
 }
@@ -163,9 +165,44 @@ export type SSEEvent =
   | ({ type: "player:update" } & PlayerView)
   | ({ type: "war:update" } & WarUpdatePayload)
   | ({ type: "war:raid" } & WarRaidPayload)
-  | ({ type: "war:event" } & Partial<WarLogEntry>);
+  | ({ type: "war:event" } & Partial<WarLogEntry>)
+  | ({ type: "war:march" } & WarMarchPayload)
+  | ({ type: "sim:control" } & SimStatus)
+  | { type: "agent:role"; agent: AgentName; role: AgentRole };
 
-// ─── War between settlements (backend: GET /api/war, SSE war:update / war:raid / war:event) ───
+// ─── Regie: simulation control (backend: GET /api/sim, POST /api/sim/*, SSE sim:control) ───
+
+export interface SimStatus {
+  paused: boolean;
+  /** Ticks left before the sim pauses by itself; null = unlimited. */
+  budget: number | null;
+  /** Pause between two ticks in ms (0 = as fast as possible). */
+  tickDelayMs: number;
+  pausedReason?: string;
+}
+
+// ─── Regie: live role of a colonist (backend: GET/POST /api/agents/<id>/role, SSE agent:role) ───
+
+export interface AgentRole {
+  agent: AgentName;
+  skill: string;
+  council: boolean;
+  /** Free-text director's note on the character (max ~600 chars). */
+  character: string;
+  isElder: boolean;
+}
+
+export interface SkillOption {
+  id: string;
+  label: string;
+}
+
+/** GET /api/agents/<id>/role. */
+export interface AgentRoleResponse extends AgentRole {
+  skills: SkillOption[];
+}
+
+// ─── War between settlements (backend: GET /api/war, SSE war:update / war:raid / war:event / war:march) ───
 
 export type WarStance = "frieden" | "spannung" | "krieg";
 
@@ -189,6 +226,25 @@ export interface WarState {
   villages: { id: string; name: string }[];
   relations: WarRelation[];
   log: WarLogEntry[];
+  provokeKinds: { id: string; label: string }[];
+}
+
+export type WarMarchPhase = "hin" | "kampf" | "zurueck";
+
+/** SSE `war:march`: a colonist walks to / fights in / returns from an enemy village. "heim" = march finished. */
+export interface WarMarchPayload {
+  agent: AgentName;
+  /** Target village id. */
+  target: string;
+  phase: WarMarchPhase | "heim";
+  arriveTick: number;
+}
+
+/** A running march as held in the store (the war:march payload without the agent). */
+export interface WarMarchInfo {
+  target: string;
+  phase: WarMarchPhase;
+  arriveTick: number;
 }
 
 /** `war:update` carries one relation; tolerate it flat or nested (payload shape is not final). */
