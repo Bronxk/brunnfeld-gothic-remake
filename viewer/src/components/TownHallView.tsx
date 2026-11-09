@@ -1,44 +1,63 @@
 import { useEffect, useRef } from "react";
 import { useVillageStore } from "../store";
 import { drawInterior } from "../canvas/interior-renderer";
+import { LABEL_FONT } from "../canvas/sprites";
 import type { MeetingState } from "../store";
 import type { AgentName } from "../types";
+
+// Dusk / lamp palette (same tokens as the map)
+const C = {
+  bg: "#0c0a09",
+  panel: "rgba(20,16,13,0.94)",
+  panelSolid: "#14100d",
+  line: "#3a2e21",
+  line2: "#52422e",
+  ink: "#ecdcbc",
+  ink2: "#a2916f",
+  ink3: "#6f6249",
+  amber: "#f2a93b",
+  good: "#9cc46a",
+  bad: "#e56a45",
+  info: "#7fb0c4",
+} as const;
 
 // ─── Meeting Header ───────────────────────────────────────────────────────
 
 function MeetingHeader({ meeting }: { meeting: MeetingState }) {
   const phaseLabel =
-    meeting.phase === "discussion" ? "DISCUSSION"
-    : meeting.phase === "vote" ? "VOTE IN PROGRESS"
-    : meeting.result?.passed ? "LAW PASSED"
-    : "VOTE FAILED";
+    meeting.phase === "discussion" ? "AUSSPRACHE"
+    : meeting.phase === "vote" ? "ABSTIMMUNG LÄUFT"
+    : meeting.result?.passed ? "BESCHLUSS ANGENOMMEN"
+    : "ABGELEHNT";
 
-  const phaseBg =
+  const phaseColor =
     meeting.phase === "result"
-      ? meeting.result?.passed ? "#16a34a" : "#dc2626"
-      : "#1e3a5f";
+      ? meeting.result?.passed ? C.good : C.bad
+      : meeting.phase === "vote" ? C.amber : C.info;
 
   return (
     <div style={{
       position: "absolute", top: 0, left: 0, right: 0,
-      background: "rgba(0,0,0,0.82)",
-      borderBottom: "2px solid #6b4c1e",
-      padding: "8px 16px",
-      display: "flex", alignItems: "center", gap: "12px",
-      fontFamily: "monospace",
+      background: C.panel,
+      borderBottom: `1px solid ${C.line}`,
+      padding: "8px 14px",
+      display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+      fontFamily: LABEL_FONT,
     }}>
       <span style={{
-        background: phaseBg, color: "#fff",
-        padding: "3px 10px", borderRadius: "4px",
-        fontSize: "11px", fontWeight: "bold", letterSpacing: "1px",
+        color: phaseColor,
+        background: `color-mix(in srgb, ${phaseColor} 14%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${phaseColor} 50%, transparent)`,
+        padding: "2px 10px", borderRadius: "7px",
+        fontSize: "11px", fontWeight: 600, letterSpacing: "0.12em",
       }}>
         {phaseLabel}
       </span>
-      <span style={{ color: "#e8d5a0", fontSize: "13px", flex: 1 }}>
+      <span style={{ color: C.ink, fontSize: "14px", flex: 1, minWidth: 140 }}>
         {meeting.description}
       </span>
-      <span style={{ color: "#9ca3af", fontSize: "11px" }}>
-        {meeting.attendees.length} attendees
+      <span style={{ color: C.ink2, fontSize: "12px" }}>
+        {meeting.attendees.length} Anwesende
       </span>
     </div>
   );
@@ -47,8 +66,8 @@ function MeetingHeader({ meeting }: { meeting: MeetingState }) {
 // ─── Discussion Feed ──────────────────────────────────────────────────────
 
 const COUNCIL_COLOR: Partial<Record<AgentName, string>> = {
-  reinhart: "#f0c870", irmel: "#93c5fd", eckhart: "#86efac",
-  bodo: "#fca5a5", brakel: "#d8b4fe",
+  reinhart: "#ffd68a", irmel: "#9fc4d4", eckhart: "#b4d48a",
+  bodo: "#e8a58c", brakel: "#d4b4d8",
 };
 
 function DiscussionFeed({ meeting }: { meeting: MeetingState }) {
@@ -61,31 +80,31 @@ function DiscussionFeed({ meeting }: { meeting: MeetingState }) {
   return (
     <div style={{
       position: "absolute", top: 52, left: 0, bottom: 0,
-      width: "300px",
-      background: "rgba(10,8,4,0.92)",
-      borderRight: "1px solid #3d2810",
+      width: "min(300px, 46%)",
+      background: C.panel,
+      borderRight: `1px solid ${C.line}`,
       overflowY: "auto",
       padding: "10px 12px",
-      fontFamily: "monospace",
+      fontFamily: LABEL_FONT,
       display: "flex", flexDirection: "column", gap: "8px",
     }}>
       {meeting.discussion.length === 0 && (
-        <div style={{ color: "#4a3820", fontSize: "11px", fontStyle: "italic", marginTop: "8px", textAlign: "center" }}>
-          Waiting for discussion…
+        <div style={{ color: C.ink3, fontSize: "12px", fontStyle: "italic", marginTop: "8px", textAlign: "center" }}>
+          Warte auf die Aussprache…
         </div>
       )}
       {meeting.discussion.map((line, i) => (
-        <div key={i} style={{ fontSize: "12px", lineHeight: "1.5" }}>
+        <div key={i} style={{ fontSize: "13px", lineHeight: "1.45" }}>
           <span style={{
-            color: COUNCIL_COLOR[line.agent] ?? "#e8d5a0",
-            fontWeight: "bold",
+            color: COUNCIL_COLOR[line.agent] ?? C.ink,
+            fontWeight: 600,
             marginRight: "5px",
             display: "block",
             marginBottom: "2px",
           }}>
             {line.name}
           </span>
-          <span style={{ color: "#c8b898", wordBreak: "break-word" }}>
+          <span style={{ color: C.ink2, wordBreak: "break-word" }}>
             {line.text.replace(/^.*(says|sagt): "/, "").replace(/"$/, "").replace(/^\[(Thought|Gedanke)\] /, "")}
           </span>
         </div>
@@ -105,34 +124,36 @@ function MeetingLog({ meeting }: { meeting: MeetingState }) {
   return (
     <div style={{
       position: "absolute", top: 52, right: 0, bottom: 0,
-      width: "220px",
-      background: "rgba(10,8,4,0.88)",
-      borderLeft: "1px solid #3d2810",
+      width: "min(220px, 36%)",
+      background: C.panel,
+      borderLeft: `1px solid ${C.line}`,
       overflowY: "auto",
       padding: "8px",
-      fontFamily: "monospace",
+      fontFamily: LABEL_FONT,
     }}>
       {meeting.proposal && (
         <div style={{
-          background: "#1e3a5f", borderRadius: "4px",
+          background: "rgba(127,176,196,0.10)",
+          border: "1px solid rgba(127,176,196,0.4)",
+          borderRadius: "8px",
           padding: "6px 8px", marginBottom: "8px",
-          fontSize: "11px", color: "#93c5fd",
+          fontSize: "12px", color: C.ink,
         }}>
-          <div style={{ color: "#6b7280", marginBottom: "3px", fontSize: "10px" }}>PROPOSAL</div>
+          <div style={{ color: C.ink3, marginBottom: "3px", fontSize: "10px", letterSpacing: "0.12em" }}>ANTRAG</div>
           {meeting.proposal}
         </div>
       )}
 
       {voteEntries.length > 0 && (
         <div>
-          <div style={{ color: "#6b7280", fontSize: "10px", marginBottom: "4px" }}>VOTES</div>
+          <div style={{ color: C.ink3, fontSize: "10px", marginBottom: "4px", letterSpacing: "0.12em" }}>STIMMEN</div>
           {voteEntries.map(([agent, side]) => (
             <div key={agent} style={{
               display: "flex", justifyContent: "space-between",
-              fontSize: "11px", color: "#e8d5a0", marginBottom: "2px",
+              fontSize: "12px", color: C.ink, marginBottom: "2px",
             }}>
               <span>{agent}</span>
-              <span style={{ color: side === "agree" ? "#22c55e" : "#ef4444" }}>
+              <span style={{ color: side === "agree" ? C.good : C.bad }}>
                 {side === "agree" ? "✓" : "✗"}
               </span>
             </div>
@@ -146,7 +167,7 @@ function MeetingLog({ meeting }: { meeting: MeetingState }) {
 const PREVIEW_MEETING: MeetingState = {
   phase: "discussion",
   agendaType: "general_rule",
-  description: "Preview — no meeting in progress",
+  description: "Vorschau – kein Appell im Gange",
   attendees: [],
   votes: {},
   proposal: null,
@@ -197,7 +218,7 @@ export default function TownHallView({ preview = false }: { preview?: boolean })
   return (
     <div
       ref={containerRef}
-      style={{ position: "relative", width: "100%", height: "100%", background: "#0e0904" }}
+      style={{ position: "relative", width: "100%", height: "100%", background: C.bg }}
     >
       <canvas
         ref={canvasRef}
@@ -209,13 +230,13 @@ export default function TownHallView({ preview = false }: { preview?: boolean })
       {preview && (
         <div style={{
           position: "absolute", top: 0, left: 0, right: 0,
-          background: "rgba(0,0,0,0.7)",
-          borderBottom: "1px solid #4a3010",
-          padding: "6px 14px",
-          fontFamily: "monospace", fontSize: "11px",
-          color: "#6b5030", letterSpacing: "1px",
+          background: C.panel,
+          borderBottom: `1px solid ${C.line}`,
+          padding: "7px 14px",
+          fontFamily: LABEL_FONT, fontSize: "12px",
+          color: C.ink2, letterSpacing: "0.12em",
         }}>
-          TOWN HALL — preview (no meeting active)
+          VOGTEI – Vorschau (kein Appell aktiv)
         </div>
       )}
     </div>

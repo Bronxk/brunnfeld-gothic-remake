@@ -1,16 +1,24 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { renderVillage, hitTestLocation, screenToWorld, spawnParticle, type Camera, type ActiveAnimation } from "../canvas/renderer";
 import { locationPx, setActiveTiles, setActiveBuildings, buildingsFromVillage, TILE_SIZE, WORLD_W, WORLD_H } from "../canvas/map";
+import { LABEL_FONT } from "../canvas/sprites";
 import { useVillageStore, AGENT_DISPLAY } from "../store";
 import type { AgentName } from "../types";
 
-const INITIAL_CAMERA: Camera = { x: 768, y: 624, zoom: 0.72 };
+// Centred on the colony (fields in the north to the Baracken in the south), not the empty river bank
+const INITIAL_CAMERA: Camera = { x: 768, y: 440, zoom: 0.72 };
 
 export default function VillageMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
   const cameraRef = useRef<Camera>({ ...INITIAL_CAMERA });
+  const cameraInitRef = useRef(false);
   const dragRef = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const touchRef = useRef<
+    | { mode: "pan"; sx: number; sy: number; cx: number; cy: number; moved: boolean }
+    | { mode: "pinch"; dist: number; zoom: number }
+    | null
+  >(null);
   const animationsRef = useRef<Map<AgentName, ActiveAnimation>>(new Map());
   const [hoveredLoc, setHoveredLoc] = useState<string | null>(null);
 
@@ -75,11 +83,24 @@ export default function VillageMap() {
       if (!ctx) { animRef.current = requestAnimationFrame(frame); return; }
       const w = canvas!.clientWidth;
       const h = canvas!.clientHeight;
-      if (canvas!.width !== w || canvas!.height !== h) {
-        canvas!.width = w;
-        canvas!.height = h;
+      if (w === 0 || h === 0) { animRef.current = requestAnimationFrame(frame); return; }
+      // Crisp text/sprites on HiDPI screens; capped so the lighting pass stays cheap.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const bw = Math.round(w * dpr);
+      const bh = Math.round(h * dpr);
+      if (canvas!.width !== bw || canvas!.height !== bh) {
+        canvas!.width = bw;
+        canvas!.height = bh;
       }
-      ctx.clearRect(0, 0, w, h);
+      // Small screens: start zoomed out a bit, centred on the colony
+      if (!cameraInitRef.current) {
+        cameraInitRef.current = true;
+        if (w < 600) cameraRef.current.zoom = 0.5;
+        clampCamera(cameraRef.current, w, h);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, bw, bh);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
       // Drain pending animations from store — only track agents of the active village
       const store = useVillageStore.getState();
@@ -136,41 +157,85 @@ export default function VillageMap() {
     return () => cancelAnimationFrame(animRef.current);
   }, [world, selectedAgent, hoveredLoc]);
 
-  const ZOOM_MIN = 0.5;
+  const ZOOM_MIN = 0.35;
   const ZOOM_MAX = 2.0;
 
   const clampCamera = useCallback((cam: Camera, canvasW: number, canvasH: number) => {
-    // Keep at least half the map visible in each direction
+    // Keep the map covering the view; if the view is larger than the map, centre it
     const halfW = (canvasW / 2) / cam.zoom;
     const halfH = (canvasH / 2) / cam.zoom;
-    cam.x = Math.max(halfW, Math.min(WORLD_W - halfW, cam.x));
-    cam.y = Math.max(halfH, Math.min(WORLD_H - halfH, cam.y));
+    cam.x = halfW * 2 >= WORLD_W ? WORLD_W / 2 : Math.max(halfW, Math.min(WORLD_W - halfW, cam.x));
+    cam.y = halfH * 2 >= WORLD_H ? WORLD_H / 2 : Math.max(halfH, Math.min(WORLD_H - halfH, cam.y));
   }, []);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
+  /** Zoom toward a screen point (canvas-relative px): the world point under it stays fixed. */
+  const zoomAt = useCallback((mx: number, my: number, newZoomRaw: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const cam = cameraRef.current;
-
-    // Zoom proportional to deltaY — feels smooth on both trackpad and mouse wheel
-    const delta = e.deltaY * (e.deltaMode === 1 ? 30 : 1); // normalise line-mode
-    const factor = Math.exp(-delta * 0.001);
-    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.zoom * factor));
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoomRaw));
     if (newZoom === cam.zoom) return;
-
-    // Zoom toward cursor: keep the world-point under the cursor fixed
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
     const wx = cam.x + (mx - canvas.clientWidth  / 2) / cam.zoom;
     const wy = cam.y + (my - canvas.clientHeight / 2) / cam.zoom;
-
     cam.zoom = newZoom;
     cam.x = wx - (mx - canvas.clientWidth  / 2) / newZoom;
     cam.y = wy - (my - canvas.clientHeight / 2) / newZoom;
     clampCamera(cam, canvas.clientWidth, canvas.clientHeight);
   }, [clampCamera]);
+
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    // Zoom proportional to deltaY — feels smooth on both trackpad and mouse wheel
+    const delta = e.deltaY * (e.deltaMode === 1 ? 30 : 1); // normalise line-mode
+    const factor = Math.exp(-delta * 0.001);
+    const rect = canvas.getBoundingClientRect();
+    zoomAt(e.clientX - rect.left, e.clientY - rect.top, cameraRef.current.zoom * factor);
+  }, [zoomAt]);
+
+  // Touch: one finger pans, two fingers pinch-zoom (taps still arrive as emulated mouse clicks)
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches;
+    if (t.length === 1) {
+      touchRef.current = { mode: "pan", sx: t[0]!.clientX, sy: t[0]!.clientY, cx: cameraRef.current.x, cy: cameraRef.current.y, moved: false };
+    } else if (t.length >= 2) {
+      const d = Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+      touchRef.current = { mode: "pinch", dist: d || 1, zoom: cameraRef.current.zoom };
+    }
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    const canvas = canvasRef.current;
+    const st = touchRef.current;
+    if (!canvas || !st) return;
+    const t = e.touches;
+    const cam = cameraRef.current;
+    if (st.mode === "pan" && t.length === 1) {
+      const dx = t[0]!.clientX - st.sx;
+      const dy = t[0]!.clientY - st.sy;
+      if (!st.moved && Math.abs(dx) + Math.abs(dy) > 6) st.moved = true;
+      if (st.moved) {
+        cam.x = st.cx - dx / cam.zoom;
+        cam.y = st.cy - dy / cam.zoom;
+        clampCamera(cam, canvas.clientWidth, canvas.clientHeight);
+      }
+    } else if (st.mode === "pinch" && t.length >= 2) {
+      const d = Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY);
+      const rect = canvas.getBoundingClientRect();
+      const mx = (t[0]!.clientX + t[1]!.clientX) / 2 - rect.left;
+      const my = (t[0]!.clientY + t[1]!.clientY) / 2 - rect.top;
+      zoomAt(mx, my, st.zoom * (d / st.dist));
+    }
+  }, [clampCamera, zoomAt]);
+
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 0) touchRef.current = null;
+    else if (e.touches.length === 1) {
+      const t = e.touches[0]!;
+      touchRef.current = { mode: "pan", sx: t.clientX, sy: t.clientY, cx: cameraRef.current.x, cy: cameraRef.current.y, moved: true };
+    }
+  }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button === 0) {
@@ -236,38 +301,49 @@ export default function VillageMap() {
   }, [availableTicks, loadHistoryTick, mode, setMode]);
 
   const btnStyle = (active: boolean): React.CSSProperties => ({
-    padding: "2px 9px", border: `1px solid ${active ? "#c89030" : "#4a3010"}`,
-    borderRadius: 3, background: active ? "rgba(140,90,10,0.35)" : "rgba(20,12,4,0.7)",
-    color: active ? "#f0c040" : "#7a6030", cursor: active ? "default" : "pointer",
-    fontSize: 10, fontFamily: "Georgia", fontWeight: "bold", letterSpacing: 0.5,
-    display: "flex", alignItems: "center", gap: 4, flexShrink: 0,
+    padding: "2px 10px", border: `1px solid ${active ? "rgba(242,169,59,0.55)" : "#3a2e21"}`,
+    borderRadius: 7, background: active ? "rgba(242,169,59,0.12)" : "rgba(27,22,18,0.8)",
+    color: active ? "#f2a93b" : "#a2916f", cursor: active ? "default" : "pointer",
+    fontSize: 11, fontFamily: LABEL_FONT, fontWeight: 600, letterSpacing: 1.2,
+    display: "flex", alignItems: "center", gap: 6, flexShrink: 0, height: 24,
   });
 
+  const stepStyle: React.CSSProperties = {
+    width: 26, height: 24, border: "1px solid #3a2e21", borderRadius: 7,
+    background: "rgba(27,22,18,0.8)", color: "#ecdcbc", cursor: "pointer",
+    fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center",
+    opacity: historyLoading ? 0.4 : 1, flexShrink: 0, padding: 0,
+  };
+
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "#1a1209" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#0c0a09" }}>
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: "100%", display: "block", imageRendering: "pixelated", cursor: hoveredLoc ? "pointer" : "grab" }}
+        style={{ width: "100%", height: "100%", display: "block", touchAction: "none", cursor: hoveredLoc ? "pointer" : "grab" }}
         onWheel={onWheel}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={() => { dragRef.current = null; setHoveredLoc(null); }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
       />
 
       {/* Location tooltip */}
       {hoveredLoc && (
         <div style={{
-          position: "absolute", bottom: 48, left: 8,
-          background: "rgba(20,12,4,0.88)", border: "1px solid #8b6914",
-          color: "#f0d860", padding: "3px 10px", borderRadius: 4,
-          fontSize: 12, fontFamily: "Georgia, serif", pointerEvents: "none",
+          position: "absolute", top: 8, left: 8, maxWidth: "calc(100% - 16px)",
+          background: "rgba(20,16,13,0.9)", border: "1px solid #52422e",
+          color: "#ecdcbc", padding: "4px 11px", borderRadius: 8,
+          fontSize: 13, fontFamily: LABEL_FONT, pointerEvents: "none",
         }}>
           {hoveredLoc}
           {world && (() => {
             const here = Object.entries(world.agent_locations)
               .filter(([a, l]) => l === hoveredLoc && ((world.economics[a] as { villageId?: string })?.villageId ?? "schlackental") === activeVillageId)
-              .map(([a]) => AGENT_DISPLAY[a as AgentName]);
+              .map(([a]) => (a === "player" ? "Du" : AGENT_DISPLAY[a as AgentName]));
             return here.length > 0 ? ` — ${here.join(", ")}` : "";
           })()}
         </div>
@@ -276,23 +352,24 @@ export default function VillageMap() {
       {/* Playback controls overlay */}
       <div style={{
         position: "absolute", bottom: 8, left: 8, right: 8,
-        height: 32,
-        background: "rgba(8,5,2,0.88)",
-        border: "1px solid #4a3010",
-        borderRadius: 6,
+        height: 38,
+        background: "rgba(20,16,13,0.9)",
+        border: "1px solid #3a2e21",
+        borderRadius: 10,
         display: "flex", alignItems: "center", gap: 8,
         padding: "0 10px",
-        backdropFilter: "blur(2px)",
+        fontFamily: LABEL_FONT,
       }}>
         {/* LIVE */}
         <button
           onClick={isLive ? undefined : () => setMode("live")}
           style={btnStyle(isLive)}
+          title={isLive ? "Live-Ansicht aktiv" : "Zurück zur Live-Ansicht"}
         >
           <span style={{
-            width: 6, height: 6, borderRadius: "50%",
-            background: isLive ? "#60e060" : "#4a3020",
-            boxShadow: isLive ? "0 0 5px #60e060" : "none",
+            width: 7, height: 7, borderRadius: "50%",
+            background: isLive ? "#9cc46a" : "#6f6249",
+            boxShadow: isLive ? "0 0 6px #9cc46a" : "none",
           }} />
           LIVE
         </button>
@@ -300,12 +377,9 @@ export default function VillageMap() {
         <button
           onClick={() => stepHistory(-1)}
           disabled={historyLoading || tickCount === 0}
-          style={{
-            width: 22, height: 22, border: "1px solid #4a3010", borderRadius: 3,
-            background: "rgba(20,12,4,0.7)", color: "#c8a060", cursor: "pointer",
-            fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: historyLoading ? 0.4 : 1, flexShrink: 0,
-          }}
+          style={stepStyle}
+          title="Vorheriger Tick"
+          aria-label="Vorheriger Tick"
         >‹</button>
 
         {tickCount > 1 ? (
@@ -313,7 +387,8 @@ export default function VillageMap() {
             type="range" min={0} max={tickCount - 1}
             value={historyIdx >= 0 ? historyIdx : tickCount - 1}
             onChange={handleSlider}
-            style={{ flex: 1, accentColor: "#c89030", cursor: "pointer", minWidth: 0, height: 3 }}
+            style={{ flex: 1, accentColor: "#f2a93b", cursor: "pointer", minWidth: 0, height: 3 }}
+            aria-label="Tick wählen"
           />
         ) : (
           <div style={{ flex: 1 }} />
@@ -322,21 +397,21 @@ export default function VillageMap() {
         <button
           onClick={() => stepHistory(1)}
           disabled={historyLoading || tickCount === 0}
-          style={{
-            width: 22, height: 22, border: "1px solid #4a3010", borderRadius: 3,
-            background: "rgba(20,12,4,0.7)", color: "#c8a060", cursor: "pointer",
-            fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: historyLoading ? 0.4 : 1, flexShrink: 0,
-          }}
+          style={stepStyle}
+          title="Nächster Tick"
+          aria-label="Nächster Tick"
         >›</button>
 
-        <span style={{ fontSize: 10, color: "#c8a060", fontFamily: "Georgia", flexShrink: 0 }}>
-          {historyLoading ? "…" : `t${displayTick}`}
-          {tickCount > 0 && <span style={{ color: "#4a3020" }}> /{tickCount}</span>}
+        <span style={{ fontSize: 12, color: "#ecdcbc", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+          {historyLoading ? "…" : `Tick ${displayTick}`}
+          {tickCount > 0 && <span style={{ color: "#6f6249" }}> / {tickCount}</span>}
         </span>
 
         {world && (
-          <span style={{ fontSize: 10, color: "#7a6030", fontFamily: "Georgia", flexShrink: 0 }}>
+          <span style={{
+            fontSize: 12, color: "#a2916f", minWidth: 0, flexShrink: 1,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
             {world.current_time}
           </span>
         )}

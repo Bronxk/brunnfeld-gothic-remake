@@ -67,7 +67,7 @@ export const ADJACENCY: [string, string][] = [
 
 // Building image path and display size for each location
 export const LOCATION_BUILDINGS: Record<string, { img: string; w: number; h: number; label?: string }> = {
-  "Zechenplatz":        { img: "", w: 0, h: 0 },  // open area, no building
+  "Zechenplatz":        { img: "", w: 0, h: 0, label: "Zechenplatz" },  // open area, no building
   "Backstube":          { img: "/assets/buildings/House2.png", w: 80, h: 120, label: "Backstube" },
   "Schenke":            { img: "/assets/buildings/House3.png", w: 80, h: 120, label: "Schenke" },
   "Schmiede":           { img: "/assets/buildings/Barracks.png", w: 100, h: 133, label: "Schmiede" },
@@ -92,7 +92,7 @@ export const LOCATION_BUILDINGS: Record<string, { img: string; w: number; h: num
   "Oberfeld":           { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Oberfeld" },
   "Köhlerwald":         { img: "", w: 0, h: 0, label: "Köhlerwald" },
   "Erzstollen":         { img: "/assets/buildings/Tower.png", w: 64, h: 128, label: "Erzstollen" },
-  "Schmugglerpfad":     { img: "", w: 0, h: 0, label: "Schmuggler" },
+  "Schmugglerpfad":     { img: "", w: 0, h: 0, label: "Schmugglerpfad" },
 };
 
 export function tilePx(tile: { tx: number; ty: number }): { x: number; y: number } {
