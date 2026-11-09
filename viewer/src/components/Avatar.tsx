@@ -14,7 +14,9 @@ function sheetFor(agent: string, skill: string | undefined): string {
     case "baecker":
     case "wirt":
     case "hirte": return "Pawn_Idle Meat.png";
+    case "mueller": return "Pawn_Idle Wood.png";
     case "bauer":
+    case "bader":
     case "naeherin": return "Pawn_Idle Knife.png";
     default: return "Pawn_Idle.png";
   }

@@ -2,14 +2,14 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useVillageStore, AGENT_DISPLAY, colonistIds } from "../store";
 import { gr, itemLabel, skillLabel, tickClock, SLEEP_LABELS, TICKS_PER_DAY, type AgentName, type BodyState, type FeedEntry, type Loan } from "../types";
 import { c } from "../theme";
-import Icon, { ItemIcon, type IconName } from "./Icon";
+import Icon, { ItemIcon, skillIcon, type IconName } from "./Icon";
 import Avatar from "./Avatar";
 
 // ─── Status helpers ───────────────────────────────────────────
 
 type Bucket = "dead" | "starving" | "sick" | "hungry" | "ok";
 
-function getStatusBucket(body: BodyState): Bucket {
+export function getStatusBucket(body: BodyState): Bucket {
   if ((body.starvation_ticks ?? 0) >= 999) return "dead";
   if ((body.starvation_ticks ?? 0) > 0) return "starving";
   if ((body.sickness ?? 0) >= 1 || (body.injury ?? 0) >= 1) return "sick";
@@ -19,27 +19,21 @@ function getStatusBucket(body: BodyState): Bucket {
 
 const STATUS_ORDER: Record<Bucket, number> = { starving: 0, sick: 1, hungry: 2, ok: 3, dead: 4 };
 
-const STATUS_META: Record<Bucket, { icon: IconName; tone: string; label: string }> = {
+export const STATUS_META: Record<Bucket, { icon: IconName; tone: string; label: string }> = {
   ok: { icon: "check", tone: "good", label: "Wohlauf" },
-  hungry: { icon: "wheat", tone: "warn", label: "Hungrig" },
+  hungry: { icon: "bowl", tone: "warn", label: "Hungrig" },
   sick: { icon: "bandage", tone: "bad", label: "Krank oder verletzt" },
   starving: { icon: "warn", tone: "bad", label: "Hungert stark" },
   dead: { icon: "skull", tone: "dead", label: "Tot" },
 };
 
-const SKILL_ICON: Record<string, IconName> = {
-  bauer: "wheat", hirte: "user", knappe: "mine", holzfaeller: "hammer",
-  mueller: "scale", baecker: "flame", schmied: "hammer", zimmermann: "hammer",
-  wirt: "coin", bader: "heart", haendler: "cart", naeherin: "user", none: "user",
-};
-
 /** Hunger bar keeps the old semantics: fill = satiation (hunger 0 = full bar). */
-const hungerFill = (hunger: number) => Math.max(0, Math.min(100, ((5 - hunger) / 5) * 100));
-const hungerTone = (hunger: number) => (hunger <= 1 ? c.good : hunger <= 3 ? c.warn : c.bad);
-const energyFill = (energy: number) => Math.max(0, Math.min(100, (energy / 10) * 100));
-const energyTone = (energy: number) => (energy >= 7 ? c.good : energy >= 4 ? c.warn : c.bad);
+export const hungerFill = (hunger: number) => Math.max(0, Math.min(100, ((5 - hunger) / 5) * 100));
+export const hungerTone = (hunger: number) => (hunger <= 1 ? c.good : hunger <= 3 ? c.warn : c.bad);
+export const energyFill = (energy: number) => Math.max(0, Math.min(100, (energy / 10) * 100));
+export const energyTone = (energy: number) => (energy >= 7 ? c.good : energy >= 4 ? c.warn : c.bad);
 
-function Bar({ label, pct, color, value, title }: { label: string; pct: number; color: string; value: number; title: string }) {
+export function Bar({ label, pct, color, value, title }: { label: string; pct: number; color: string; value: number; title: string }) {
   return (
     <div className="bar" title={title}>
       <span className="bar-l">{label}</span>
@@ -136,7 +130,7 @@ function AgentList() {
               <span style={{ minWidth: 0 }}>
                 <span className="nm">
                   {AGENT_DISPLAY[a]}
-                  <Icon name={SKILL_ICON[eco.skill] ?? "user"} />
+                  <Icon name={skillIcon(eco.skill)} />
                 </span>
                 <span className="lc">{skillLabel(eco.skill)} · {loc}</span>
               </span>
@@ -288,7 +282,7 @@ export default function AgentPanel() {
           <h2 className="kol-name">{AGENT_DISPLAY[selectedAgent]}</h2>
           <div className="kol-chips">
             <span className="chipx">
-              <Icon name={isSmuggler ? "cart" : SKILL_ICON[eco?.skill ?? "none"] ?? "user"} />
+              <Icon name={isSmuggler ? "cart" : skillIcon(eco?.skill)} />
               {isSmuggler ? "Schmuggler am Ziegenpfad" : skillLabel(eco?.skill)}
             </span>
             {bucket !== "ok" && (
@@ -408,6 +402,8 @@ export default function AgentPanel() {
 
       <RecentThoughts agent={selectedAgent} />
 
+      {/* The human player is not an LLM agent: no interview, no whispering. */}
+      {selectedAgent !== "player" && (<>
       <div className="sec">
         <div className="sec-h"><span>{first} befragen</span></div>
         <div className="talk">
@@ -445,6 +441,7 @@ export default function AgentPanel() {
         </div>
         {whisperNote && <div className={`note ${whisperNote.ok ? "good" : "bad"}`}><Icon name={whisperNote.ok ? "check" : "warn"} />{whisperNote.text}</div>}
       </div>
+      </>)}
     </div>
   );
 }
