@@ -539,9 +539,17 @@ function stripThinkTags(text: string): string {
 
 export async function callClaudeJSON<T>(
   prompt: string,
-  options?: { model?: string; onChunk?: (chunk: string) => void },
+  options?: {
+    model?: string;
+    onChunk?: (chunk: string) => void;
+    /** Stable per-agent context sent ahead of `prompt` as a cached block (prompt caching where supported). */
+    staticPrefix?: string;
+  },
 ): Promise<T> {
-  const raw = await callClaude(prompt, options);
+  const callOpts = { model: options?.model, onChunk: options?.onChunk };
+  const raw = options?.staticPrefix
+    ? await callClaudeWithPrefix(options.staticPrefix, prompt, callOpts)
+    : await callClaude(prompt, callOpts);
 
   let jsonStr = stripThinkTags(raw).trim();
   if (jsonStr.startsWith("```")) {

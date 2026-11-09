@@ -517,7 +517,12 @@ ${feedback ? `Rückmeldung der letzten Stunde:\n${feedback}\n` : ""}${conversati
 
 // ─── Prompt builder ───────────────────────────────────────────
 
-function buildPrompt(agent: AgentName, perception: string, actionSchema: string, state: WorldState): string {
+/**
+ * Classic-mode prompt, split for prompt caching: `prefix` (identity, profile, places, action
+ * schema) repeats across an agent's calls and is sent as a cached block; `suffix` (memory,
+ * perception, travel) changes every call.
+ */
+function buildPrompt(agent: AgentName, perception: string, actionSchema: string, state: WorldState): { prefix: string; suffix: string } {
   const name = getDisplayName(agent);
   const profile = readAgentProfile(agent);
   const memory = readAgentMemory(agent);
@@ -537,17 +542,22 @@ function buildPrompt(agent: AgentName, perception: string, actionSchema: string,
 
   const travelBlock = buildTravelBlock(agent, state);
 
-  return `Du bist ${name}.
+  const prefix = `Du bist ${name}.
 
 ${profile}
 ${locationsLine ? "\n" + locationsLine : ""}
-${memory}
+
+---
+
+${actionSchema}`;
+  const suffix = `${memory}
 
 ---
 
 ${perception}
 ${travelBlock ? "\n" + travelBlock + "\n" : ""}
-${actionSchema}`;
+Antworte jetzt als ${name}, NUR mit dem JSON-Objekt wie oben beschrieben.`;
+  return { prefix, suffix };
 }
 
 // ─── Run single agent turn ────────────────────────────────────
@@ -569,8 +579,9 @@ export async function runAgentTurn(
 
   let response: { actions: AgentAction[] };
   try {
-    response = await callClaudeJSON<{ actions: AgentAction[] }>(prompt, {
+    response = await callClaudeJSON<{ actions: AgentAction[] }>(prompt.suffix, {
       model,
+      staticPrefix: prompt.prefix,
       onChunk: (chunk) => {
         emitSSE("agent:stream", { agent, name, chunk });
       },

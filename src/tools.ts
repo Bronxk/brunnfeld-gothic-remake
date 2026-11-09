@@ -20,7 +20,7 @@ const GUARD_LINE = `\n- wache_halten: Halte in deinem Ort Wache (bei Spannung/Kr
 
 const BASE_AGENDA_TYPES = ["tax_change", "marketplace_hours", "banishment", "general_rule", "grant_tools", "curfew", "trade_restriction", "repeal"];
 
-const CORE_ACTION_SCHEMA = `WICHTIG: Dein Geldbeutel und dein Inventar oben stimmen genau. Behaupte nicht, Groschen oder Waren zu haben, die du nicht bekommen hast. Mündliche Absprachen übertragen keine Waren — nur post_order und buy_item erzeugen echte Geschäfte.
+const CORE_ACTION_SCHEMA = `WICHTIG: Dein Geldbeutel und dein Inventar in der Lage stimmen genau. Behaupte nicht, Groschen oder Waren zu haben, die du nicht bekommen hast. Mündliche Absprachen übertragen keine Waren — nur post_order und buy_item erzeugen echte Geschäfte.
 
 Antworte NUR mit einem JSON-Objekt:
 {
