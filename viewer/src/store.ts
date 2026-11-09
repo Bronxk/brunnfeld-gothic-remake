@@ -25,19 +25,20 @@ export type PlayerSkillChoice = "bauer" | "knappe" | "holzfaeller" | "none";
 const SPECTATE_KEY = "schlackental.spectate";
 const DIARY_MAX = 12;
 
+/** Observer-first: without a stored choice the viewer only watches ("Mitspielen" opens creation). */
 function loadSpectating(): boolean {
   try {
-    return window.localStorage.getItem(SPECTATE_KEY) === "1";
+    const stored = window.localStorage.getItem(SPECTATE_KEY);
+    return stored === null ? true : stored === "1";
   } catch (err) {
     console.warn("[viewer] localStorage unavailable (read)", err);
-    return false;
+    return true;
   }
 }
 
 function saveSpectating(v: boolean): void {
   try {
-    if (v) window.localStorage.setItem(SPECTATE_KEY, "1");
-    else window.localStorage.removeItem(SPECTATE_KEY);
+    window.localStorage.setItem(SPECTATE_KEY, v ? "1" : "0");
   } catch (err) {
     console.warn("[viewer] localStorage unavailable (write)", err);
   }
