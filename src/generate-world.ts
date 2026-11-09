@@ -9,7 +9,7 @@
  *   node dist/generate-world.js --seed=42                 # deterministic output
  */
 
-import { writeFileSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync, copyFileSync } from "fs";
 import { join } from "path";
 import type {
   WorldState, AgentEconomicState, BodyState, Marketplace, Skill, ItemType,
@@ -437,7 +437,7 @@ function profileStub(displayName: string, skill: Skill, villageName: string, wor
 }
 
 function memoryStub(displayName: string): string {
-  return `# ${displayName}\n\n## People\n*(Nobody known yet)*\n\n## Experiences\n*(Nothing yet)*\n\n## Important\n*(Nothing)*\n`;
+  return `# ${displayName}\n\n## Personen\n*(Noch niemand bekannt)*\n\n## Erlebnisse\n*(Noch nichts)*\n\n## Wichtig\n*(Nichts)*\n`;
 }
 
 // ─── Build 1-village default world ───────────────────────────
@@ -777,11 +777,12 @@ function writeAgentFiles(config: WorldConfig): void {
         writeFileSync(profPath, profileStub(agent.displayName, agent.skill, village.name, agent.workLocation));
       }
 
-      // Always write blank memory stubs to both memory/ and memory_initial/
-      // so `npm reset` can restore a clean baseline.
-      const blankMemory = memoryStub(agent.displayName);
-      writeFileSync(join(memDir,     `${agent.id}.md`), blankMemory);
-      writeFileSync(join(memInitDir, `${agent.id}.md`), blankMemory);
+      // memory_initial/ is the baseline `npm run reset` restores. Hand-written baselines (the
+      // canonical cast ships with first relationships) are kept; new agents get a blank stub.
+      // Every generated world starts from the baseline, never from a previous run's memories.
+      const initPath = join(memInitDir, `${agent.id}.md`);
+      if (!existsSync(initPath)) writeFileSync(initPath, memoryStub(agent.displayName));
+      copyFileSync(initPath, join(memDir, `${agent.id}.md`));
     }
   }
 }
