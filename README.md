@@ -881,6 +881,12 @@ With the defaults (`--villages=1 --agents=19`) the hand-written default cast abo
 | `CLAUDE_CONCURRENCY` | `4` | Max concurrent LLM HTTP requests. Raises parallelism across locations but has no effect within a single location (agents there are always sequential). |
 | `PORT` | `3333` | HTTP server port |
 
+**Model per colonist.** `CHARACTER_MODEL` is only the default: any single colonist can run on a different tier (`haiku` / `sonnet` / `opus`) while the simulation is running. No restart is needed; the change applies from that colonist's next LLM call and is stored in `data/world_config.json` (`agents[].model`). Interviews and God Mode keep their own models.
+
+- **Viewer:** select a colonist, then use the "Modell" dropdown (shows the price per million tokens and a rough, estimated cost per colonist and tick; hidden for the human player).
+- **API:** `GET /api/agents/models` returns `{ default, models, options }`. `POST /api/agents/<id>/model` with `{ "model": "sonnet" }` sets a tier, `{ "model": null }` goes back to the default. It returns 400 for an unknown tier, 404 for an unknown colonist, and pushes an `agent:model` SSE event to open viewers.
+- Re-running `generate-world` rewrites `world_config.json` and drops the overrides.
+
 **Model tier resolution** (OpenRouter mode): `OPENROUTER_MODEL_<TIER>` → `OPENROUTER_MODEL` → `CHARACTER_MODEL` → default `haiku`.
 
 **Three backend modes**, selected automatically:
