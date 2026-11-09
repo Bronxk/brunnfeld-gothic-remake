@@ -25,7 +25,7 @@ import { emitSSE } from "./events.js";
 export type Rng = () => number;
 
 export type WarResult =
-  | { ok: true; relation: VillageRelation; event?: WarEvent }
+  | { ok: true; relation: VillageRelation; event?: WarEvent; /** true if this call ended a war */ warEnded?: boolean }
   | { ok: false; error: string };
 
 // ─── Constants ───────────────────────────────────────────────
@@ -44,7 +44,8 @@ const RAID_LOOT_CAP = 60;
 const RAID_ITEM_SHARE = 0.2;
 const RAID_WALLET_SHARE = 0.15;
 const PEACE_OFFER_TTL = 32;
-const DEFAULT_TRIBUTE = 20;
+const MIN_REQUIRED_TRIBUTE = 20;
+const REQUIRED_TRIBUTE_SHARE = 0.1;
 const MAX_TRIBUTE = 200;
 /** Weapon-like items, used only if such an item exists in the item list (currently none does). */
 const WEAPON_ITEMS: ItemType[] = (["waffe", "schwert", "knueppel", "speer"] as string[])
@@ -89,6 +90,7 @@ function notifyVillage(state: WorldState, vid: string, text: string): void {
 }
 
 function isFighter(state: WorldState, agent: AgentName): boolean {
+  if (agent === PLAYER_ID) return false;              // the human is an observer: no raids, guards or wounds
   const body = state.body[agent];
   if (!body || !state.economics[agent]) return false;
   if (isAgentDead(body)) return false;
@@ -332,11 +334,11 @@ export function declareWar(state: WorldState, tick: number, aggressor: string, t
   rel.tension = Math.max(rel.tension, 90);
   delete rel.peaceOfferBy;
   delete rel.peaceOfferTick;
+  delete rel.peaceOfferQueued;
   delete rel.truceUntil;
 
   notifyVillage(state, target, `⚔ ${aName} hat uns den Krieg erklärt! Wachen aufstellen, Vorräte sichern — Überfälle sind jetzt jederzeit möglich.`);
-  notifyVillage(state, aggressor, `⚔ Der Rat hat ${tName} den Krieg erklärt. Mit ueberfallen kannst du dort angreifen, mit wache_halten schützt du unseren Ort.`);
-  const ev = pushLog(state, {
+  notifyVillage(state, aggressor, `⚔ Der Rat hat ${tName} den Krieg erklärt. Mit ueberfallen kannst du dort angreifen, mit wache_halten schützt du unseren Ort.`);  const ev = pushLog(state, {
     tick, kind: "declared", villages: [rel.a, rel.b],
     text: `${aName} erklärt ${tName} den Krieg.`, actor: aggressor,
   });
@@ -350,6 +352,7 @@ function endWar(state: WorldState, rel: VillageRelation, tick: number): void {
   rel.tension = 20;
   delete rel.peaceOfferBy;
   delete rel.peaceOfferTick;
+  delete rel.peaceOfferQueued;
 }
 
 export function makePeace(state: WorldState, tick: number, a: string, b: string): WarResult {
@@ -365,23 +368,50 @@ export function makePeace(state: WorldState, tick: number, a: string, b: string)
   notifyVillage(state, b, `🕊 ${text}`);
   const ev = pushLog(state, { tick, kind: "peace", villages: [rel.a, rel.b], text });
   emitRelation(rel);
-  return { ok: true, relation: rel, event: ev };
+  return { ok: true, relation: rel, event: ev, warEnded: true };
 }
 
-/** Payer village hands `amount` Groschen (collected from its members by wealth) to the receiver's elder. */
+/** Village members that count as payers/recipients (the observer never does). */
+function villageNpcs(state: WorldState, vid: string): AgentName[] {
+  return getVillageMembers(vid).filter(a => a !== PLAYER_ID && state.economics[a]);
+}
+
+/** Tribute that ends a war: 10 % of the payer village's total Groschen, at least 20. */
+export function requiredTribute(state: WorldState, payer: string): number {
+  const total = villageNpcs(state, payer).reduce((s, a) => s + Math.max(0, state.economics[a]!.wallet), 0);
+  return Math.max(MIN_REQUIRED_TRIBUTE, Math.round(total * REQUIRED_TRIBUTE_SHARE));
+}
+
+/** A tribute amount from an LLM/human: only a valid integer >= 1 counts; anything else is undefined. */
+export function validTributeAmount(v: unknown): number | undefined {
+  if (v == null || v === "") return undefined;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
+}
+
+/** Amount a tribute agenda will actually ask for: a valid offered amount, else the required one; capped. */
+export function tributeAmountFor(state: WorldState, payer: string, offered?: unknown): number {
+  const required = requiredTribute(state, payer);
+  const want = validTributeAmount(offered) ?? required;
+  return Math.min(Math.max(MAX_TRIBUTE, required), want);
+}
+
+/**
+ * Payer village hands `amount` Groschen (collected from its members by wealth) to the receiver's elder.
+ * An amount < 1 or NaN means "the required tribute". Only if the collected sum reaches
+ * `requiredTribute` does a war end (peace + truce); less only lowers tension proportionally.
+ */
 export function payTribute(
   state: WorldState, tick: number, payer: string, receiver: string, amount: number,
 ): WarResult {
   const bad = checkVillages(payer, receiver);
   if (bad) return { ok: false, error: bad };
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, error: "[Geht nicht] Der Tribut muss ein positiver Betrag sein." };
-  }
-  const want = Math.floor(amount);
+  const required = requiredTribute(state, payer);
+  const want = Number.isFinite(amount) && amount >= 1 ? Math.floor(amount) : required;
   const pName = villageName(payer);
   const rName = villageName(receiver);
 
-  const payers = getVillageMembers(payer).filter(a => a !== PLAYER_ID && state.economics[a] && state.economics[a]!.wallet > 0);
+  const payers = villageNpcs(state, payer).filter(a => state.economics[a]!.wallet > 0);
   const totalWealth = payers.reduce((s, a) => s + state.economics[a]!.wallet, 0);
   const collect = Math.min(want, totalWealth);
   if (collect <= 0) return { ok: false, error: `[Geht nicht] ${pName} hat nichts, was als Tribut gezahlt werden könnte.` };
@@ -408,12 +438,15 @@ export function payTribute(
   feedbackToAgent(recipient, state, `${pName} hat ${collect} Groschen Tribut gezahlt. Du verwahrst sie für ${rName}.`);
 
   const rel = getRelation(state, payer, receiver);
-  rel.tension = Math.max(0, rel.tension - 40);
+  const enough = collect >= required;
+  rel.tension = Math.max(0, rel.tension - Math.round(40 * Math.min(1, collect / required)));
   const wasWar = rel.stance === "krieg";
-  if (wasWar) endWar(state, rel, tick);
+  const warEnded = wasWar && enough;
+  if (warEnded) endWar(state, rel, tick);
   else if (rel.stance === "spannung" && rel.tension < 40) setStance(rel, "frieden", tick);
 
-  const text = `${pName} zahlt ${collect} Groschen Tribut an ${rName}${wasWar ? " — der Krieg ist damit beendet" : ""}.`;
+  const text = `${pName} zahlt ${collect} Groschen Tribut an ${rName}`
+    + (warEnded ? " — der Krieg ist damit beendet" : wasWar ? ` — das reicht nicht (verlangt: ${required}), der Krieg geht weiter` : "") + ".";
   notifyVillage(state, payer, `💰 ${text}`);
   notifyVillage(state, receiver, `💰 ${text}`);
   const ev = pushLog(state, {
@@ -421,7 +454,7 @@ export function payTribute(
     loot: { groschen: collect, items: {} },
   });
   emitRelation(rel);
-  return { ok: true, relation: rel, event: ev };
+  return { ok: true, relation: rel, event: ev, warEnded };
 }
 
 // ─── Council agendas ─────────────────────────────────────────
@@ -445,8 +478,7 @@ export function applyWarAgenda(
     const r = declareWar(state, tick, vid, targetVillage);
     if (!r.ok) fail(r.error);
   } else if (type === "pay_tribute") {
-    const amount = Math.min(MAX_TRIBUTE, Math.max(1, Math.floor(value && value > 0 ? value : DEFAULT_TRIBUTE)));
-    const r = payTribute(state, tick, vid, targetVillage, amount);
+    const r = payTribute(state, tick, vid, targetVillage, tributeAmountFor(state, vid, value));
     if (!r.ok) fail(r.error);
   } else if (type === "make_peace") {
     const rel = getRelation(state, vid, targetVillage);
@@ -461,26 +493,114 @@ export function applyWarAgenda(
     }
     rel.peaceOfferBy = vid;
     rel.peaceOfferTick = tick;
+    delete rel.peaceOfferQueued;
     const text = `${villageName(vid)} bietet ${villageName(targetVillage)} Frieden an.`;
-    notifyVillage(state, vid, `🕊 ${text} Nun muss ${villageName(targetVillage)} zustimmen.`);
     notifyVillage(state, targetVillage, `🕊 ${text}`);
     pushLog(state, { tick, kind: "peace_offer", villages: [rel.a, rel.b], text, actor: vid });
-    scheduleMeeting(state, tick, targetVillage, "make_peace", `Friedensangebot von ${villageName(vid)} annehmen?`, vid);
+    if (schedulePeaceMeeting(state, tick, rel)) {
+      notifyVillage(state, vid, `🕊 ${text} Nun muss ${villageName(targetVillage)} zustimmen.`);
+    } else {
+      rel.peaceOfferQueued = true;
+      notifyVillage(state, vid,
+        `🕊 ${text} In ${villageName(targetVillage)} läuft gerade ein anderer Appell — das Angebot wartet und wird nachgereicht (verfällt nach ${PEACE_OFFER_TTL} Stunden).`);
+    }
     emitRelation(rel);
   }
 }
 
+/** Put the open peace offer of `rel` on the target village's council agenda; false if that village is busy. */
+function schedulePeaceMeeting(state: WorldState, tick: number, rel: VillageRelation): boolean {
+  const offerer = rel.peaceOfferBy;
+  if (!offerer) return false;
+  const target = otherOf(rel, offerer);
+  return scheduleMeeting(state, tick, target, "make_peace", `Friedensangebot von ${villageName(offerer)} annehmen?`, offerer);
+}
+
+// ─── Fixed council proposals ─────────────────────────────────
+
+/** Why a war agenda against `target` cannot succeed right now (German `[Geht nicht]` text), or null. */
+export function warAgendaBlock(
+  state: WorldState, vid: string, type: AgendaType, target: string, tick: number = state.current_tick,
+): string | null {
+  const bad = checkVillages(vid, target);
+  if (bad) return bad;
+  const rel = relationOrDefault(state, vid, target);
+  const tName = villageName(target);
+  if (type === "declare_war") {
+    if (rel.stance === "krieg") return `[Geht nicht] Mit ${tName} herrscht schon Krieg.`;
+    if (rel.truceUntil != null && rel.truceUntil > tick) return `[Geht nicht] Mit ${tName} gilt noch ein Waffenstillstand bis Tag ${dayOf(rel.truceUntil)}.`;
+  } else if (type === "make_peace") {
+    if (rel.stance === "frieden") return `[Geht nicht] Mit ${tName} herrscht schon Frieden.`;
+  } else if (type === "pay_tribute") {
+    if (rel.stance === "frieden") return `[Geht nicht] Mit ${tName} herrscht Frieden — es gibt keinen Grund für Tribut.`;
+  }
+  return null;
+}
+
+/** War agendas village `vid` can put on the table right now (at least one other village where it can succeed). */
+export function availableWarAgendas(state: WorldState, vid: string, tick: number = state.current_tick): AgendaType[] {
+  const others = getVillages().filter(v => v.id !== vid);
+  return WAR_AGENDAS.filter(t => others.some(o => warAgendaBlock(state, vid, t, o.id, tick) === null));
+}
+
+/**
+ * The FIXED German proposal a war agenda votes on. The effect of a war agenda depends only on its
+ * type, never on free text, so the meeting must vote on exactly this. For pay_tribute the amount is
+ * a valid integer >= 1 taken from `offeredAmount`, else the required tribute.
+ */
+export function warProposal(
+  state: WorldState, vid: string, type: AgendaType, targetVillage: string, offeredAmount?: unknown,
+): { text: string; value?: number } {
+  const t = villageName(targetVillage);
+  if (type === "declare_war") return { text: `Krieg gegen ${t} erklären` };
+  if (type === "make_peace") {
+    const accept = peekRelation(state, vid, targetVillage)?.peaceOfferBy === targetVillage;
+    return { text: accept ? `Friedensangebot von ${t} annehmen` : `Frieden mit ${t} schließen` };
+  }
+  const amount = tributeAmountFor(state, vid, offeredAmount);
+  return { text: `${t} ${amount} Groschen Tribut zahlen`, value: amount };
+}
+
 // ─── Agent actions ───────────────────────────────────────────
 
-export function isWarRelevant(state: WorldState, agent: AgentName): boolean {
+function homeStances(state: WorldState, agent: AgentName): Stance[] {
   const v = homeVillage(state, agent);
-  return Object.values(state.diplomacy ?? {}).some(r => (r.a === v || r.b === v) && r.stance !== "frieden");
+  return Object.values(state.diplomacy ?? {}).filter(r => r.a === v || r.b === v).map(r => r.stance);
 }
+
+/** Raids are only offered while the agent's village is at krieg with someone (never to the observer). */
+export function canRaid(state: WorldState, agent: AgentName): boolean {
+  return agent !== PLAYER_ID && homeStances(state, agent).includes("krieg");
+}
+
+/** Guard duty is only offered at spannung or krieg (never to the observer). */
+export function canGuard(state: WorldState, agent: AgentName): boolean {
+  return agent !== PLAYER_ID && homeStances(state, agent).some(s => s !== "frieden");
+}
+
+export function isWarRelevant(state: WorldState, agent: AgentName): boolean {
+  return canGuard(state, agent);
+}
+
+/** What the agent's prompt/tool list may offer about war right now. */
+export interface WarOffers { active: boolean; raid: boolean; guard: boolean; agendas: AgendaType[] }
+
+export function warOffers(state: WorldState, agent: AgentName): WarOffers {
+  return {
+    active: isWarRelevant(state, agent),
+    raid: canRaid(state, agent),
+    guard: canGuard(state, agent),
+    agendas: availableWarAgendas(state, homeVillage(state, agent)),
+  };
+}
+
+export const PLAYER_WAR_REFUSAL = "[Geht nicht] Als Beobachter nimmst du an keinem Krieg teil — weder Überfall noch Wache.";
 
 /** Validate and record a raid / guard action; the outcome is resolved at tick end by resolveWar. */
 export function registerWarAction(
   state: WorldState, tick: number, agent: AgentName, kind: "raid" | "guard", target?: string,
 ): { ok: true; text: string } | { ok: false; error: string } {
+  if (agent === PLAYER_ID) return { ok: false, error: PLAYER_WAR_REFUSAL };
   const home = homeVillage(state, agent);
   const loc = state.agent_locations[agent];
   const here = locationVillage(loc);
@@ -520,8 +640,13 @@ export function warTradeBlock(state: WorldState, agent: AgentName): string | nul
 
 // ─── Raid resolution ─────────────────────────────────────────
 
-function villageMarketplace(state: WorldState, vid: string): Marketplace {
-  return state.marketplaces?.[vid] ?? state.marketplace;
+/**
+ * The village's own marketplace. In multi-village states (`state.marketplaces`) a village without
+ * an entry has none: `state.marketplace` is only an alias of the default village's market, so
+ * falling back to it would loot the wrong village. Old single-market saves use `state.marketplace`.
+ */
+function villageMarketplace(state: WorldState, vid: string): Marketplace | undefined {
+  return state.marketplaces ? state.marketplaces[vid] : state.marketplace;
 }
 
 function armed(state: WorldState, agent: AgentName): boolean {
@@ -589,8 +714,12 @@ function resolveRaid(
     const lootItems: { item: ItemType; qty: number }[] = [];
     let value = loot.groschen;
     const mkt = villageMarketplace(state, targetVid);
-    for (const order of [...mkt.orders]) {
+    if (!mkt) console.warn(`  ⚔ [war] no marketplace for ${targetVid} — goods looting skipped`);
+    for (const order of [...(mkt?.orders ?? [])]) {
       if (order.type !== "sell" || order.quantity <= 0) continue;
+      // Only the target village's own members (home village) can be robbed — not the raiders'
+      // own orders, neutral villages' traders, or the observer.
+      if (order.agentId === PLAYER_ID || homeVillage(state, order.agentId) !== targetVid) continue;
       const seller = state.economics[order.agentId];
       if (!seller) continue;
       const held = seller.inventory.items.find(i => i.type === order.item)?.quantity ?? 0;
@@ -605,7 +734,7 @@ function resolveRaid(
       lootItems.push({ item: order.item, qty: take });
       feedbackToAgent(order.agentId, state, `Plünderer haben ${take}× ${itemLabel(order.item)} aus deinem Angebot geraubt.`);
     }
-    mkt.orders = mkt.orders.filter(o => o.quantity > 0);
+    if (mkt) mkt.orders = mkt.orders.filter(o => o.quantity > 0);
 
     // Split among the raiders: Groschen evenly (remainder to the first), goods unit by unit.
     const n = raiders.length;
@@ -660,7 +789,10 @@ function resolveRaid(
 export function resolveWar(state: WorldState, tick: number, rng: Rng = Math.random): WarEvent[] {
   const actions = state.war_actions ?? {};
   state.war_actions = {};
-  const entries = Object.entries(actions).filter(([, a]) => a.tick === tick);
+  // Accept actions registered for this tick or the previous one: an action registered after the
+  // previous resolution (mid-tick, outside the agent phase) carries the older tick and would
+  // otherwise be dropped silently. Anything older is stale.
+  const entries = Object.entries(actions).filter(([, a]) => a.tick === tick || a.tick === tick - 1);
   if (entries.length === 0) return [];
 
   const guards = new Set<AgentName>(entries.filter(([, a]) => a.kind === "guard").map(([id]) => id));
@@ -693,7 +825,20 @@ export function tickDiplomacy(state: WorldState, tick: number): void {
     if (rel.peaceOfferTick != null && tick - rel.peaceOfferTick > PEACE_OFFER_TTL) {
       delete rel.peaceOfferBy;
       delete rel.peaceOfferTick;
+      delete rel.peaceOfferQueued;
       changed = true;
+    }
+    // A peace offer that found its target village busy is retried every tick until it is scheduled or expires.
+    if (rel.peaceOfferQueued && rel.peaceOfferBy) {
+      if (rel.stance === "frieden") {
+        delete rel.peaceOfferBy; delete rel.peaceOfferTick; delete rel.peaceOfferQueued;
+        changed = true;
+      } else if (schedulePeaceMeeting(state, tick, rel)) {
+        delete rel.peaceOfferQueued;
+        notifyVillage(state, rel.peaceOfferBy,
+          `🕊 Das Friedensangebot an ${villageName(otherOf(rel, rel.peaceOfferBy))} liegt jetzt dem Rat dort vor.`);
+        changed = true;
+      }
     }
     if (dawn && rel.stance !== "krieg" && rel.tension > 0) {
       rel.tension = Math.max(0, rel.tension - 2);
@@ -716,20 +861,24 @@ function clip(s: string, n: number): string {
   return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }
 
-/** Short German lines for prompts (cheap in tokens); empty when everything is quiet. */
-export function warPerceptionLines(state: WorldState, agent: AgentName): string[] {
+/**
+ * Short German lines for prompts (cheap in tokens); empty when everything is quiet. The available
+ * actions are NOT listed here: the action schema / tool list already does that.
+ * `withRecent: false` leaves out the one-entry "Zuletzt:" line (later conversation rounds, check_village,
+ * meeting vote prompts).
+ */
+export function warPerceptionLines(state: WorldState, agent: AgentName, withRecent = true): string[] {
   const vid = homeVillage(state, agent);
   const rels = Object.values(state.diplomacy ?? {}).filter(r => r.a === vid || r.b === vid);
   const lines: string[] = [];
   let tense = false;
-  let atWar = false;
   const log = state.war_log ?? [];
 
   for (const rel of rels) {
     const other = otherOf(rel, vid);
     const oName = villageName(other);
     if (rel.stance === "krieg") {
-      atWar = tense = true;
+      tense = true;
       const lost = rel.raidsWon[other] ?? 0;
       lines.push(`⚔ Krieg mit ${oName} seit Tag ${dayOf(rel.since)} — ${lost} Überfall${lost === 1 ? "" : "e"} verloren.`);
     } else if (rel.stance === "spannung") {
@@ -743,15 +892,9 @@ export function warPerceptionLines(state: WorldState, agent: AgentName): string[
     if (rel.peaceOfferBy === other) lines.push(`${oName} hat Frieden angeboten — der Rat kann per Appell (make_peace) zustimmen.`);
   }
 
-  const recent = log.filter(e => e.villages.includes(vid)).slice(-3);
+  const recent = withRecent ? log.filter(e => e.villages.includes(vid)).slice(-1) : [];
   if (recent.length > 0 && (tense || recent.some(e => e.tick >= state.current_tick - ticksPerDay() * 2))) {
     lines.push("Zuletzt: " + recent.map(e => `Tag ${dayOf(e.tick)}: ${clip(e.text, 90)}`).join(" | "));
-  }
-
-  if (atWar) {
-    lines.push("Mögliches: ueberfallen (Siedlung nennen; nur im feindlichen Ort), wache_halten (schützt deinen Ort); Appell: declare_war, make_peace, pay_tribute (target_village).");
-  } else if (tense) {
-    lines.push("Mögliches: wache_halten (in deinem Ort); Appell: declare_war, make_peace, pay_tribute (target_village).");
   }
   return lines;
 }

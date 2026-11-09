@@ -11,12 +11,14 @@ import { feedbackToAgent, addToInventory, removeFromInventory, getInventoryQty, 
 import { executeTrade, removeOrder, addOrder, generateOrderId } from "./marketplace.js";
 import { emitSSE } from "./events.js";
 import { isLocationBlockedByEvent } from "./god-mode.js";
-import { registerWarAction, warTradeBlock, resolveVillageId, villageName, isWarAgenda } from "./war.js";
+import { registerWarAction, warTradeBlock, resolveVillageId, villageName, isWarAgenda, warAgendaBlock, validTributeAmount, type WarOffers } from "./war.js";
 
-const WAR_ACTION_LINES = `\n- ueberfallen: Überfall auf eine feindliche Siedlung (nur im Krieg, du musst dort sein). Felder: target_village (Name). Ergebnis am Ende der Stunde.
-- wache_halten: Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt, wenn Angreifer kommen.`;
+const NO_WAR: WarOffers = { active: false, raid: false, guard: false, agendas: [] };
 
-const WAR_AGENDA_TYPES = `"declare_war"|"make_peace"|"pay_tribute"`;
+const RAID_LINE = `\n- ueberfallen: Überfall auf eine feindliche Siedlung (nur im Krieg, du musst dort sein). Felder: target_village (Name). Ergebnis am Ende der Stunde.`;
+const GUARD_LINE = `\n- wache_halten: Halte in deinem Ort Wache (bei Spannung/Krieg); Wachen zählen doppelt, wenn Angreifer kommen.`;
+
+const BASE_AGENDA_TYPES = ["tax_change", "marketplace_hours", "banishment", "general_rule", "grant_tools", "curfew", "trade_restriction", "repeal"];
 
 const CORE_ACTION_SCHEMA = `WICHTIG: Dein Geldbeutel und dein Inventar oben stimmen genau. Behaupte nicht, Groschen oder Waren zu haben, die du nicht bekommen hast. Mündliche Absprachen übertragen keine Waren — nur post_order und buy_item erzeugen echte Geschäfte.
 
@@ -47,16 +49,20 @@ export function buildActionSchema(
   agent: AgentName,
   hasConcerns: boolean,
   atMeeting = false,
-  warActive = false,
+  war: WarOffers = NO_WAR,
 ): string {
+  const warActive = war.active;
   let schema = CORE_ACTION_SCHEMA;
-  if (warActive && !atMeeting) schema += WAR_ACTION_LINES;
+  if (!atMeeting) {
+    if (war.raid) schema += RAID_LINE;
+    if (war.guard) schema += GUARD_LINE;
+  }
   if (atMeeting) {
-    schema += `\n- propose_rule: Schlag eine Regel zur Abstimmung vor. Felder: text (die Regel), value? (Zahl, z. B. 0.15 für den Zehnt-Satz).`;
+    schema += `\n- propose_rule: Schlag eine Regel zur Abstimmung vor. Felder: text (die Regel), value? (Zahl: Zehnt in Prozent, z. B. 15; Sperrstunde 0–10; bei Tribut ganze Groschen, z. B. 40).`;
     schema += `\n- propose_repeal: Beantrage, einen bestehenden Ratsbeschluss aufzuheben. Felder: law_id (der Beschluss), text (Begründung).`;
     schema += `\n- vote: Gib deine Stimme ab. Felder: side ("agree"|"disagree").`;
   } else if (agent === getVillageElder(getAgentVillage(agent)) && (hasConcerns || warActive)) {
-    schema += `\n- call_meeting: Berufe für den nächsten Morgen einen Appell ein. Felder: agenda_type ("tax_change"|"marketplace_hours"|"banishment"|"general_rule"|"grant_tools"|"curfew"|"trade_restriction"|"repeal"|${WAR_AGENDA_TYPES}), text (die Tagesordnung), target? (Name, bei banishment/grant_tools), target_village? (Siedlung, bei declare_war/make_peace/pay_tribute), value? (Tribut in Groschen, bei pay_tribute).`;
+    schema += `\n- call_meeting: Berufe für den nächsten Morgen einen Appell ein. Felder: agenda_type (${[...BASE_AGENDA_TYPES, ...war.agendas].map(t => `"${t}"`).join("|")}), text (die Tagesordnung), target? (Name, bei banishment/grant_tools)${war.agendas.length > 0 ? `, target_village? (Siedlung, bei ${war.agendas.join("/")})${war.agendas.includes("pay_tribute") ? ", value? (Tribut in ganzen Groschen, bei pay_tribute)" : ""}` : ""}.`;
   } else if (agent !== getVillageElder(getAgentVillage(agent)) && (hasConcerns || warActive)) {
     schema += `\n- petition_meeting: Bitte ${getDisplayName(getVillageElder(getAgentVillage(agent)) ?? "den Bergvogt")}, einen Appell einzuberufen. Felder: text (worum es gehen soll).`;
   }
@@ -542,6 +548,8 @@ export function resolveAction(
           const others = getVillages().filter(v => v.id !== villageId).map(v => v.name).join(", ");
           return { ...action, result: `[Geht nicht] ${agendaType} braucht target_village — eine andere Siedlung (${others || "keine bekannt"}).`, visible: false };
         }
+        const blockedWhy = warAgendaBlock(state, villageId, agendaType, tv, time.tick);
+        if (blockedWhy) return { ...action, result: blockedWhy, visible: false };
         targetVillage = tv;
       }
       state.pending_meetings[villageId] = {
@@ -551,7 +559,7 @@ export function resolveAction(
         description: agendaDesc,
         target: isWarAgenda(agendaType) ? undefined : action.target as AgentName | undefined,
         ...(targetVillage ? { targetVillage } : {}),
-        ...(agendaType === "pay_tribute" && action.value != null ? { value: Number(action.value) } : {}),
+        ...(agendaType === "pay_tribute" && validTributeAmount(action.value) != null ? { value: validTributeAmount(action.value)! } : {}),
         calledAtTick: time.tick,
       };
       const townHall = getVillageTownHall(villageId);

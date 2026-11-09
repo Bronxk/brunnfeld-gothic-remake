@@ -11,7 +11,7 @@ import { resolveAction, type ResolveContext } from "./tools.js";
 import { getProducibleItems, MULTI_FARM_ITEMS } from "./production.js";
 import { emitSSE } from "./events.js";
 import { getSounds } from "./sounds.js";
-import { isWarRelevant, isWarAgenda, warPerceptionLines } from "./war.js";
+import { canRaid, canGuard, availableWarAgendas, isWarAgenda, warPerceptionLines } from "./war.js";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -647,7 +647,7 @@ function handleCheckVillage(_args: Record<string, unknown>, config: HarnessToolC
     if (isWarAgenda(law.type)) continue; // war lines below carry these
     lines.push(`Ratsbeschluss: ${law.description}`);
   }
-  lines.push(...warPerceptionLines(worldState, agentId));
+  lines.push(...warPerceptionLines(worldState, agentId, false)); // compact: no "Zuletzt" (the seed context has it)
 
   // Concerns (elder only)
   const elder = getVillageElder(villageId);
@@ -911,12 +911,24 @@ export function getToolsForAgent(
     if (t.name === "steal" && presentOthers.length === 0) return false;
     if (t.name === "hire_laborer" && presentOthers.length === 0) return false;
     if (t.name === "quit_job" && !isHired) return false;
-    if ((t.name === "ueberfallen" || t.name === "wache_halten") && !isWarRelevant(worldState, agentId)) return false;
+    // Raids only while at krieg, guard duty at spannung/krieg; never for the observer.
+    if (t.name === "ueberfallen" && !canRaid(worldState, agentId)) return false;
+    if (t.name === "wache_halten" && !canGuard(worldState, agentId)) return false;
     if (t.name === "call_meeting") {
       const vid = getAgentVillage(agentId);
       if (agentId !== getVillageElder(vid) || worldState.pending_meetings[vid]?.agendaType !== "general_rule") return false;
     }
     return true;
+  }).map(t => {
+    if (t.name !== "call_meeting") return t;
+    // List only the war agendas that can actually succeed right now.
+    const agendas = availableWarAgendas(worldState, getAgentVillage(agentId));
+    const warPart = agendas.length === 0 ? ""
+      : ` Kriegsthemen jetzt möglich: ${agendas.join("/")} — Siedlung in target_village${agendas.includes("pay_tribute") ? ", bei pay_tribute Betrag in value (ganze Groschen)" : ""}.`;
+    const example = agendas.includes("declare_war")
+      ? '{"agenda_type": "declare_war", "text": "Krieg gegen Rabenstollen?", "target_village": "Rabenstollen"}'
+      : '{"agenda_type": "general_rule", "text": "..."}';
+    return { ...t, description: `Nur Bergvogt: Berufe einen Appell ein.${warPart}`, argsHint: example };
   });
 
   // Inject governance tools granted by assembly vote

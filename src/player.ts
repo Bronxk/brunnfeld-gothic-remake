@@ -36,6 +36,7 @@ import { getSounds, getLastTickActions } from "./sounds.js";
 import { deliverMessages } from "./messages.js";
 import { feedbackToAgent } from "./inventory.js";
 import { isAgentDead } from "./body.js";
+import { PLAYER_WAR_REFUSAL } from "./war.js";
 
 // ─── Constants ───────────────────────────────────────────────
 
@@ -394,6 +395,11 @@ export function performPlayerAction(tool: unknown, args: unknown): ApiResult {
   const toolArgs: Record<string, unknown> = { ...(args as Record<string, unknown> | null | undefined) };
   // Player text ends up in NPC prompts: one line, bounded length.
   if (typeof toolArgs.text === "string") toolArgs.text = clampText(toolArgs.text);
+
+  // The human is an observer: war actions are refused up front, free of charge (no budget used).
+  if (toolName === "ueberfallen" || toolName === "wache_halten") {
+    return { status: 400, body: { ok: false, text: PLAYER_WAR_REFUSAL, player: viewOf(state, a.tick, false) } };
+  }
 
   const { ctx, viaLive } = contextFor(state);
   const tools = allowedTools(state, ctx);

@@ -334,6 +334,8 @@ export interface VillageRelation {
   since: number;                   // tick the stance last changed
   peaceOfferBy?: string;           // village id that offered peace
   peaceOfferTick?: number;
+  /** The offer could not get a council yet (target village busy); tickDiplomacy retries until it expires. */
+  peaceOfferQueued?: boolean;
   truceUntil?: number;             // tick; no war declaration possible before
   raidsWon: Record<string, number>;
 }

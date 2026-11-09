@@ -26,7 +26,7 @@ import { resolveMarketplace } from "./marketplace-resolver.js";
 import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
-import { applyWarAgenda, tickDiplomacy, resolveWar } from "./war.js";
+import { applyWarAgenda, tickDiplomacy, resolveWar, isWarAgenda, warProposal, validTributeAmount } from "./war.js";
 import { gateBeforeTick } from "./sim-control.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
@@ -157,7 +157,29 @@ function cleanExpiredObjects(state: WorldState, time: SimTime): void {
 
 // ─── Apply passed law effect ──────────────────────────────
 
-function applyLawEffect(law: Law, state: WorldState, time: SimTime, villageId?: string): void {
+/**
+ * Law values come straight from an LLM (`propose_rule` value / `call_meeting` value), so every
+ * agenda that reads one gets it clamped here (idempotent). Returns undefined for a missing/NaN
+ * value or an agenda that does not use a value.
+ *  - tax_change: > 1 is read as percent (15 -> 0.15), clamped to 0..0.5
+ *  - curfew: integer hour index 0..10
+ *  - marketplace_hours: integer close hour index 2..(ticksPerDay-1)
+ *  - pay_tribute: valid integer >= 1 (the war module caps/defaults it)
+ */
+export function sanitizeLawValue(type: string, raw: unknown): number | undefined {
+  if (raw == null || raw === "") return undefined;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return undefined;
+  switch (type) {
+    case "tax_change": return Math.min(0.5, Math.max(0, v > 1 ? v / 100 : v));
+    case "curfew": return Math.min(10, Math.max(0, Math.round(v)));
+    case "marketplace_hours": return Math.min(ticksPerDay() - 1, Math.max(2, Math.round(v)));
+    case "pay_tribute": return validTributeAmount(v);
+    default: return undefined;
+  }
+}
+
+export function applyLawEffect(law: Law, state: WorldState, time: SimTime, villageId?: string): void {
   switch (law.type) {
     case "declare_war":
     case "make_peace":
@@ -165,13 +187,20 @@ function applyLawEffect(law: Law, state: WorldState, time: SimTime, villageId?: 
       if (villageId) applyWarAgenda(state, time.tick, villageId, law.type, law.targetVillage, law.value);
       else console.warn(`  ⚔ War agenda ${law.type} passed without a village — ignored`);
       break;
-    case "tax_change":
-      if (law.value != null) {
-        state.tax_rate = law.value;
-        console.log(`  ⚖ Tax rate changed to ${Math.round(law.value * 100)}%`);
+    case "tax_change": {
+      const rate = sanitizeLawValue("tax_change", law.value);
+      if (rate == null) {
+        console.warn(`  ⚖ Tax change "${law.description}" passed without a usable value (${String(law.value)}) — tax rate unchanged`);
+      } else {
+        law.value = rate;
+        state.tax_rate = rate;
+        console.log(`  ⚖ Tax rate changed to ${Math.round(rate * 100)}%`);
       }
       break;
+    }
     case "marketplace_hours":
+      law.value = sanitizeLawValue("marketplace_hours", law.value);
+      if (law.value == null) console.warn(`  ⚖ Marketplace hours "${law.description}" passed without a usable value — no effect`);
       // Stored in active_laws; enforceOpeningHours reads it at runtime
       break;
     case "banishment":
@@ -192,8 +221,11 @@ function applyLawEffect(law: Law, state: WorldState, time: SimTime, villageId?: 
       break;
     case "curfew":
       // Stored in active_laws; enforceOpeningHours reads it at runtime
+      law.value = sanitizeLawValue("curfew", law.value);
       if (law.value != null) {
         console.log(`  ⚖ Curfew set: agents must be home by ${String(6 + law.value).padStart(2, "0")}:00`);
+      } else {
+        console.warn(`  ⚖ Curfew "${law.description}" passed without a usable value — no effect`);
       }
       break;
     case "trade_restriction":
@@ -304,10 +336,21 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
     }
   }
 
-  // 3. Extract first valid proposal
-  const proposal = collectedProposals[0];
-  const proposalText = proposal?.text ?? `${mtg.description} (keine konkrete Regel vorgeschlagen)`;
-  const proposalValue = proposal?.value;
+  // 3. Extract first valid proposal. War agendas (declare_war / make_peace / pay_tribute) vote on a
+  // FIXED proposal built from the agenda: their effect depends only on the agenda type, so free
+  // text is ignored. Only a tribute amount (valid integer >= 1) is taken from the proposals.
+  let proposalText: string;
+  let proposalValue: number | undefined;
+  if (isWarAgenda(mtg.agendaType) && mtg.targetVillage) {
+    const offered = collectedProposals.map(p => validTributeAmount(p.value)).find(v => v != null) ?? mtg.value;
+    const fixed = warProposal(state, villageId, mtg.agendaType, mtg.targetVillage, offered);
+    proposalText = fixed.text;
+    proposalValue = fixed.value;
+  } else {
+    const proposal = collectedProposals[0];
+    proposalText = proposal?.text ?? `${mtg.description} (keine konkrete Regel vorgeschlagen)`;
+    proposalValue = proposal?.value;
+  }
 
   emitSSE("meeting:phase", { phase: "vote", proposal: proposalText });
 
@@ -347,7 +390,7 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
       type: mtg.agendaType,
       description: proposalText,
       passedTick: time.tick,
-      value: proposalValue ?? mtg.value,
+      value: sanitizeLawValue(mtg.agendaType, proposalValue ?? mtg.value),
       target: mtg.target,
       ...(mtg.targetVillage ? { targetVillage: mtg.targetVillage } : {}),
     };
@@ -674,7 +717,7 @@ async function runTickCore(tick: number): Promise<void> {
             const pendingMessages = round === 0 ? deliverMessages(state, agent, tick) : "";
             const sounds = getSounds(agent, location, lastTickActions, state.agent_locations);
             let perception = buildPerception(
-              agent, state, time, conversationSoFar, othersPresent, pendingMessages, sounds,
+              agent, state, time, conversationSoFar, othersPresent, pendingMessages, sounds, round,
             );
             if (round > 0 && alreadyProducing.has(agent)) {
               perception += "\n[Hinweis] Du hast diese Runde schon eine Herstellung vorgemerkt. Stelle nicht noch einmal her.";

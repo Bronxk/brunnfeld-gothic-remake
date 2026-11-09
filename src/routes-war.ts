@@ -32,21 +32,39 @@ function send(res: ServerResponse, headers: Record<string, string>, status: numb
   res.end(JSON.stringify(body));
 }
 
-/** Parsed JSON object, or null for an empty/invalid/non-object/oversized body. */
-function readJsonBody(req: IncomingMessage): Promise<Json | null> {
+const TOO_BIG = Symbol("too-big");
+
+/**
+ * Parsed JSON object, null for an empty/invalid/non-object body, TOO_BIG for an oversized one
+ * (resolved as soon as the limit is crossed; nothing is buffered beyond it).
+ */
+function readJsonBody(req: IncomingMessage): Promise<Json | null | typeof TOO_BIG> {
   return new Promise(resolve => {
-    let raw = "";
-    let tooBig = false;
-    req.on("data", c => {
-      raw += c.toString();
-      if (raw.length > MAX_BODY_BYTES) tooBig = true;
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let done = false;
+    req.on("data", (c: Buffer | string) => {
+      if (done) return;
+      const buf = typeof c === "string" ? Buffer.from(c) : c;
+      bytes += buf.length;
+      if (bytes > MAX_BODY_BYTES) {
+        done = true;
+        chunks.length = 0;
+        resolve(TOO_BIG);
+        return;
+      }
+      chunks.push(buf);
     });
     req.on("error", err => {
+      if (done) return;
+      done = true;
       console.error(`[routes-war] request stream error: ${err}`);
       resolve(null);
     });
     req.on("end", () => {
-      if (tooBig) return resolve(null);
+      if (done) return;
+      done = true;
+      const raw = Buffer.concat(chunks).toString("utf8");
       try {
         const parsed: unknown = JSON.parse(raw);
         resolve(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Json) : null);
@@ -97,7 +115,7 @@ function finish(
 ): void {
   if (!r.ok) return send(res, headers, 400, { ok: false, error: r.error });
   persist();
-  send(res, headers, 200, { ok: true, relation: r.relation, event: r.event ?? null });
+  send(res, headers, 200, { ok: true, relation: r.relation, event: r.event ?? null, warEnded: r.warEnded ?? false });
 }
 
 export async function handleWarRoute(
@@ -124,6 +142,12 @@ export async function handleWarRoute(
     if (method !== "POST") { send(res, headers, 405, { ok: false, error: "Nur POST erlaubt." }); return true; }
 
     const body = await readJsonBody(req);
+    if (body === TOO_BIG) {
+      // Answer 413 and drop the connection once the answer is out; never keep buffering the upload.
+      res.writeHead(413, { ...headers, "Content-Type": "application/json", Connection: "close" });
+      res.end(JSON.stringify({ ok: false, error: `Request-Body zu groß (max. ${MAX_BODY_BYTES} Bytes).` }), () => req.destroy());
+      return true;
+    }
     if (!body) {
       send(res, headers, 400, { ok: false, error: "Ungültiger oder leerer Request-Body (JSON-Objekt erwartet)." });
       return true;
@@ -151,9 +175,11 @@ export async function handleWarRoute(
     } else {
       const payer = village(body, "payer", res, headers); if (!payer) return true;
       const receiver = village(body, "receiver", res, headers); if (!receiver) return true;
-      const amount = Number(body["amount"]);
-      if (!Number.isFinite(amount) || amount <= 0) {
-        send(res, headers, 400, { ok: false, error: "Feld „amount“ muss eine positive Zahl (Groschen) sein." });
+      // Missing amount = the tribute that ends a war (war.requiredTribute); a given one must be a positive number.
+      const rawAmount = body["amount"];
+      const amount = rawAmount == null ? NaN : Number(rawAmount);
+      if (rawAmount != null && (!Number.isFinite(amount) || amount < 1)) {
+        send(res, headers, 400, { ok: false, error: "Feld „amount“ muss eine Zahl ≥ 1 (Groschen) sein; ohne Angabe gilt der Tribut, der einen Krieg beendet." });
         return true;
       }
       const { state, tick, persist } = acquire();

@@ -1,4 +1,4 @@
-import type { AgentAction, AgentName, AgentTurnResult, ItemType, Skill, WorldState, SimTime } from "./types.js";
+import type { AgentAction, AgentName, AgentTurnResult, ItemType, PendingMeeting, Skill, WorldState, SimTime } from "./types.js";
 import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import { callClaudeJSON } from "./llm.js";
 import { emitSSE } from "./events.js";
@@ -12,7 +12,7 @@ import { tickToTime, SEASON_LABELS } from "./time.js";
 import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation } from "./village-map.js";
 import { RECIPES, MULTI_FARM_ITEMS } from "./production.js";
 import { computeVillageConcerns } from "./village-concerns.js";
-import { warPerceptionLines, isWarAgenda, isWarRelevant, villageName } from "./war.js";
+import { warPerceptionLines, isWarAgenda, warOffers, warProposal, villageName } from "./war.js";
 import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation, getAgentModel } from "./world-registry.js";
 
 // ─── Agent descriptions for unknown acquaintances ────────────
@@ -65,13 +65,22 @@ const AGENDA_LABELS: Record<string, string> = {
   pay_tribute: "Tribut",
 };
 
-/** One-line hint for the council on how to handle a war agenda (appended to the discussion prompt). */
-function warAgendaHint(type: string, targetVillage: string | undefined): string {
-  if (!isWarAgenda(type) || !targetVillage) return "";
-  const t = villageName(targetVillage);
-  if (type === "declare_war") return `\nEs geht um Krieg gegen ${t}. Wägt ab: Wer kämpft, wer wacht, was kostet uns ein Krieg? Ein Beschluss (propose_rule, z. B. „Krieg gegen ${t}“) erklärt ihn.`;
-  if (type === "make_peace") return `\nEs geht um Frieden mit ${t}. Stimmt der Rat zu, wird Frieden geschlossen (oder ${t} muss noch zustimmen). Schlag z. B. „Frieden mit ${t}“ vor.`;
-  return `\nEs geht um Tribut an ${t}. Nenne mit propose_rule einen Betrag (value, in Groschen); er wird von den Wohlhabenden eingezogen und beendet einen Krieg.`;
+/**
+ * War agendas vote on a FIXED proposal (what will happen is decided by the agenda type, not by free
+ * text). Returns that proposal, or undefined for every other agenda.
+ */
+function fixedWarProposal(state: WorldState, vid: string, mtg: PendingMeeting): { text: string; value?: number } | undefined {
+  if (!isWarAgenda(mtg.agendaType) || !mtg.targetVillage) return undefined;
+  return warProposal(state, vid, mtg.agendaType, mtg.targetVillage, mtg.value);
+}
+
+/** One-line hint for the council on a war agenda (appended to the discussion prompt). */
+function warAgendaHint(type: string, fixed: { text: string } | undefined): string {
+  if (!fixed) return "";
+  const tail = type === "pay_tribute"
+    ? " Er wird von den Wohlhabenden eingezogen; nur wenn genug zusammenkommt, endet ein Krieg. Einen anderen Betrag nennst du mit propose_rule (value, ganze Groschen)."
+    : "";
+  return `\nAbgestimmt wird genau über: „${fixed.text}“. Freie Vorschläge ändern daran nichts.${tail}`;
 }
 
 function seasonDayLine(time: SimTime): string {
@@ -153,7 +162,7 @@ function getVillageLaws(state: WorldState, time: SimTime): string {
   if (laws.length === 0) return "";
   const lines = laws.map(law => {
     const day = Math.ceil(law.passedTick / 16);
-    if (law.type === "tax_change") return `- Zehnt: ${Math.round((law.value ?? 0.1) * 100)} % (beschlossen an Tag ${day})`;
+    if (law.type === "tax_change") return `- Zehnt: ${Math.round((law.value ?? state.tax_rate ?? 0.1) * 100)} % (beschlossen an Tag ${day})`;
     if (law.type === "banishment" && law.target) {
       const untilTick = state.banned?.[law.target] ?? (law.passedTick + 32);
       const untilDay = Math.ceil(untilTick / 16);
@@ -377,6 +386,7 @@ export function buildPerception(
   otherAgentsPresent: string[],
   pendingMessages: string,
   sounds: string[],
+  round = 0,
 ): string {
   const eco = state.economics[agent];
   const body = state.body[agent];
@@ -430,7 +440,8 @@ export function buildPerception(
     : "";
   const lawsBlock = getVillageLaws(state, time);
   const meetingCtx = getMeetingContext(agent, state, time);
-  const warLines = warPerceptionLines(state, agent);
+  // "Zuletzt:" (last war event) only in the first conversation round of a tick, to save tokens.
+  const warLines = warPerceptionLines(state, agent, round === 0);
   const warBlock = warLines.length > 0 ? "\n" + warLines.join("\n") : "";
 
   const villageConcernsBlock = agent === getVillageElder(getAgentVillage(agent))
@@ -484,12 +495,13 @@ export function buildMeetingPerception(
 
   const agendaLabel = (AGENDA_LABELS[mtg.agendaType] ?? mtg.agendaType.replace("_", " "))
     + (mtg.targetVillage ? ` — ${villageName(mtg.targetVillage)}` : "");
-  const warLines = warPerceptionLines(state, agent);
+  const warLines = warPerceptionLines(state, agent, meetingPhase === "discussion");
   const warBlock = warLines.length > 0 ? `\n${warLines.join("\n")}` : "";
-  const warHint = warAgendaHint(mtg.agendaType, mtg.targetVillage);
+  const fixed = fixedWarProposal(state, vid, mtg);
+  const warHint = warAgendaHint(mtg.agendaType, fixed);
   const phaseNote = meetingPhase === "discussion"
     ? `\n=== APPELL — AUSSPRACHE ===\nTagesordnung: "${mtg.description}" (${agendaLabel})${warHint}\nSag, was du denkst. Hast du einen konkreten Vorschlag, nutze propose_rule mit einem genauen Text (und value, wenn es eine Zahl ist, z. B. Zehnt 0.15). Du kannst auch einfach sprechen (speak) oder nachdenken (think).`
-    : `\n=== APPELL — ABSTIMMUNG ===\nVorschlag auf dem Tisch: "${proposal ?? "(kein konkreter Beschluss vorgeschlagen)"}"\nNutze die Aktion vote mit side "agree" oder "disagree". Sprich vorher, wenn du willst.`;
+    : `\n=== APPELL — ABSTIMMUNG ===\nVorschlag auf dem Tisch: "${proposal ?? fixed?.text ?? "(kein konkreter Beschluss vorgeschlagen)"}"\nNutze die Aktion vote mit side "agree" oder "disagree". Sprich vorher, wenn du willst.`;
 
   return `Du bist ${getDisplayName(agent)}.
 Ort: ${TOWNHALL_LOCATION}. ${time.timeLabel}. ${seasonDayLine(time)}.
@@ -547,7 +559,7 @@ export async function runAgentTurn(
   const hasConcerns = computeVillageConcerns(context.state, context.time.tick).length > 0;
   const agentVid = getAgentVillage(agent);
   const atMeeting = context.agentLocation === getVillageTownHall(agentVid) && !!context.state.pending_meetings[agentVid];
-  const prompt = buildPrompt(agent, perception, buildActionSchema(agent, hasConcerns, atMeeting, isWarRelevant(context.state, agent)), context.state);
+  const prompt = buildPrompt(agent, perception, buildActionSchema(agent, hasConcerns, atMeeting, warOffers(context.state, agent)), context.state);
   const name = getDisplayName(agent);
 
   // Emit "agent is thinking" to frontend
