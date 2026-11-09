@@ -8,10 +8,16 @@ export function useSSE(): void {
   const { setConnected, handleSSEEvent, setWorld, setAvailableTicks, appendHistoricalFeed, setVillages, setActiveVillageId, setNeedsWorldConfig } = useVillageStore();
 
   useEffect(() => {
-    // 1. Load current world state
+    // 1. Load current world state, then the human player's own view (perception, tools) if one exists
     fetch("/api/state")
       .then((r) => r.json())
-      .then((state: WorldState) => setWorld(state))
+      .then((state: WorldState) => {
+        setWorld(state);
+        const store = useVillageStore.getState();
+        if (state.player?.created) {
+          void store.refreshPlayer().then(() => store.refreshPlayerTools());
+        }
+      })
       .catch(warn("loading /api/state"));
 
     // Load village list for multi-village support

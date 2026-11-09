@@ -1,8 +1,72 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool } from "./types";
 import { itemLabel, gr } from "./types";
 
 export type { MeetingState } from "./types";
+
+// ─── Human player (der Neue / die Neue) ──────────────────────────────────
+
+export interface Toast {
+  id: number;
+  text: string;
+  tone: "good" | "warn" | "bad" | "info";
+}
+
+/** One line of the player's Tagebuch (action result or something heard). */
+export interface DiaryEntry {
+  id: number;
+  time: string;
+  text: string;
+  kind: "result" | "fail" | "heard";
+}
+
+export type PlayerSkillChoice = "bauer" | "knappe" | "holzfaeller" | "none";
+
+const SPECTATE_KEY = "schlackental.spectate";
+const DIARY_MAX = 12;
+
+function loadSpectating(): boolean {
+  try {
+    return window.localStorage.getItem(SPECTATE_KEY) === "1";
+  } catch (err) {
+    console.warn("[viewer] localStorage unavailable (read)", err);
+    return false;
+  }
+}
+
+function saveSpectating(v: boolean): void {
+  try {
+    if (v) window.localStorage.setItem(SPECTATE_KEY, "1");
+    else window.localStorage.removeItem(SPECTATE_KEY);
+  } catch (err) {
+    console.warn("[viewer] localStorage unavailable (write)", err);
+  }
+}
+
+let toastCounter = 0;
+let diaryCounter = 0;
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Reads a JSON body; a broken body is logged and becomes {} so callers still see the HTTP status. */
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch (err) {
+    console.error(`[viewer] unreadable response body (HTTP ${res.status})`, err);
+    return {};
+  }
+}
+
+/** Backend result tags that mean "nothing happened" (src/player.ts FAILURE_TAG mirrors this). */
+export function isFailureText(text: string): boolean {
+  return /^\[(Geht nicht|Kann nicht|Nicht essbar|Zu teuer|Dort geht's nicht hin|Kein Angebot|Verboten per Ratsbeschluss|Nicht angeheuert|Tausch gescheitert|Unbekanntes Tool)/.test(text);
+}
+
+/** Speech lines out of the perception text, e.g. `Bodo sagt: "Guten Morgen"`. */
+function heardLines(perception: string | undefined): string[] {
+  if (!perception) return [];
+  return perception.split("\n").map((l) => l.trim()).filter((l) => /^[^"]{1,48} sagt: ".*"$/.test(l));
+}
 
 /** German feed line for a completed trade (shared by tick-log replay and live SSE). */
 function tradeText(buyer: AgentName, seller: AgentName, item: string, quantity: number, total: number): string {
@@ -220,6 +284,30 @@ interface VillageStore {
 
   pendingAnimations: AgentAnimation[];
 
+  // Human player
+  player: PlayerView | null;
+  playerTools: PlayerTool[];
+  playerBusy: boolean;
+  /** Set by a 429 (budget used up); cleared by the next player:update with budgetLeft > 0. */
+  budgetBlocked: boolean;
+  diary: DiaryEntry[];
+  toasts: Toast[];
+  /** User chose "Nur zuschauen" (persisted in localStorage). */
+  spectating: boolean;
+  /** "Mitspielen" pressed: show the creation overlay even though the user chose to spectate. */
+  creationForced: boolean;
+  /** Bumped to ask the map to centre on the player. */
+  focusNonce: number;
+  setSpectating: (v: boolean) => void;
+  openCreation: () => void;
+  pushToast: (text: string, tone?: Toast["tone"]) => void;
+  dismissToast: (id: number) => void;
+  refreshPlayer: () => Promise<void>;
+  refreshPlayerTools: () => Promise<void>;
+  createPlayer: (name: string, skill: PlayerSkillChoice) => Promise<{ ok: boolean; error?: string }>;
+  playerAction: (tool: string, args: Record<string, unknown>) => Promise<{ ok: boolean; text: string }>;
+  focusPlayer: () => void;
+
   setWorld: (w: WorldState) => void;
   selectAgent: (a: AgentName | null) => void;
   setConnected: (v: boolean) => void;
@@ -233,7 +321,185 @@ interface VillageStore {
   commitAgentLocation: (agent: AgentName, loc: string) => void;
 }
 
-export const useVillageStore = create<VillageStore>((set, get) => ({
+export const useVillageStore = create<VillageStore>((set, get) => {
+  /** Takes over a player view (GET /api/player, action response, SSE player:update) and mirrors it into `world`. */
+  function applyPlayerView(view: PlayerView): void {
+    if (view.created) AGENT_DISPLAY_BASE.player = view.name;
+    set((s) => {
+      const prev = s.player;
+      // SSE updates carry no perception: keep the last fetched text until the refresh lands.
+      const merged: PlayerView = { ...view, perception: view.perception ?? prev?.perception };
+      const next: Partial<VillageStore> = {
+        player: merged,
+        budgetBlocked: view.budgetLeft > 0 ? false : s.budgetBlocked,
+      };
+      const w = s.world;
+      if (w && view.created) {
+        next.world = {
+          ...w,
+          player: { created: true, name: view.name, skill: view.skill, createdTick: w.player?.createdTick ?? view.tick ?? w.current_tick },
+          agent_locations: view.location ? { ...w.agent_locations, player: view.location } : w.agent_locations,
+          body: view.body ? { ...w.body, player: view.body } : w.body,
+          economics: {
+            ...w.economics,
+            player: {
+              ...(w.economics.player ?? { hiredBy: undefined }),
+              wallet: view.wallet,
+              inventory: { items: view.inventory },
+              tool: view.tool,
+              skill: view.skill,
+              homeLocation: view.home ?? w.economics.player?.homeLocation ?? "",
+              workLocation: view.work ?? w.economics.player?.workLocation ?? "",
+            },
+          },
+        };
+      }
+      // Things heard (speech at the player's spot) join the Tagebuch once.
+      const known = new Set(s.diary.map((d) => d.text));
+      const fresh = heardLines(view.perception).filter((l) => !known.has(l));
+      if (fresh.length > 0) {
+        next.diary = [
+          ...fresh.map((text) => ({ id: diaryCounter++, time: view.time ?? "", text, kind: "heard" as const })).reverse(),
+          ...s.diary,
+        ].slice(0, DIARY_MAX);
+      }
+      return next as VillageStore;
+    });
+  }
+
+  /** Perception + tools change with every tick/action; coalesce bursts of updates into one refetch. */
+  function scheduleRefresh(): void {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      void get().refreshPlayer();
+      void get().refreshPlayerTools();
+    }, 250);
+  }
+
+  return {
+  player: null,
+  playerTools: [],
+  playerBusy: false,
+  budgetBlocked: false,
+  diary: [],
+  toasts: [],
+  spectating: loadSpectating(),
+  creationForced: false,
+  focusNonce: 0,
+
+  setSpectating: (v) => {
+    saveSpectating(v);
+    set({ spectating: v, creationForced: false });
+  },
+  openCreation: () => set({ creationForced: true }),
+  focusPlayer: () => {
+    get().selectAgent("player");
+    set((s) => ({ focusNonce: s.focusNonce + 1 }));
+  },
+
+  pushToast: (text, tone = "info") => {
+    const id = toastCounter++;
+    set((s) => ({ toasts: [...s.toasts, { id, text, tone }].slice(-3) }));
+    setTimeout(() => get().dismissToast(id), tone === "good" ? 5000 : 7000);
+  },
+  dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  refreshPlayer: async () => {
+    try {
+      const res = await fetch("/api/player");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const view = (await res.json()) as PlayerView;
+      applyPlayerView(view);
+    } catch (err) {
+      console.error("[viewer] loading /api/player failed", err);
+    }
+  },
+
+  refreshPlayerTools: async () => {
+    if (!get().player?.created) {
+      if (get().playerTools.length > 0) set({ playerTools: [] });
+      return;
+    }
+    try {
+      const res = await fetch("/api/player/tools");
+      if (res.status === 409) { set({ playerTools: [] }); return; } // not created (yet): expected
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { tools: PlayerTool[] };
+      set({ playerTools: body.tools });
+    } catch (err) {
+      console.error("[viewer] loading /api/player/tools failed", err);
+    }
+  },
+
+  createPlayer: async (name, skill) => {
+    try {
+      const res = await fetch("/api/player/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, skill }),
+      });
+      const body = await readJson(res);
+      if (!res.ok || body.ok === false) {
+        const error = typeof body.error === "string" ? body.error : `Der Server hat die Anfrage abgelehnt (HTTP ${res.status}).`;
+        return { ok: false, error };
+      }
+      applyPlayerView(body as unknown as PlayerView);
+      saveSpectating(false);
+      set({ spectating: false, creationForced: false, diary: [] });
+      // The world snapshot in the viewer predates the player: reload it so map, list and bars include "player".
+      try {
+        const st = await fetch("/api/state");
+        if (st.ok) get().setWorld((await st.json()) as WorldState);
+      } catch (err) {
+        console.warn("[viewer] reloading /api/state after create failed", err);
+      }
+      applyPlayerView(body as unknown as PlayerView);
+      void get().refreshPlayerTools();
+      get().focusPlayer();
+      get().pushToast(`Willkommen im Schlackental, ${String(body.name ?? name)}.`, "good");
+      return { ok: true };
+    } catch (err) {
+      console.error("[viewer] POST /api/player/create failed", err);
+      return { ok: false, error: "Keine Verbindung zum Server. Läuft die Kolonie?" };
+    }
+  },
+
+  playerAction: async (tool, args) => {
+    set({ playerBusy: true });
+    const record = (text: string, kind: DiaryEntry["kind"]) =>
+      set((s) => ({ diary: [{ id: diaryCounter++, time: s.player?.time ?? "", text, kind }, ...s.diary].slice(0, DIARY_MAX) }));
+    try {
+      const res = await fetch("/api/player/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tool, args }),
+      });
+      const body = await readJson(res);
+      const text = typeof body.text === "string" ? body.text
+        : typeof body.error === "string" ? body.error
+        : `Der Server hat die Aktion abgelehnt (HTTP ${res.status}).`;
+      if (body.player) applyPlayerView(body.player as PlayerView);
+      if (res.status === 429) {
+        set({ budgetBlocked: true });
+        get().pushToast(text, "warn");
+        record(text, "fail");
+        return { ok: false, text };
+      }
+      const ok = res.ok && body.ok !== false && !isFailureText(text);
+      get().pushToast(text, ok ? "good" : "warn");
+      record(text, ok ? "result" : "fail");
+      return { ok, text };
+    } catch (err) {
+      console.error(`[viewer] POST /api/player/action (${tool}) failed`, err);
+      const text = "Keine Verbindung zum Server. Deine Aktion ist nicht angekommen.";
+      get().pushToast(text, "bad");
+      return { ok: false, text };
+    } finally {
+      set({ playerBusy: false });
+      scheduleRefresh();
+    }
+  },
+
   world: null,
   feed: [],
   selectedAgent: null,
@@ -262,7 +528,10 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
   historyFeed: [],
   historyLoading: false,
 
-  setWorld: (world) => set({ world }),
+  setWorld: (world) => {
+    if (world.player?.created) AGENT_DISPLAY_BASE.player = world.player.name;
+    set({ world });
+  },
   selectAgent: (selectedAgent) => set((s) => ({ selectedAgent, selectedAgentVersion: s.selectedAgentVersion + 1 })),
   setConnected: (connected) => set({ connected }),
 
@@ -330,6 +599,10 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
           price: trade.pricePerUnit,
         }));
       const lastSnap = e.state.economy_snapshots?.at(-1) ?? null;
+      if (e.state.player?.created) {
+        AGENT_DISPLAY_BASE.player = e.state.player.name;
+        scheduleRefresh();
+      }
       set({
         world: e.state,
         currentTick: e.state.current_tick,
@@ -654,8 +927,16 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       setTimeout(() => set({ activeMeeting: null }), 3000);
       return;
     }
+
+    if (e.type === "player:update") {
+      const { type: _type, ...view } = e;
+      applyPlayerView(view);
+      scheduleRefresh(); // perception + tools follow the new state
+      return;
+    }
   },
-}));
+  };
+});
 
 // ─── Derived economy numbers (live from world state; do not wait for the next snapshot) ──────
 

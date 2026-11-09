@@ -158,7 +158,46 @@ export type SSEEvent =
   | { type: "meeting:result"; passed: boolean; agreeCount: number; law?: unknown }
   | { type: "meeting:end" }
   | { type: "meeting:quorum_fail"; description: string; attendeeCount: number }
-  | { type: "harness:tool"; agent: AgentName; name: string; tool: string; summary: string };
+  | { type: "harness:tool"; agent: AgentName; name: string; tool: string; summary: string }
+  | ({ type: "player:update" } & PlayerView);
+
+// ─── Human player (backend src/player.ts: GET /api/player, SSE player:update) ───
+
+export interface Producible {
+  item: string;
+  label: string;
+  output: string;
+  ready: boolean;
+  reason?: string;
+}
+
+export interface PlayerView {
+  created: boolean;
+  name: string;
+  skill: Skill;
+  skillLabel?: string;
+  location: string | null;
+  home?: string;
+  work?: string;
+  body: BodyState | null;
+  wallet: number;
+  inventory: InventoryItem[];
+  tool: { type: string; durability: number } | null;
+  producible?: Producible[];
+  budgetLeft: number;
+  budget: number;
+  tick?: number;
+  time?: string;
+  /** Only in GET /api/player (not in SSE updates). */
+  perception?: string;
+}
+
+export interface PlayerTool {
+  name: string;
+  description: string;
+  argsHint: string;
+  free: boolean;
+}
 
 // ─── German display labels (copied from backend src/types.ts / src/time.ts; docs/schlackental.md) ───
 
