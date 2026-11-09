@@ -47,8 +47,8 @@ function MeetingHeader({ meeting }: { meeting: MeetingState }) {
 // ─── Discussion Feed ──────────────────────────────────────────────────────
 
 const COUNCIL_COLOR: Partial<Record<AgentName, string>> = {
-  otto: "#f0c870", gerda: "#93c5fd", volker: "#86efac",
-  anselm: "#fca5a5", hans: "#d8b4fe",
+  reinhart: "#f0c870", irmel: "#93c5fd", eckhart: "#86efac",
+  bodo: "#fca5a5", brakel: "#d8b4fe",
 };
 
 function DiscussionFeed({ meeting }: { meeting: MeetingState }) {

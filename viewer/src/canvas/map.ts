@@ -1,98 +1,98 @@
-// ─── Village map layout constants ──────────────────────────────────────────
+// ─── Schlackental map layout constants ──────────────────────────────────────────
 // Matches backend LOCATION_TILES (tx, ty on 32×26 grid, tile=48px)
 
 export const TILE_SIZE = 48;
 
 export const LOCATION_TILES: Record<string, { tx: number; ty: number }> = {
-  "Village Square":     { tx: 16, ty: 8  },
-  "Bakery":             { tx: 13, ty: 9  },
-  "Tavern":             { tx: 15, ty: 9  },
-  "Forge":              { tx: 20, ty: 9  },
-  "Carpenter Shop":     { tx: 22, ty: 9  },
-  "Mill":               { tx: 8,  ty: 8  },
-  "Town Hall":          { tx: 24, ty: 8  },
-  "Prison":             { tx: 25, ty: 9  },
-  "Elder's House":      { tx: 27, ty: 8  },
-  "Cottage 1":          { tx: 2,  ty: 11 },
-  "Cottage 2":          { tx: 5,  ty: 11 },
-  "Cottage 3":          { tx: 8,  ty: 11 },
-  "Cottage 4":          { tx: 13, ty: 11 },
-  "Cottage 5":          { tx: 17, ty: 11 },
-  "Cottage 6":          { tx: 2,  ty: 13 },
-  "Cottage 7":          { tx: 5,  ty: 13 },
-  "Cottage 8":          { tx: 9,  ty: 13 },
-  "Cottage 9":          { tx: 13, ty: 13 },
-  "Seamstress Cottage": { tx: 20, ty: 13 },
-  "Healer's Hut":       { tx: 24, ty: 14 },
-  "Farm 1":             { tx: 4,  ty: 4  },
-  "Farm 2":             { tx: 13, ty: 4  },
-  "Farm 3":             { tx: 21, ty: 4  },
-  "Forest":             { tx: 6,  ty: 1  },
-  "Mine":               { tx: 28, ty: 1  },
-  "Merchant Camp":      { tx: 16, ty: 5  },
+  "Zechenplatz":        { tx: 16, ty: 8  },
+  "Backstube":          { tx: 13, ty: 9  },
+  "Schenke":            { tx: 15, ty: 9  },
+  "Schmiede":           { tx: 20, ty: 9  },
+  "Zimmerei":           { tx: 22, ty: 9  },
+  "Mühle":              { tx: 8,  ty: 8  },
+  "Vogtei":             { tx: 24, ty: 8  },
+  "Karzer":             { tx: 25, ty: 9  },
+  "Vogtshaus":          { tx: 27, ty: 8  },
+  "Baracke 1":          { tx: 2,  ty: 11 },
+  "Baracke 2":          { tx: 5,  ty: 11 },
+  "Baracke 3":          { tx: 8,  ty: 11 },
+  "Baracke 4":          { tx: 13, ty: 11 },
+  "Baracke 5":          { tx: 17, ty: 11 },
+  "Baracke 6":          { tx: 2,  ty: 13 },
+  "Baracke 7":          { tx: 5,  ty: 13 },
+  "Baracke 8":          { tx: 9,  ty: 13 },
+  "Baracke 9":          { tx: 13, ty: 13 },
+  "Flickstube":         { tx: 20, ty: 13 },
+  "Baderhütte":         { tx: 24, ty: 14 },
+  "Unterfeld":          { tx: 4,  ty: 4  },
+  "Ziegenweide":        { tx: 13, ty: 4  },
+  "Oberfeld":           { tx: 21, ty: 4  },
+  "Köhlerwald":         { tx: 6,  ty: 1  },
+  "Erzstollen":         { tx: 28, ty: 1  },
+  "Schmugglerpfad":     { tx: 16, ty: 5  },
 };
 
 export const ADJACENCY: [string, string][] = [
-  ["Village Square", "Merchant Camp"],
-  ["Village Square", "Bakery"],
-  ["Village Square", "Tavern"],
-  ["Village Square", "Town Hall"],
-  ["Village Square", "Mill"],
-  ["Village Square", "Forge"],
-  ["Village Square", "Carpenter Shop"],
-  ["Village Square", "Elder's House"],
-  ["Village Square", "Cottage 1"],
-  ["Village Square", "Farm 1"],
-  ["Bakery", "Mill"],
-  ["Tavern", "Elder's House"],
-  ["Town Hall", "Elder's House"],
-  ["Town Hall", "Prison"],
-  ["Mill", "Farm 1"],
-  ["Forge", "Carpenter Shop"],
-  ["Cottage 1", "Cottage 2"],
-  ["Cottage 2", "Cottage 3"],
-  ["Cottage 3", "Cottage 4"],
-  ["Cottage 4", "Cottage 5"],
-  ["Cottage 5", "Cottage 6"],
-  ["Cottage 6", "Cottage 7"],
-  ["Cottage 7", "Cottage 8"],
-  ["Cottage 7", "Healer's Hut"],
-  ["Cottage 8", "Cottage 9"],
-  ["Cottage 9", "Seamstress Cottage"],
-  ["Farm 1", "Farm 2"],
-  ["Farm 2", "Farm 3"],
-  ["Farm 3", "Forest"],
-  ["Forest", "Mine"],
+  ["Zechenplatz", "Schmugglerpfad"],
+  ["Zechenplatz", "Backstube"],
+  ["Zechenplatz", "Schenke"],
+  ["Zechenplatz", "Vogtei"],
+  ["Zechenplatz", "Mühle"],
+  ["Zechenplatz", "Schmiede"],
+  ["Zechenplatz", "Zimmerei"],
+  ["Zechenplatz", "Vogtshaus"],
+  ["Zechenplatz", "Baracke 1"],
+  ["Zechenplatz", "Unterfeld"],
+  ["Backstube", "Mühle"],
+  ["Schenke", "Vogtshaus"],
+  ["Vogtei", "Vogtshaus"],
+  ["Vogtei", "Karzer"],
+  ["Mühle", "Unterfeld"],
+  ["Schmiede", "Zimmerei"],
+  ["Baracke 1", "Baracke 2"],
+  ["Baracke 2", "Baracke 3"],
+  ["Baracke 3", "Baracke 4"],
+  ["Baracke 4", "Baracke 5"],
+  ["Baracke 5", "Baracke 6"],
+  ["Baracke 6", "Baracke 7"],
+  ["Baracke 7", "Baracke 8"],
+  ["Baracke 7", "Baderhütte"],
+  ["Baracke 8", "Baracke 9"],
+  ["Baracke 9", "Flickstube"],
+  ["Unterfeld", "Ziegenweide"],
+  ["Ziegenweide", "Oberfeld"],
+  ["Oberfeld", "Köhlerwald"],
+  ["Köhlerwald", "Erzstollen"],
 ];
 
 // Building image path and display size for each location
 export const LOCATION_BUILDINGS: Record<string, { img: string; w: number; h: number; label?: string }> = {
-  "Village Square":     { img: "", w: 0, h: 0 },  // open area, no building
-  "Bakery":             { img: "/assets/buildings/House2.png", w: 80, h: 120, label: "Bakery" },
-  "Tavern":             { img: "/assets/buildings/House3.png", w: 80, h: 120, label: "Tavern" },
-  "Forge":              { img: "/assets/buildings/Barracks.png", w: 100, h: 133, label: "Forge" },
-  "Carpenter Shop":     { img: "/assets/buildings/Barracks.png", w: 100, h: 133, label: "Carpenter" },
-  "Mill":               { img: "/assets/buildings/Tower.png", w: 72, h: 144, label: "Mill" },
-  "Town Hall":          { img: "/assets/buildings/Monastery.png", w: 110, h: 183, label: "Town Hall" },
-  "Prison":             { img: "/assets/buildings/Tower.png", w: 64, h: 128, label: "Prison" },
-  "Elder's House":      { img: "/assets/buildings/Castle.png", w: 130, h: 104, label: "Elder's" },
-  "Cottage 1":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 1" },
-  "Cottage 2":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 2" },
-  "Cottage 3":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 3" },
-  "Cottage 4":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 4" },
-  "Cottage 5":          { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Cottage 5" },
-  "Cottage 6":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 6" },
-  "Cottage 7":          { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Cottage 7" },
-  "Cottage 8":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 8" },
-  "Cottage 9":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Cottage 9" },
-  "Seamstress Cottage": { img: "/assets/buildings/House3.png", w: 64, h: 96, label: "Seamstress" },
-  "Healer's Hut":       { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Healer" },
-  "Farm 1":             { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Farm 1" },
-  "Farm 2":             { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Farm 2" },
-  "Farm 3":             { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Farm 3" },
-  "Forest":             { img: "", w: 0, h: 0, label: "Forest" },
-  "Mine":               { img: "/assets/buildings/Tower.png", w: 64, h: 128, label: "Mine" },
-  "Merchant Camp":      { img: "", w: 0, h: 0, label: "Merchant" },
+  "Zechenplatz":        { img: "", w: 0, h: 0 },  // open area, no building
+  "Backstube":          { img: "/assets/buildings/House2.png", w: 80, h: 120, label: "Backstube" },
+  "Schenke":            { img: "/assets/buildings/House3.png", w: 80, h: 120, label: "Schenke" },
+  "Schmiede":           { img: "/assets/buildings/Barracks.png", w: 100, h: 133, label: "Schmiede" },
+  "Zimmerei":           { img: "/assets/buildings/Barracks.png", w: 100, h: 133, label: "Zimmerei" },
+  "Mühle":              { img: "/assets/buildings/Tower.png", w: 72, h: 144, label: "Mühle" },
+  "Vogtei":             { img: "/assets/buildings/Monastery.png", w: 110, h: 183, label: "Vogtei" },
+  "Karzer":             { img: "/assets/buildings/Tower.png", w: 64, h: 128, label: "Karzer" },
+  "Vogtshaus":          { img: "/assets/buildings/Castle.png", w: 130, h: 104, label: "Vogtshaus" },
+  "Baracke 1":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 1" },
+  "Baracke 2":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 2" },
+  "Baracke 3":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 3" },
+  "Baracke 4":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 4" },
+  "Baracke 5":          { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Baracke 5" },
+  "Baracke 6":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 6" },
+  "Baracke 7":          { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Baracke 7" },
+  "Baracke 8":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 8" },
+  "Baracke 9":          { img: "/assets/buildings/House1.png", w: 64, h: 96, label: "Baracke 9" },
+  "Flickstube":         { img: "/assets/buildings/House3.png", w: 64, h: 96, label: "Flickstube" },
+  "Baderhütte":         { img: "/assets/buildings/House2.png", w: 64, h: 96, label: "Baderhütte" },
+  "Unterfeld":          { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Unterfeld" },
+  "Ziegenweide":        { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Ziegenweide" },
+  "Oberfeld":           { img: "/assets/buildings/Archery.png", w: 100, h: 133, label: "Oberfeld" },
+  "Köhlerwald":         { img: "", w: 0, h: 0, label: "Köhlerwald" },
+  "Erzstollen":         { img: "/assets/buildings/Tower.png", w: 64, h: 128, label: "Erzstollen" },
+  "Schmugglerpfad":     { img: "", w: 0, h: 0, label: "Schmuggler" },
 };
 
 export function tilePx(tile: { tx: number; ty: number }): { x: number; y: number } {
@@ -131,25 +131,25 @@ export function buildingsFromVillage(
 }
 
 function inferLocationType(name: string): string {
-  // Strip village prefix (e.g. "Norddorf:Farm 1" → "Farm 1")
+  // Strip village prefix (e.g. "Rabenstollen:Unterfeld" → "Unterfeld")
   const bare = name.includes(":") ? name.split(":").slice(1).join(":") : name;
   const l = bare.toLowerCase();
-  if (l.startsWith("cottage")) return "cottage";
-  if (l.startsWith("farm")) return "farm";
-  if (l === "forest") return "forest";
-  if (l === "mine") return "mine";
-  if (l === "village square") return "square";
-  if (l === "town hall") return "townhall";
-  if (l === "elder's house" || l === "elders house") return "elder";
-  if (l === "prison") return "prison";
-  if (l === "mill") return "mill";
-  if (l === "forge") return "forge";
-  if (l === "bakery") return "bakery";
-  if (l === "tavern") return "tavern";
-  if (l === "carpenter shop") return "carpenter";
-  if (l === "healer's hut" || l === "healers hut") return "healer";
-  if (l === "seamstress cottage") return "seamstress";
-  if (l === "merchant camp") return "merchant";
+  if (l.startsWith("baracke")) return "cottage";
+  if (l === "unterfeld" || l === "ziegenweide" || l === "oberfeld") return "farm";
+  if (l === "köhlerwald") return "forest";
+  if (l === "erzstollen") return "mine";
+  if (l === "zechenplatz") return "square";
+  if (l === "vogtei") return "townhall";
+  if (l === "vogtshaus") return "elder";
+  if (l === "karzer") return "prison";
+  if (l === "mühle") return "mill";
+  if (l === "schmiede") return "forge";
+  if (l === "backstube") return "bakery";
+  if (l === "schenke") return "tavern";
+  if (l === "zimmerei") return "carpenter";
+  if (l === "baderhütte") return "healer";
+  if (l === "flickstube") return "seamstress";
+  if (l === "schmugglerpfad") return "merchant";
   return "cottage";
 }
 
@@ -181,7 +181,7 @@ export function locationPx(name: string): { x: number; y: number } {
   return tilePx(tile);
 }
 
-/** Find tile by bare location name (e.g. "Farm 1" matches "Norddorf:Farm 1"). */
+/** Find tile by bare location name (e.g. "Unterfeld" matches "Rabenstollen:Unterfeld"). */
 export function findTile(bareName: string): { tx: number; ty: number } | undefined {
   const tiles = getActiveTiles();
   return tiles[bareName] ?? Object.entries(tiles).find(([k]) => k.endsWith(`:${bareName}`))?.[1];

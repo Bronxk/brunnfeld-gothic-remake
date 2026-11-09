@@ -8,13 +8,14 @@ import { getToolPerception } from "./tools-degradation.js";
 import { bodyPerception } from "./body.js";
 import { buildActionSchema, resolveAction, type ResolveContext } from "./tools.js";
 import { tickToTime } from "./time.js";
+import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation } from "./village-map.js";
 import { RECIPES, MULTI_FARM_ITEMS } from "./production.js";
 import { computeVillageConcerns } from "./village-concerns.js";
 import { getAgentNames, getDisplayName, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation } from "./world-registry.js";
 
 // ─── Hunger food hint ─────────────────────────────────────────
 
-const EDIBLE_ITEMS = new Set<string>(["bread", "meal", "meat", "vegetables", "eggs", "milk"]);
+const EDIBLE_ITEMS = new Set<string>(["brot", "eintopf", "fleisch", "rueben", "eier", "milch"]);
 
 
 function getHungryNoFoodHint(agent: AgentName, state: WorldState): string {
@@ -32,7 +33,7 @@ function getHungryNoFoodHint(agent: AgentName, state: WorldState): string {
 
 // ─── Location keeper note ─────────────────────────────────────
 
-const SPECIALIST_SKILLS = new Set<string>(["miller", "baker", "tavern", "blacksmith", "carpenter", "healer", "seamstress"]);
+const SPECIALIST_SKILLS = new Set<string>(["mueller", "baecker", "wirt", "schmied", "zimmermann", "bader", "naeherin"]);
 
 function getLocationKeeperNote(agent: AgentName, state: WorldState): string {
   const location = state.agent_locations[agent];
@@ -45,7 +46,7 @@ function getLocationKeeperNote(agent: AgentName, state: WorldState): string {
     if (state.agent_locations[a] !== location) {
       const keeperName = getDisplayName(a);
       const keeperLoc = state.agent_locations[a];
-      return `(This is ${keeperName}'s ${location}. ${keeperName} is currently at ${keeperLoc}. Use send_message to ${keeperName} to arrange a purchase, or check the Village Square marketplace.)`;
+      return `(This is ${keeperName}'s ${location}. ${keeperName} is currently at ${keeperLoc}. Use send_message to ${keeperName} to arrange a purchase, or check the ${HUB_LOCATION} marketplace.)`;
     }
     return ""; // Keeper is present — already listed in "Others here"
   }
@@ -220,7 +221,7 @@ function buildTravelBlock(agent: AgentName, state: WorldState): string {
     const lines = road.connectsVillages.map(vid => {
       const v = villages.find(v => v.id === vid);
       const vName = v?.name ?? vid;
-      const vSquare = v?.locations.find(l => l.endsWith("Village Square")) ?? v?.locations[0] ?? vid;
+      const vSquare = v?.locations.find(l => isBaseLocation(l, HUB_LOCATION)) ?? v?.locations[0] ?? vid;
       return `  Go to ${vName}: move_to "${vSquare}"`;
     });
     return `Travel options (pick a direction):\n${lines.join("\n")}`;
@@ -400,7 +401,7 @@ export function buildMeetingPerception(
     : `\n=== VILLAGE MEETING — VOTE ===\nProposal on the table: "${proposal ?? "(no specific rule proposed)"}"\nUse the vote action with side "agree" or "disagree". Speak first if you want.`;
 
   return `You are ${getDisplayName(agent)}.
-Location: Town Hall. ${time.timeLabel}. ${time.season.charAt(0).toUpperCase() + time.season.slice(1)}, day ${time.seasonDay}/7.
+Location: ${TOWNHALL_LOCATION}. ${time.timeLabel}. ${time.season.charAt(0).toUpperCase() + time.season.slice(1)}, day ${time.seasonDay}/7.
 Weather: ${state.weather}${lawsBlock}
 
 ${othersStr}${councilNote}

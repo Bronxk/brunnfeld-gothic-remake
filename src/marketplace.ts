@@ -69,13 +69,13 @@ export function executeTrade(
   removeFromInventory(state.economics[seller].inventory, item, quantity);
   addToInventory(state.economics[buyer].inventory, item, quantity, time.tick);
 
-  // If buyer received iron_tools and has no equipped tool, auto-equip
-  if (item === "iron_tools") {
+  // If buyer received werkzeug and has no equipped tool, auto-equip
+  if (item === "werkzeug") {
     const eco = state.economics[buyer];
     if (!eco.tool || eco.tool.durability === 0) {
-      removeFromInventory(eco.inventory, "iron_tools", 1);
-      eco.tool = { type: "iron_tools", durability: 100 };
-      feedbackToAgent(buyer, state, "You equipped a fresh set of iron tools.");
+      removeFromInventory(eco.inventory, "werkzeug", 1);
+      eco.tool = { type: "werkzeug", durability: 100 };
+      feedbackToAgent(buyer, state, "You equipped a fresh Werkzeug.");
     }
   }
 

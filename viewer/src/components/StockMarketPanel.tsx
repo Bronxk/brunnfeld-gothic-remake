@@ -3,19 +3,19 @@ import { useVillageStore } from "../store";
 import type { ItemType } from "../types";
 
 const ITEM_DISPLAY: Record<string, string> = {
-  wheat: "Wheat", flour: "Flour", bread: "Bread", meat: "Meat", milk: "Milk",
-  eggs: "Eggs", vegetables: "Veg", herbs: "Herbs", medicine: "Medicine",
-  iron_ore: "Iron Ore", coal: "Coal", iron_tools: "Tools",
-  timber: "Timber", firewood: "Firewood", furniture: "Furniture",
-  ale: "Ale", meal: "Meal", cloth: "Cloth",
+  gerste: "Gerste", mehl: "Mehl", brot: "Brot", fleisch: "Fleisch", milch: "Ziegenmilch",
+  eier: "Eier", rueben: "Rüben", kraeuter: "Kräuter", arznei: "Arznei",
+  eisenerz: "Eisenerz", kohle: "Kohle", werkzeug: "Werkzeug",
+  bauholz: "Bauholz", brennholz: "Brennholz", hausrat: "Hausrat",
+  bier: "Dünnbier", eintopf: "Eintopf", leinen: "Leinen",
 };
 
 const ITEM_EMOJI: Record<string, string> = {
-  wheat: "🌾", flour: "⚪", bread: "🍞", meat: "🥩", milk: "🥛",
-  eggs: "🥚", vegetables: "🥦", herbs: "🌿", medicine: "💊",
-  iron_ore: "🪨", coal: "⬛", iron_tools: "⚒",
-  timber: "🪵", firewood: "🔥", furniture: "🪑",
-  ale: "🍺", meal: "🍲", cloth: "🧵",
+  gerste: "🌾", mehl: "⚪", brot: "🍞", fleisch: "🥩", milch: "🥛",
+  eier: "🥚", rueben: "🥦", kraeuter: "🌿", arznei: "💊",
+  eisenerz: "🪨", kohle: "⬛", werkzeug: "⚒",
+  bauholz: "🪵", brennholz: "🔥", hausrat: "🪑",
+  bier: "🍺", eintopf: "🍲", leinen: "🧵",
 };
 
 function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {

@@ -44,7 +44,7 @@ export default function App() {
           <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
           {showTownHall ? <TownHallView preview={!activeMeeting} /> : <VillageMap />}
 
-          {/* Town Hall preview toggle — bottom-left of map */}
+          {/* Vogtei (town hall) preview toggle — bottom-left of map */}
           {!activeMeeting && (
             <button
               onClick={() => setPreviewTownHall(v => !v)}
@@ -58,7 +58,7 @@ export default function App() {
                 cursor: "pointer",
               }}
             >
-              🏛 {previewTownHall ? "Back to village" : "Town Hall"}
+              🏛 {previewTownHall ? "Back to colony" : "Vogtei"}
             </button>
           )}
           </div>

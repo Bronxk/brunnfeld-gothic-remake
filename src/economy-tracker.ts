@@ -30,7 +30,7 @@ export function takeEconomySnapshot(state: WorldState, time: SimTime): void {
     const totalSupply = agentNames.reduce((sum, a) => {
       return sum + (state.economics[a].inventory.items.find(i => i.type === item)?.quantity ?? 0);
     }, 0);
-    if (totalSupply < 5 && ["bread", "meat", "milk", "medicine"].includes(item)) {
+    if (totalSupply < 5 && ["brot", "fleisch", "milch", "arznei"].includes(item)) {
       scarcityAlerts.push(item);
     }
   }

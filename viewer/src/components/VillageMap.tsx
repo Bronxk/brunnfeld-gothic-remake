@@ -60,7 +60,7 @@ export default function VillageMap() {
       setActiveTiles(v.locationTiles);
       setActiveBuildings(buildingsFromVillage(v.locationTiles, v.locationTypes ?? {}));
     } else {
-      setActiveTiles(null);     // fall back to hardcoded Brunnfeld defaults
+      setActiveTiles(null);     // fall back to hardcoded Schlackental defaults
       setActiveBuildings(null);
     }
   }, [activeVillageId, villages]);
@@ -87,7 +87,7 @@ export default function VillageMap() {
       const currentVillageId = store.activeVillageId;
       const newAnims = store.consumeAnimations();
       for (const anim of newAnims) {
-        const agentVid = (currentWorld?.economics[anim.agent] as { villageId?: string } | undefined)?.villageId ?? "brunnfeld";
+        const agentVid = (currentWorld?.economics[anim.agent] as { villageId?: string } | undefined)?.villageId ?? "schlackental";
         if (agentVid !== currentVillageId) continue;
         const from = locationPx(anim.fromLoc);
         const to = locationPx(anim.toLoc);
@@ -114,7 +114,7 @@ export default function VillageMap() {
         ...currentWorld,
         agent_locations: Object.fromEntries(
           Object.entries(currentWorld.agent_locations).filter(([a]) =>
-            ((currentWorld.economics[a] as { villageId?: string })?.villageId ?? "brunnfeld") === currentVillageId
+            ((currentWorld.economics[a] as { villageId?: string })?.villageId ?? "schlackental") === currentVillageId
           )
         ),
       } : null;
@@ -210,12 +210,12 @@ export default function VillageMap() {
     const loc = hitTestLocation(wc.x, wc.y);
     if (loc && world) {
       const agents = Object.entries(world.agent_locations)
-        .filter(([a, l]) => l === loc && ((world.economics[a] as { villageId?: string })?.villageId ?? "brunnfeld") === activeVillageId)
+        .filter(([a, l]) => l === loc && ((world.economics[a] as { villageId?: string })?.villageId ?? "schlackental") === activeVillageId)
         .map(([a]) => a as AgentName);
-      // When caravan is active, the Gipsy sprite at Merchant Camp IS Otto —
+      // When caravan is active, the Gipsy sprite at Schmugglerpfad IS Vogt Reinhart —
       // select him regardless of where the frontend thinks he is
-      if (loc === "Merchant Camp" && world.active_events?.some(e => e.type === "caravan")) {
-        if (!agents.includes("otto")) agents.push("otto");
+      if (loc === "Schmugglerpfad" && world.active_events?.some(e => e.type === "caravan")) {
+        if (!agents.includes("reinhart")) agents.push("reinhart");
       }
       if (agents.length > 0) {
         const idx = selectedAgent ? agents.indexOf(selectedAgent) : -1;
@@ -266,7 +266,7 @@ export default function VillageMap() {
           {hoveredLoc}
           {world && (() => {
             const here = Object.entries(world.agent_locations)
-              .filter(([a, l]) => l === hoveredLoc && ((world.economics[a] as { villageId?: string })?.villageId ?? "brunnfeld") === activeVillageId)
+              .filter(([a, l]) => l === hoveredLoc && ((world.economics[a] as { villageId?: string })?.villageId ?? "schlackental") === activeVillageId)
               .map(([a]) => AGENT_DISPLAY[a as AgentName]);
             return here.length > 0 ? ` — ${here.join(", ")}` : "";
           })()}

@@ -1,62 +1,71 @@
+import { normalizeKey } from "./village-map.js";
+
 // ─── Agents ────────────────────────────────────────────────
 
 // Widened to string to support dynamically generated multi-village worlds.
 // The hardcoded constants below (AGENT_NAMES, AGENT_SKILLS, etc.) remain as
-// defaults for the 1-village Brunnfeld world.
+// defaults for the 1-village Schlackental world.
 export type AgentName = string;
 
 export const AGENT_NAMES: AgentName[] = [
-  "hans", "ida", "konrad", "ulrich", "bertram",
-  "gerda", "anselm", "volker", "wulf",
-  "liesel", "sybille", "friedrich",
-  "otto", "pater_markus",
-  "dieter", "magda", "heinrich", "elke", "rupert",
+  "brakel", "rike", "ottmar", "wenzel", "kasper",
+  "irmel", "bodo", "eckhart", "lenz",
+  "grete", "walburga", "jost",
+  "reinhart", "bruder_anno",
+  "mattis", "vroni", "wendel", "minna", "gisbert",
 ];
 
-export const COUNCIL_MEMBERS: AgentName[] = ["otto", "gerda", "volker", "anselm", "hans"];
+export const COUNCIL_MEMBERS: AgentName[] = ["reinhart", "irmel", "eckhart", "bodo", "brakel"];
 
 export const AGENT_DISPLAY_NAMES: Record<AgentName, string> = {
-  hans: "Hans", ida: "Ida", konrad: "Konrad", ulrich: "Ulrich", bertram: "Bertram",
-  gerda: "Gerda", anselm: "Anselm", volker: "Volker", wulf: "Wulf",
-  liesel: "Liesel", sybille: "Sybille", friedrich: "Friedrich",
-  otto: "Otto", pater_markus: "Pater Markus",
-  dieter: "Dieter", magda: "Magda", heinrich: "Heinrich",
-  elke: "Elke", rupert: "Rupert",
+  brakel: "Brakel", rike: "Rike", ottmar: "Ottmar", wenzel: "Wenzel", kasper: "Kasper",
+  irmel: "Irmel", bodo: "Bodo", eckhart: "Eckhart", lenz: "Lenz",
+  grete: "Grete", walburga: "Walburga", jost: "Jost",
+  reinhart: "Vogt Reinhart", bruder_anno: "Bruder Anno",
+  mattis: "Mattis", vroni: "Vroni", wendel: "Wendel",
+  minna: "Minna", gisbert: "Gisbert",
 };
 
 export const AGENT_HOMES: Record<AgentName, string> = {
-  hans: "Cottage 1", ida: "Cottage 2", konrad: "Farm 2",
-  ulrich: "Cottage 4", bertram: "Cottage 5", gerda: "Mill",
-  anselm: "Bakery", volker: "Forge", wulf: "Carpenter Shop",
-  liesel: "Tavern", sybille: "Healer's Hut", friedrich: "Cottage 7",
-  otto: "Elder's House", pater_markus: "Town Hall",
-  dieter: "Cottage 8", magda: "Cottage 8", heinrich: "Cottage 1", elke: "Seamstress Cottage", rupert: "Cottage 3",
+  brakel: "Baracke 1", rike: "Baracke 2", ottmar: "Ziegenweide",
+  wenzel: "Baracke 4", kasper: "Baracke 5", irmel: "Mühle",
+  bodo: "Backstube", eckhart: "Schmiede", lenz: "Zimmerei",
+  grete: "Schenke", walburga: "Baderhütte", jost: "Baracke 7",
+  reinhart: "Vogtshaus", bruder_anno: "Vogtei",
+  mattis: "Baracke 8", vroni: "Baracke 8", wendel: "Baracke 1", minna: "Flickstube", gisbert: "Baracke 3",
 };
 
 // ─── Skills ────────────────────────────────────────────────
 
 export type Skill =
-  | "farmer" | "cattle" | "miner" | "woodcutter"
-  | "miller" | "baker" | "blacksmith" | "carpenter"
-  | "tavern" | "healer" | "merchant" | "seamstress"
+  | "bauer" | "hirte" | "knappe" | "holzfaeller"
+  | "mueller" | "baecker" | "schmied" | "zimmermann"
+  | "wirt" | "bader" | "haendler" | "naeherin"
   | "none";
 
+export const SKILL_LABELS: Record<Skill, string> = {
+  bauer: "Feldarbeiter", hirte: "Hirte", knappe: "Knappe", holzfaeller: "Holzfäller",
+  mueller: "Müller", baecker: "Bäcker", schmied: "Schmied", zimmermann: "Zimmermann",
+  wirt: "Wirt", bader: "Bader", haendler: "Händler", naeherin: "Flickerin",
+  none: "ohne Handwerk",
+};
+
 export const AGENT_SKILLS: Record<AgentName, Skill> = {
-  hans: "farmer", ida: "none", konrad: "cattle", ulrich: "farmer",
-  bertram: "farmer", gerda: "miller", anselm: "baker", volker: "blacksmith",
-  wulf: "carpenter", liesel: "tavern", sybille: "healer", friedrich: "woodcutter",
-  otto: "none", pater_markus: "none",
-  dieter: "miner", magda: "none", heinrich: "farmer",
-  elke: "seamstress", rupert: "miner",
+  brakel: "bauer", rike: "none", ottmar: "hirte", wenzel: "bauer",
+  kasper: "bauer", irmel: "mueller", bodo: "baecker", eckhart: "schmied",
+  lenz: "zimmermann", grete: "wirt", walburga: "bader", jost: "holzfaeller",
+  reinhart: "none", bruder_anno: "none",
+  mattis: "knappe", vroni: "none", wendel: "bauer",
+  minna: "naeherin", gisbert: "knappe",
 };
 
 export const AGENT_WORK_LOCATIONS: Record<AgentName, string> = {
-  hans: "Farm 1", ida: "Cottage 2", konrad: "Farm 2", ulrich: "Farm 3",
-  bertram: "Farm 1", gerda: "Mill", anselm: "Bakery", volker: "Forge",
-  wulf: "Carpenter Shop", liesel: "Tavern", sybille: "Healer's Hut", friedrich: "Forest",
-  otto: "Elder's House", pater_markus: "Town Hall",
-  dieter: "Mine", magda: "Village Square", heinrich: "Farm 1",
-  elke: "Seamstress Cottage", rupert: "Mine",
+  brakel: "Unterfeld", rike: "Baracke 2", ottmar: "Ziegenweide", wenzel: "Oberfeld",
+  kasper: "Unterfeld", irmel: "Mühle", bodo: "Backstube", eckhart: "Schmiede",
+  lenz: "Zimmerei", grete: "Schenke", walburga: "Baderhütte", jost: "Köhlerwald",
+  reinhart: "Vogtshaus", bruder_anno: "Vogtei",
+  mattis: "Erzstollen", vroni: "Zechenplatz", wendel: "Unterfeld",
+  minna: "Flickstube", gisbert: "Erzstollen",
 };
 
 // ─── Seasons ───────────────────────────────────────────────
@@ -66,21 +75,66 @@ export type Season = "spring" | "summer" | "autumn" | "winter";
 // ─── Items ─────────────────────────────────────────────────
 
 export type ItemType =
-  | "wheat" | "flour" | "bread" | "meat" | "milk" | "eggs" | "vegetables"
-  | "herbs" | "medicine" | "iron_ore" | "coal" | "iron_tools"
-  | "timber" | "firewood" | "furniture" | "ale" | "meal" | "cloth";
+  | "gerste" | "mehl" | "brot" | "fleisch" | "milch" | "eier" | "rueben"
+  | "kraeuter" | "arznei" | "eisenerz" | "kohle" | "werkzeug"
+  | "bauholz" | "brennholz" | "hausrat" | "bier" | "eintopf" | "leinen";
 
 export const ALL_ITEMS: ItemType[] = [
-  "wheat", "flour", "bread", "meat", "milk", "eggs", "vegetables",
-  "herbs", "medicine", "iron_ore", "coal", "iron_tools",
-  "timber", "firewood", "furniture", "ale", "meal", "cloth",
+  "gerste", "mehl", "brot", "fleisch", "milch", "eier", "rueben",
+  "kraeuter", "arznei", "eisenerz", "kohle", "werkzeug",
+  "bauholz", "brennholz", "hausrat", "bier", "eintopf", "leinen",
 ];
+
+export const ITEM_LABELS: Record<ItemType, string> = {
+  gerste: "Gerste", mehl: "Mehl", brot: "Brot", fleisch: "Fleisch", milch: "Ziegenmilch",
+  eier: "Eier", rueben: "Rüben", kraeuter: "Kräuter", arznei: "Arznei",
+  eisenerz: "Eisenerz", kohle: "Kohle", werkzeug: "Werkzeug", bauholz: "Bauholz",
+  brennholz: "Brennholz", hausrat: "Hausrat", bier: "Dünnbier", eintopf: "Eintopf",
+  leinen: "Leinen",
+};
+
+// Pre-reskin (English) item ids, still accepted as input so stale prompts/saves resolve.
+const LEGACY_ITEM_IDS: Record<string, ItemType> = {
+  wheat: "gerste", flour: "mehl", bread: "brot", meat: "fleisch", milk: "milch",
+  eggs: "eier", vegetables: "rueben", herbs: "kraeuter", medicine: "arznei",
+  iron_ore: "eisenerz", coal: "kohle", iron_tools: "werkzeug", timber: "bauholz",
+  firewood: "brennholz", furniture: "hausrat", ale: "bier", meal: "eintopf", cloth: "leinen",
+};
+
+const ITEM_LOOKUP: Map<string, ItemType> = (() => {
+  const m = new Map<string, ItemType>();
+  for (const [legacy, id] of Object.entries(LEGACY_ITEM_IDS)) m.set(normalizeKey(legacy), id);
+  for (const id of ALL_ITEMS) {
+    m.set(normalizeKey(ITEM_LABELS[id]), id);
+    m.set(normalizeKey(id), id);
+  }
+  return m;
+})();
+
+/**
+ * Normalize an item argument from an LLM action/tool call. Known inputs resolve to their
+ * ItemType; unknown non-empty input is passed through unchanged so the caller's existing
+ * "no such item / not enough" feedback path still fires. Empty/non-string input → undefined.
+ */
+export function resolveItemInput(input: unknown): ItemType | undefined {
+  if (typeof input !== "string" || !input.trim()) return undefined;
+  return resolveItemId(input) ?? (input as ItemType);
+}
+
+/**
+ * Resolve LLM/player item input to an ItemType. Accepts the new id, the German display
+ * label ("Rüben", "Ziegenmilch") or the old English id ("bread"), case/umlaut-insensitive.
+ */
+export function resolveItemId(input: string): ItemType | null {
+  if (typeof input !== "string" || !input.trim()) return null;
+  return ITEM_LOOKUP.get(normalizeKey(input)) ?? null;
+}
 
 export interface InventoryItem {
   type: ItemType;
   quantity: number;
   reserved?: number;        // locked in sell orders; not available for use/eat
-  spoilsAtTick?: number;    // milk (2 days = 32 ticks), meat (3 days = 48 ticks)
+  spoilsAtTick?: number;    // milch (2 days = 32 ticks), fleisch (3 days = 48 ticks)
 }
 
 export interface Inventory {
@@ -90,7 +144,7 @@ export interface Inventory {
 // ─── Tools ─────────────────────────────────────────────────
 
 export interface ToolState {
-  type: "iron_tools";
+  type: "werkzeug";
   durability: number;       // 0–100
 }
 
@@ -117,7 +171,7 @@ export interface AgentEconomicState {
   workSchedule: { open: number; close: number };
   hiredBy?: AgentName;
   hiredUntilTick?: number;
-  villageId?: string;  // undefined = "brunnfeld" (backward compat)
+  villageId?: string;  // undefined = "schlackental" (backward compat)
 }
 
 // ─── Marketplace ───────────────────────────────────────────

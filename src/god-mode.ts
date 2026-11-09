@@ -1,6 +1,7 @@
 import type { ActiveEvent, AgentName, ItemType, WorldState } from "./types.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
-import { getAgentNames, getDisplayName, getVillageElder, getVillageTownHall, getAgentVillage, getVillageAgents } from "./world-registry.js";
+import { getAgentNames, getDisplayName, getVillageElder, getVillageTownHall, getAgentVillage, getVillageAgents, DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME } from "./world-registry.js";
+import { HUB_LOCATION, MERCHANT_CAMP_LOCATION } from "./village-map.js";
 import { queueMessage } from "./messages.js";
 import { addToInventory, removeFromInventory, feedbackToAgent } from "./inventory.js";
 import { callClaude } from "./llm.js";
@@ -9,11 +10,13 @@ import { emitSSE } from "./events.js";
 // ─── Farm item set ────────────────────────────────────────────
 
 export const FARM_ITEMS = new Set<ItemType>([
-  "wheat", "vegetables", "eggs", "milk", "meat", "herbs",
+  "gerste", "rueben", "eier", "milch", "fleisch", "kraeuter",
 ]);
 
-const FARMER_AGENTS: AgentName[] = ["hans", "ulrich", "bertram", "konrad", "heinrich"];
-const MINER_AGENTS: AgentName[] = ["dieter", "rupert"];
+const FARMER_AGENTS: AgentName[] = ["brakel", "wenzel", "kasper", "ottmar", "wendel"];
+const MINER_AGENTS: AgentName[] = ["mattis", "gisbert"];
+const FARM_LOCATIONS = ["Unterfeld", "Ziegenweide", "Oberfeld"];
+const MINE_LOCATION = "Erzstollen";
 
 // ─── Production multiplier ────────────────────────────────────
 
@@ -24,7 +27,7 @@ export function getEventProductionMultiplier(
   let m = 1.0;
   for (const ev of activeEvents) {
     if (ev.type === "drought")        { if (FARM_ITEMS.has(item)) m *= 0.5; }
-    if (ev.type === "mine_collapse")  { if (item === "iron_ore" || item === "coal") return 0; }
+    if (ev.type === "mine_collapse")  { if (item === "eisenerz" || item === "kohle") return 0; }
     if (ev.type === "double_harvest") { if (FARM_ITEMS.has(item)) m *= 2.0; }
   }
   return m;
@@ -33,12 +36,12 @@ export function getEventProductionMultiplier(
 // ─── Caravan cleanup ──────────────────────────────────────────
 
 function cleanupCaravanStock(state: WorldState): void {
-  const elder = getVillageElder("brunnfeld");
+  const elder = getVillageElder(DEFAULT_VILLAGE_ID);
   if (!elder) return;
   const elderEco = state.economics[elder];
   if (!elderEco) return;
   const elderInv = elderEco.inventory;
-  const caravanItems: ItemType[] = ["wheat", "bread", "vegetables", "medicine", "cloth"];
+  const caravanItems: ItemType[] = ["gerste", "brot", "rueben", "arznei", "leinen"];
   for (const item of caravanItems) {
     const entry = elderInv.items.find(i => i.type === item);
     if (entry) {
@@ -56,8 +59,8 @@ function cleanupCaravanStock(state: WorldState): void {
       o => !(o.agentId === elder && caravanItems.includes(o.item)),
     );
   }
-  // Move elder back to the village square
-  state.agent_locations[elder] = "Village Square";
+  // Move elder back to the hub
+  state.agent_locations[elder] = HUB_LOCATION;
 }
 
 // ─── Bandit theft ─────────────────────────────────────────────
@@ -100,26 +103,26 @@ function injectLocationEventFeedback(state: WorldState, time: { tick: number }):
 
     switch (ev.type) {
       case "drought":
-        for (const farm of ["Farm 1", "Farm 2", "Farm 3"]) {
+        for (const farm of FARM_LOCATIONS) {
           for (const a of agentsAt(farm)) {
             feedbackToAgent(a, state, "The fields are parched — drought has cut yields in half. Consider finding other work until it passes.");
           }
         }
         break;
       case "double_harvest":
-        for (const farm of ["Farm 1", "Farm 2", "Farm 3"]) {
+        for (const farm of FARM_LOCATIONS) {
           for (const a of agentsAt(farm)) {
             feedbackToAgent(a, state, "The fields are bursting with life! A miraculous double harvest — your yields are doubled today.");
           }
         }
         break;
       case "mine_collapse":
-        for (const a of agentsAt("Mine")) {
+        for (const a of agentsAt(MINE_LOCATION)) {
           feedbackToAgent(a, state, "The mine just collapsed around you! Get out immediately and find other work while it is shored up.");
         }
         break;
       case "caravan":
-        for (const a of agentsAt("Village Square")) {
+        for (const a of agentsAt(HUB_LOCATION)) {
           feedbackToAgent(a, state, "A merchant caravan has arrived right here in the square! Cheap goods are available — spread the word.");
         }
         break;
@@ -155,7 +158,7 @@ export function tickGodModeEvents(state: WorldState, time: { tick: number }): vo
 export function triggerDrought(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "drought",
-    description: "A severe drought has struck Brunnfeld. Farm yields are halved.",
+    description: `A severe drought has struck ${DEFAULT_VILLAGE_NAME}. Farm yields are halved.`,
     startTick: tick,
     endTick: tick + 48,
   };
@@ -177,22 +180,22 @@ export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
   };
   state.active_events.push(ev);
 
-  const elderVillageId = "brunnfeld";
+  const elderVillageId = DEFAULT_VILLAGE_ID;
   const elder = getVillageElder(elderVillageId);
   if (!elder) return ev;
 
   const elderMkt = state.marketplaces ? (state.marketplaces[elderVillageId] ?? state.marketplace) : state.marketplace;
   const priceIndex = elderMkt.priceIndex;
   const PRICE_FLOORS: Partial<Record<ItemType, number>> = {
-    wheat: 3, bread: 5, vegetables: 2, medicine: 8, cloth: 6,
+    gerste: 3, brot: 5, rueben: 2, arznei: 8, leinen: 6,
   };
 
   const caravanGoods: { item: ItemType; qty: number }[] = [
-    { item: "wheat",      qty: 8 },
-    { item: "bread",      qty: 6 },
-    { item: "vegetables", qty: 5 },
-    { item: "medicine",   qty: 2 },
-    { item: "cloth",      qty: 2 },
+    { item: "gerste",  qty: 8 },
+    { item: "brot",    qty: 6 },
+    { item: "rueben",  qty: 5 },
+    { item: "arznei",  qty: 2 },
+    { item: "leinen",  qty: 2 },
   ];
 
   const elderInv = state.economics[elder].inventory;
@@ -215,7 +218,7 @@ export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
   }
 
   // Move elder to the merchant camp for the duration
-  state.agent_locations[elder] = "Merchant Camp";
+  state.agent_locations[elder] = MERCHANT_CAMP_LOCATION;
 
   // Notify all village agents about the caravan
   for (const a of getVillageAgents(elderVillageId)) {
@@ -259,7 +262,7 @@ export function triggerDoubleHarvest(state: WorldState, tick: number): ActiveEve
 export function triggerPlagueRumor(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "plague_rumor",
-    description: "Plague rumors spread through the village. Demand for medicine has surged.",
+    description: "Plague rumors spread through the colony. Demand for Arznei has surged.",
     startTick: tick,
     endTick: tick + 32,
   };
@@ -267,7 +270,7 @@ export function triggerPlagueRumor(state: WorldState, tick: number): ActiveEvent
 
   for (const agent of getAgentNames()) {
     const elder = getVillageElder(getAgentVillage(agent));
-    if (elder) queueMessage(state, elder, agent, "Word has reached the village: plague spotted in a nearby town. Stock up on medicine if you can.", tick);
+    if (elder) queueMessage(state, elder, agent, "Word has reached the colony: plague spotted in a nearby town. Stock up on Arznei if you can.", tick);
   }
   return ev;
 }
@@ -283,7 +286,7 @@ export function triggerBanditThreat(state: WorldState, tick: number): ActiveEven
 
   for (const agent of getAgentNames()) {
     const elder = getVillageElder(getAgentVillage(agent));
-    if (elder) queueMessage(state, elder, agent, "Bandits have been spotted on the roads near Brunnfeld. Keep your valuables safe.", tick);
+    if (elder) queueMessage(state, elder, agent, "Bandits have been spotted on the roads near ${DEFAULT_VILLAGE_NAME}. Keep your valuables safe.", tick);
   }
   return ev;
 }
@@ -294,10 +297,10 @@ export function isLocationBlockedByEvent(
   loc: string,
   activeEvents: ActiveEvent[],
 ): string | null {
-  if (loc === "Mine" && activeEvents.some(e => e.type === "mine_collapse")) {
+  if (loc === MINE_LOCATION && activeEvents.some(e => e.type === "mine_collapse")) {
     return `[Can't go there] The mine has collapsed and is unsafe to enter. Wait until it is shored up.`;
   }
-  if (loc === "Merchant Camp" && !activeEvents.some(e => e.type === "caravan")) {
+  if (loc === MERCHANT_CAMP_LOCATION && !activeEvents.some(e => e.type === "caravan")) {
     return `[Can't go there] There is no merchant caravan at the camp right now.`;
   }
   return null;
@@ -329,7 +332,7 @@ export function triggerMeeting(
   agendaType: "tax_change" | "marketplace_hours" | "banishment" | "general_rule",
   description: string,
   target?: AgentName,
-  villageId: string = "brunnfeld",
+  villageId: string = DEFAULT_VILLAGE_ID,
   delay: number = 2,
   teleport: boolean = true,
 ): void {
@@ -372,7 +375,7 @@ export async function runInterview(
   const body = state.body[agent];
   const name = getDisplayName(agent);
 
-  const prompt = `You are ${name}, a villager in Brunnfeld.
+  const prompt = `You are ${name}, a villager in ${DEFAULT_VILLAGE_NAME}.
 ${profile}
 ${memory}
 ---

@@ -4,8 +4,8 @@ import { emitSSE } from "./events.js";
 
 // Spoilage durations in ticks (1 day = 16 ticks)
 const SPOIL_TICKS: Partial<Record<ItemType, number>> = {
-  milk: 32,   // 2 days
-  meat: 48,   // 3 days
+  milch: 32,    // 2 days
+  fleisch: 48,  // 3 days
 };
 
 export function getInventoryQty(inventory: Inventory, item: ItemType): number {

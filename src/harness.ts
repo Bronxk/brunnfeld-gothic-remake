@@ -6,6 +6,7 @@ import { emitSSE } from "./events.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
 import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall } from "./world-registry.js";
 import { deliverMessages } from "./messages.js";
+import { HUB_LOCATION, isBaseLocation } from "./village-map.js";
 import { tickToTime } from "./time.js";
 import {
   getToolsForAgent, executeToolCall, formatToolsForPrompt, getToolSummary,
@@ -28,7 +29,7 @@ export interface HarnessConfig {
 function budgetForAgent(agentId: AgentName, worldState: WorldState): number {
   const energy = worldState.body[agentId]?.energy ?? 5;
   const loc = worldState.agent_locations[agentId] ?? "";
-  const atMarket = loc === "Village Square" || loc === "Marketplace" || loc.endsWith(":Village Square");
+  const atMarket = isBaseLocation(loc, HUB_LOCATION) || loc === "Marketplace";
   if (energy <= 2) return 3;
   if (atMarket) return 8;
   return 5;

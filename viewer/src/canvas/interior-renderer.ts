@@ -1,4 +1,4 @@
-// ─── Town Hall Interior Renderer ──────────────────────────────────────────
+// ─── Vogtei Interior Renderer ──────────────────────────────────────────
 
 import type { AgentName } from "../types";
 import type { MeetingState } from "../store";
@@ -18,21 +18,21 @@ const SPRITES: Record<string, string> = {
 };
 
 const AGENT_SPRITE: Partial<Record<AgentName, string>> = {
-  hans: "pawnAxe", ida: "pawnIdle", konrad: "pawnIdle", ulrich: "pawnAxe",
-  bertram: "pawnAxe", gerda: "pawnHammer", anselm: "pawnHammer",
-  volker: "pawnHammer", wulf: "pawnHammer", liesel: "pawnIdle",
-  sybille: "pawnIdle", friedrich: "pawnWood",
-  otto: "warriorIdle", pater_markus: "monkIdle",
-  dieter: "pawnPickaxe", magda: "pawnIdle", heinrich: "pawnAxe",
-  elke: "pawnIdle", rupert: "pawnPickaxe", player: "pawnIdle",
+  brakel: "pawnAxe", rike: "pawnIdle", ottmar: "pawnIdle", wenzel: "pawnAxe",
+  kasper: "pawnAxe", irmel: "pawnHammer", bodo: "pawnHammer",
+  eckhart: "pawnHammer", lenz: "pawnHammer", grete: "pawnIdle",
+  walburga: "pawnIdle", jost: "pawnWood",
+  reinhart: "warriorIdle", bruder_anno: "monkIdle",
+  mattis: "pawnPickaxe", vroni: "pawnIdle", wendel: "pawnAxe",
+  minna: "pawnIdle", gisbert: "pawnPickaxe", player: "pawnIdle",
 };
 
 const AGENT_COLORS: Partial<Record<AgentName, string>> = {
-  hans: "#e8c87a", ida: "#f4b8d4", konrad: "#a8d48a", ulrich: "#c8a84a",
-  bertram: "#d4a870", gerda: "#d4d4a0", anselm: "#f0d890", volker: "#c84c4c",
-  wulf: "#a07040", liesel: "#d878a8", sybille: "#80c8d8", friedrich: "#80a850",
-  otto: "#a8a0c8", pater_markus: "#c8c8e8", dieter: "#909090", magda: "#e8b090",
-  heinrich: "#d8c060", elke: "#e878b8", rupert: "#b0b0b0", player: "#ffd700",
+  brakel: "#e8c87a", rike: "#f4b8d4", ottmar: "#a8d48a", wenzel: "#c8a84a",
+  kasper: "#d4a870", irmel: "#d4d4a0", bodo: "#f0d890", eckhart: "#c84c4c",
+  lenz: "#a07040", grete: "#d878a8", walburga: "#80c8d8", jost: "#80a850",
+  reinhart: "#a8a0c8", bruder_anno: "#c8c8e8", mattis: "#909090", vroni: "#e8b090",
+  wendel: "#d8c060", minna: "#e878b8", gisbert: "#b0b0b0", player: "#ffd700",
 };
 
 const SPRITE_W = 192;
@@ -160,10 +160,10 @@ export function drawInterior(
 
   const showVote = meeting.phase === "vote" || meeting.phase === "result";
   const attendees = meeting.attendees;
-  const nonOtto = attendees.filter(a => a !== "otto");
+  const nonChair = attendees.filter(a => a !== "reinhart");
   // Split: first half on left, second half on right (up to 2 each)
-  const leftAgents  = nonOtto.slice(0, 2);
-  const rightAgents = nonOtto.slice(2, 4);
+  const leftAgents  = nonChair.slice(0, 2);
+  const rightAgents = nonChair.slice(2, 4);
 
   // ── 3. Draw left column ────────────────────────────────────────
   for (let i = 0; i < leftAgents.length; i++) {
@@ -181,10 +181,10 @@ export function drawInterior(
       showVote ? (meeting.votes[agent] ?? undefined) : undefined, showVote);
   }
 
-  // ── 5. Draw Otto (always, center top) ─────────────────────────
-  if (attendees.includes("otto")) {
-    drawAgent(ctx, "otto", OTTO_POS.x, OTTO_POS.y, Math.round(AGENT_SIZE * 1.25),
-      frameIndex, showVote ? (meeting.votes["otto"] ?? undefined) : undefined, showVote);
+  // ── 5. Draw the chair, Vogt Reinhart (always, center top) ─────
+  if (attendees.includes("reinhart")) {
+    drawAgent(ctx, "reinhart", OTTO_POS.x, OTTO_POS.y, Math.round(AGENT_SIZE * 1.25),
+      frameIndex, showVote ? (meeting.votes["reinhart"] ?? undefined) : undefined, showVote);
     // Crown label
     ctx.fillStyle = "#ffd700";
     ctx.font = `bold ${Math.round(AGENT_SIZE * 0.2)}px monospace`;

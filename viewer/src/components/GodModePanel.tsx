@@ -15,7 +15,7 @@ const EVENTS = [
   { id: "caravan",        label: "Caravan",         icon: "🐪", desc: "Cheap goods flood the market (1 day)" },
   { id: "mine_collapse",  label: "Mine Collapse",   icon: "⛏",  desc: "Ore production blocked (2 days)" },
   { id: "double_harvest", label: "Double Harvest",  icon: "🌾", desc: "Farm yields ×2 today" },
-  { id: "plague_rumor",   label: "Plague Rumor",    icon: "☠",  desc: "Medicine panic spreads" },
+  { id: "plague_rumor",   label: "Plague Rumor",    icon: "☠",  desc: "Arznei panic spreads" },
   { id: "bandit_threat",  label: "Bandit Threat",   icon: "🗡",  desc: "Theft risk for 2 days" },
 ];
 
@@ -230,7 +230,7 @@ export default function GodModePanel() {
           <input
             value={banishTarget}
             onChange={e => setBanishTarget(e.target.value)}
-            placeholder="Agent name (e.g. hans)"
+            placeholder="Agent name (e.g. brakel)"
             style={{
               width: "100%", marginTop: 4, background: "#1a1008", border: "1px solid #6a4010",
               color: "#e8d080", fontFamily: "Georgia, serif", fontSize: 11,

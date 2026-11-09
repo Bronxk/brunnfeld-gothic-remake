@@ -1,4 +1,5 @@
 import type { AgentName, AgentTurnResult, ItemType, Skill, WorldState, SimTime } from "./types.js";
+import { resolveItemId, SKILL_LABELS } from "./types.js";
 import { getAgentNames, getLocationType } from "./world-registry.js";
 import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent } from "./inventory.js";
 import { getSeasonMultiplier } from "./seasons.js";
@@ -13,32 +14,32 @@ export interface Recipe {
 }
 
 export const RECIPES: Record<string, Recipe> = {
-  wheat:      { skill: "farmer",     inputs: {},                          output: { wheat: 4 },       tool: true,  location: "Farm 1" },
-  milk:       { skill: "cattle",     inputs: {},                          output: { milk: 3 },        tool: false, location: "Farm 2" },
-  meat:       { skill: "cattle",     inputs: {},                          output: { meat: 2 },        tool: true,  location: "Farm 2" },
-  eggs:       { skill: "farmer",     inputs: {},                          output: { eggs: 2 },        tool: false, location: "Farm 3" },
-  vegetables: { skill: "farmer",     inputs: {},                          output: { vegetables: 3 },  tool: true,  location: "Farm 3" },
-  flour:      { skill: "miller",     inputs: { wheat: 3 },               output: { flour: 2 },       tool: false, location: "Mill" },
-  bread:      { skill: "baker",      inputs: { flour: 1 },               output: { bread: 4 },       tool: false, location: "Bakery" },
-  iron_tools: { skill: "blacksmith", inputs: { iron_ore: 2, coal: 1 },   output: { iron_tools: 1 }, tool: false, location: "Forge" },
-  furniture:  { skill: "carpenter",  inputs: { timber: 3 },              output: { furniture: 1 },   tool: true,  location: "Carpenter Shop" },
-  medicine:   { skill: "healer",     inputs: { herbs: 3 },               output: { medicine: 1 },    tool: false, location: "Healer's Hut" },
-  ale:        { skill: "tavern",     inputs: { wheat: 2 },               output: { ale: 4 },         tool: false, location: "Tavern" },
-  meal:       { skill: "tavern",     inputs: { meat: 1, vegetables: 1 }, output: { meal: 3 },        tool: false, location: "Tavern" },
-  cloth:      { skill: "seamstress", inputs: {},                          output: { cloth: 1 },       tool: false, location: "Seamstress Cottage" },
-  timber:     { skill: "woodcutter", inputs: {},                          output: { timber: 3 },      tool: true,  location: "Forest" },
-  firewood:   { skill: "woodcutter", inputs: {},                          output: { firewood: 4 },    tool: true,  location: "Forest" },
-  herbs:      { skill: "healer",     inputs: {},                          output: { herbs: 2 },       tool: false, location: "Forest" },
-  iron_ore:   { skill: "miner",      inputs: {},                          output: { iron_ore: 3 },    tool: true,  location: "Mine" },
-  coal:       { skill: "miner",      inputs: {},                          output: { coal: 2 },        tool: true,  location: "Mine" },
+  gerste:    { skill: "bauer",       inputs: {},                          output: { gerste: 4 },    tool: true,  location: "Unterfeld" },
+  milch:     { skill: "hirte",       inputs: {},                          output: { milch: 3 },     tool: false, location: "Ziegenweide" },
+  fleisch:   { skill: "hirte",       inputs: {},                          output: { fleisch: 2 },   tool: true,  location: "Ziegenweide" },
+  eier:      { skill: "bauer",       inputs: {},                          output: { eier: 2 },      tool: false, location: "Oberfeld" },
+  rueben:    { skill: "bauer",       inputs: {},                          output: { rueben: 3 },    tool: true,  location: "Oberfeld" },
+  mehl:      { skill: "mueller",     inputs: { gerste: 3 },               output: { mehl: 2 },      tool: false, location: "Mühle" },
+  brot:      { skill: "baecker",     inputs: { mehl: 1 },                 output: { brot: 4 },      tool: false, location: "Backstube" },
+  werkzeug:  { skill: "schmied",     inputs: { eisenerz: 2, kohle: 1 },   output: { werkzeug: 1 },  tool: false, location: "Schmiede" },
+  hausrat:   { skill: "zimmermann",  inputs: { bauholz: 3 },              output: { hausrat: 1 },   tool: true,  location: "Zimmerei" },
+  arznei:    { skill: "bader",       inputs: { kraeuter: 3 },             output: { arznei: 1 },    tool: false, location: "Baderhütte" },
+  bier:      { skill: "wirt",        inputs: { gerste: 2 },               output: { bier: 4 },      tool: false, location: "Schenke" },
+  eintopf:   { skill: "wirt",        inputs: { fleisch: 1, rueben: 1 },   output: { eintopf: 3 },   tool: false, location: "Schenke" },
+  leinen:    { skill: "naeherin",    inputs: {},                          output: { leinen: 1 },    tool: false, location: "Flickstube" },
+  bauholz:   { skill: "holzfaeller", inputs: {},                          output: { bauholz: 3 },   tool: true,  location: "Köhlerwald" },
+  brennholz: { skill: "holzfaeller", inputs: {},                          output: { brennholz: 4 }, tool: true,  location: "Köhlerwald" },
+  kraeuter:  { skill: "bader",       inputs: {},                          output: { kraeuter: 2 },  tool: false, location: "Köhlerwald" },
+  eisenerz:  { skill: "knappe",      inputs: {},                          output: { eisenerz: 3 },  tool: true,  location: "Erzstollen" },
+  kohle:     { skill: "knappe",      inputs: {},                          output: { kohle: 2 },     tool: true,  location: "Erzstollen" },
 };
 
-// Farmers can work on Farm 1, 2, or 3 for general farm produce
+// Farm workers can work on Unterfeld, Ziegenweide or Oberfeld for general farm produce
 export const MULTI_FARM_ITEMS: Partial<Record<string, string[]>> = {
-  wheat:      ["Farm 1", "Farm 2", "Farm 3"],
-  vegetables: ["Farm 1", "Farm 2", "Farm 3"],
-  eggs:       ["Farm 1", "Farm 2", "Farm 3"],
-  herbs:      ["Forest"],
+  gerste:    ["Unterfeld", "Ziegenweide", "Oberfeld"],
+  rueben:    ["Unterfeld", "Ziegenweide", "Oberfeld"],
+  eier:      ["Unterfeld", "Ziegenweide", "Oberfeld"],
+  kraeuter:  ["Köhlerwald"],
 };
 
 /** Returns all producible items for a given skill with their input requirements and required location. */
@@ -72,7 +73,8 @@ export function resolveProduction(
         continue;
       }
       const eco = state.economics[agent];
-      const itemKey = action.item as string;
+      const rawItem = action.item as string;
+      const itemKey = resolveItemId(rawItem) ?? rawItem;
       const recipe = RECIPES[itemKey];
 
       if (!recipe) {
@@ -84,7 +86,7 @@ export function resolveProduction(
         // Allow hired laborers to produce using their employer's skill
         const employer = eco.hiredBy ? state.economics[eco.hiredBy] : null;
         if (!employer || employer.skill !== recipe.skill) {
-          feedbackToAgent(agent, state, `[Can't do that] You don't have the ${recipe.skill} skill.`);
+          feedbackToAgent(agent, state, `[Can't do that] You don't have the ${SKILL_LABELS[recipe.skill] ?? recipe.skill} skill.`);
           continue;
         }
       }
@@ -102,7 +104,7 @@ export function resolveProduction(
       }
 
       if (recipe.tool && (!eco.tool || eco.tool.durability <= 0)) {
-        feedbackToAgent(agent, state, `[Can't do that] You need working iron tools to produce ${itemKey}.`);
+        feedbackToAgent(agent, state, `[Can't do that] You need a working Werkzeug to produce ${itemKey}.`);
         continue;
       }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * World Generator for Brunnfeld
+ * World Generator for Schlackental
  *
  * Usage:
  *   node dist/generate-world.js                           # 1 village, 19 hardcoded agents
@@ -18,15 +18,19 @@ import {
   AGENT_NAMES, AGENT_DISPLAY_NAMES, AGENT_SKILLS, AGENT_WORK_LOCATIONS, AGENT_HOMES,
   COUNCIL_MEMBERS, ALL_ITEMS,
 } from "./types.js";
-import { LOCATIONS, ADJACENCY, OPENING_HOURS, LOCATION_TILES } from "./village-map.js";
+import {
+  LOCATIONS, ADJACENCY, OPENING_HOURS, LOCATION_TILES,
+  HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION, MERCHANT_CAMP_LOCATION,
+} from "./village-map.js";
 import type { WorldConfig, VillageConfig, AgentConfig, RoadConfig } from "./world-registry.js";
+import { DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME, DEFAULT_DESCRIPTIONS } from "./world-registry.js";
 
 const DATA_DIR = join(process.cwd(), "data");
 const DEFAULT_PRICE_INDEX: Record<ItemType, number> = {
-  wheat: 2, flour: 5, bread: 3, meat: 8, milk: 2,
-  iron_tools: 15, coal: 3, iron_ore: 4, timber: 3, firewood: 2,
-  herbs: 1, medicine: 10, ale: 3, meal: 6, cloth: 5,
-  furniture: 12, eggs: 1, vegetables: 2,
+  gerste: 2, mehl: 5, brot: 3, fleisch: 8, milch: 2,
+  werkzeug: 15, kohle: 3, eisenerz: 4, bauholz: 3, brennholz: 2,
+  kraeuter: 1, arznei: 10, bier: 3, eintopf: 6, leinen: 5,
+  hausrat: 12, eier: 1, rueben: 2,
 };
 
 // ─── Seeded PRNG ──────────────────────────────────────────────
@@ -131,12 +135,13 @@ const BYNAMES = [
   "von der Mühle", "am Markt", "der Frohe", "der Kräftige",
 ];
 
+// First settlement is the default (Schlackental); the rest are original colony outposts.
 const VILLAGE_NAMES = [
-  { id: "brunnfeld",  name: "Brunnfeld"  },
-  { id: "norddorf",   name: "Norddorf"   },
-  { id: "ostheim",    name: "Ostheim"    },
-  { id: "westmark",   name: "Westmark"   },
-  { id: "suedtal",    name: "Südtal"     },
+  { id: DEFAULT_VILLAGE_ID, name: DEFAULT_VILLAGE_NAME },
+  { id: "rabenstollen",      name: "Rabenstollen"       },
+  { id: "kehlhof",           name: "Kehlhof"            },
+  { id: "moosgrund",         name: "Moosgrund"          },
+  { id: "aschenbruch",       name: "Aschenbruch"        },
 ];
 
 // ─── Skill defaults ───────────────────────────────────────────
@@ -144,61 +149,61 @@ const VILLAGE_NAMES = [
 interface SkillDefaults {
   wallet: number;
   items: { type: ItemType; quantity: number }[];
-  tool: { type: "iron_tools"; durability: number } | null;
+  tool: { type: "werkzeug"; durability: number } | null;
   workSchedule: { open: number; close: number };
 }
 
 const SKILL_DEFAULTS: Record<Skill, SkillDefaults> = {
-  farmer:      { wallet: 20, items: [{ type: "wheat",   quantity: 6 }], tool: { type: "iron_tools", durability: 70 }, workSchedule: { open: 6,  close: 16 } },
-  cattle:      { wallet: 35, items: [{ type: "milk",    quantity: 3 }, { type: "meat", quantity: 2 }], tool: { type: "iron_tools", durability: 80 }, workSchedule: { open: 6, close: 15 } },
-  miner:       { wallet: 18, items: [{ type: "iron_ore",quantity: 3 }, { type: "coal", quantity: 2 }], tool: { type: "iron_tools", durability: 70 }, workSchedule: { open: 7, close: 17 } },
-  woodcutter:  { wallet: 22, items: [{ type: "timber",  quantity: 3 }, { type: "firewood", quantity: 5 }], tool: { type: "iron_tools", durability: 75 }, workSchedule: { open: 6, close: 17 } },
-  miller:      { wallet: 40, items: [{ type: "flour",   quantity: 4 }], tool: null, workSchedule: { open: 7, close: 16 } },
-  baker:       { wallet: 30, items: [{ type: "bread",   quantity: 5 }, { type: "flour", quantity: 2 }], tool: null, workSchedule: { open: 6, close: 13 } },
-  blacksmith:  { wallet: 55, items: [{ type: "iron_ore",quantity: 4 }, { type: "coal", quantity: 3 }], tool: null, workSchedule: { open: 7, close: 16 } },
-  carpenter:   { wallet: 35, items: [{ type: "timber",  quantity: 5 }], tool: { type: "iron_tools", durability: 75 }, workSchedule: { open: 7, close: 16 } },
-  tavern:      { wallet: 50, items: [{ type: "ale",     quantity: 6 }, { type: "wheat", quantity: 3 }], tool: null, workSchedule: { open: 10, close: 21 } },
-  healer:      { wallet: 28, items: [{ type: "herbs",   quantity: 5 }, { type: "medicine", quantity: 2 }], tool: null, workSchedule: { open: 7, close: 17 } },
-  seamstress:  { wallet: 30, items: [{ type: "cloth",   quantity: 3 }], tool: null, workSchedule: { open: 7, close: 16 } },
-  merchant:    { wallet: 80, items: [], tool: null, workSchedule: { open: 6, close: 21 } },
-  none:        { wallet: 15, items: [{ type: "bread",   quantity: 2 }], tool: null, workSchedule: { open: 6, close: 21 } },
+  bauer:       { wallet: 20, items: [{ type: "gerste",   quantity: 6 }], tool: { type: "werkzeug", durability: 70 }, workSchedule: { open: 6,  close: 16 } },
+  hirte:       { wallet: 35, items: [{ type: "milch",    quantity: 3 }, { type: "fleisch", quantity: 2 }], tool: { type: "werkzeug", durability: 80 }, workSchedule: { open: 6, close: 15 } },
+  knappe:      { wallet: 18, items: [{ type: "eisenerz", quantity: 3 }, { type: "kohle", quantity: 2 }], tool: { type: "werkzeug", durability: 70 }, workSchedule: { open: 7, close: 17 } },
+  holzfaeller: { wallet: 22, items: [{ type: "bauholz",  quantity: 3 }, { type: "brennholz", quantity: 5 }], tool: { type: "werkzeug", durability: 75 }, workSchedule: { open: 6, close: 17 } },
+  mueller:     { wallet: 40, items: [{ type: "mehl",     quantity: 4 }], tool: null, workSchedule: { open: 7, close: 16 } },
+  baecker:     { wallet: 30, items: [{ type: "brot",     quantity: 5 }, { type: "mehl", quantity: 2 }], tool: null, workSchedule: { open: 6, close: 13 } },
+  schmied:     { wallet: 55, items: [{ type: "eisenerz", quantity: 4 }, { type: "kohle", quantity: 3 }], tool: null, workSchedule: { open: 7, close: 16 } },
+  zimmermann:  { wallet: 35, items: [{ type: "bauholz",  quantity: 5 }], tool: { type: "werkzeug", durability: 75 }, workSchedule: { open: 7, close: 16 } },
+  wirt:        { wallet: 50, items: [{ type: "bier",     quantity: 6 }, { type: "gerste", quantity: 3 }], tool: null, workSchedule: { open: 10, close: 21 } },
+  bader:       { wallet: 28, items: [{ type: "kraeuter", quantity: 5 }, { type: "arznei", quantity: 2 }], tool: null, workSchedule: { open: 7, close: 17 } },
+  naeherin:    { wallet: 30, items: [{ type: "leinen",   quantity: 3 }], tool: null, workSchedule: { open: 7, close: 16 } },
+  haendler:    { wallet: 80, items: [], tool: null, workSchedule: { open: 6, close: 21 } },
+  none:        { wallet: 15, items: [{ type: "brot",     quantity: 2 }], tool: null, workSchedule: { open: 6, close: 21 } },
 };
 
 // ─── Skill → work location ────────────────────────────────────
 
 function workLocationForSkill(skill: Skill, farmIndex: number): string {
   switch (skill) {
-    case "farmer":    return farmIndex <= 1 ? "Farm 1" : farmIndex === 2 ? "Farm 2" : "Farm 3";
-    case "cattle":    return "Farm 2";
-    case "miner":     return "Mine";
-    case "woodcutter":return "Forest";
-    case "miller":    return "Mill";
-    case "baker":     return "Bakery";
-    case "blacksmith":return "Forge";
-    case "carpenter": return "Carpenter Shop";
-    case "tavern":    return "Tavern";
-    case "healer":    return "Healer's Hut";
-    case "seamstress":return "Seamstress Cottage";
-    default:          return "Village Square";
+    case "bauer":       return farmIndex <= 1 ? "Unterfeld" : farmIndex === 2 ? "Ziegenweide" : "Oberfeld";
+    case "hirte":       return "Ziegenweide";
+    case "knappe":      return "Erzstollen";
+    case "holzfaeller": return "Köhlerwald";
+    case "mueller":     return "Mühle";
+    case "baecker":     return "Backstube";
+    case "schmied":     return "Schmiede";
+    case "zimmermann":  return "Zimmerei";
+    case "wirt":        return "Schenke";
+    case "bader":       return "Baderhütte";
+    case "naeherin":    return "Flickstube";
+    default:            return HUB_LOCATION;
   }
 }
 
 // Specialist skills that live at their workplace
-const LIVE_AT_WORK: Set<Skill> = new Set(["miller", "baker", "blacksmith", "carpenter", "tavern", "healer", "seamstress", "merchant"]);
-const COTTAGE_LOCATIONS = [
-  "Cottage 1", "Cottage 2", "Cottage 3", "Cottage 4", "Cottage 5",
-  "Cottage 6", "Cottage 7", "Cottage 8", "Cottage 9",
+const LIVE_AT_WORK: Set<Skill> = new Set(["mueller", "baecker", "schmied", "zimmermann", "wirt", "bader", "naeherin", "haendler"]);
+const BARACKE_LOCATIONS = [
+  "Baracke 1", "Baracke 2", "Baracke 3", "Baracke 4", "Baracke 5",
+  "Baracke 6", "Baracke 7", "Baracke 8", "Baracke 9",
 ];
 
 // ─── Skill distribution ───────────────────────────────────────
 
-const SPECIALIST_SKILLS: Skill[] = ["miller", "baker", "blacksmith", "carpenter", "tavern", "healer", "seamstress"];
+const SPECIALIST_SKILLS: Skill[] = ["mueller", "baecker", "schmied", "zimmermann", "wirt", "bader", "naeherin"];
 const BULK_SKILL_POOL: { skill: Skill; weight: number }[] = [
-  { skill: "farmer",     weight: 36 },
-  { skill: "cattle",     weight: 12 },
-  { skill: "miner",      weight: 12 },
-  { skill: "woodcutter", weight: 9  },
-  { skill: "none",       weight: 31 },
+  { skill: "bauer",       weight: 36 },
+  { skill: "hirte",       weight: 12 },
+  { skill: "knappe",      weight: 12 },
+  { skill: "holzfaeller", weight: 9  },
+  { skill: "none",        weight: 31 },
 ];
 
 function pickFromWeighted(pool: { skill: Skill; weight: number }[], rng: () => number): Skill {
@@ -281,12 +286,12 @@ function prefixLoc(name: string, villageName: string): string {
 }
 
 function buildVillageLocations(villageName: string): string[] {
-  if (villageName === "Brunnfeld") return [...LOCATIONS];
+  if (villageName === DEFAULT_VILLAGE_NAME) return [...LOCATIONS];
   return (LOCATIONS as readonly string[]).map(loc => prefixLoc(loc, villageName));
 }
 
 function buildVillageAdjacency(villageName: string): Record<string, string[]> {
-  if (villageName === "Brunnfeld") return { ...ADJACENCY };
+  if (villageName === DEFAULT_VILLAGE_NAME) return { ...ADJACENCY };
   const adj: Record<string, string[]> = {};
   for (const [loc, neighbors] of Object.entries(ADJACENCY)) {
     adj[prefixLoc(loc, villageName)] = neighbors.map(n => prefixLoc(n, villageName));
@@ -295,7 +300,7 @@ function buildVillageAdjacency(villageName: string): Record<string, string[]> {
 }
 
 function buildVillageOpeningHours(villageName: string): Partial<Record<string, { open: number; close: number }>> {
-  if (villageName === "Brunnfeld") return { ...OPENING_HOURS };
+  if (villageName === DEFAULT_VILLAGE_NAME) return { ...OPENING_HOURS };
   const hours: Partial<Record<string, { open: number; close: number }>> = {};
   for (const [loc, h] of Object.entries(OPENING_HOURS)) {
     hours[prefixLoc(loc, villageName)] = h;
@@ -305,23 +310,23 @@ function buildVillageOpeningHours(villageName: string): Partial<Record<string, {
 
 function buildVillageLocationTypes(villageName: string): Record<string, string> {
   const TYPE_MAP: Record<string, string> = {
-    "Village Square": "square", "Bakery": "bakery", "Tavern": "tavern",
-    "Forge": "forge", "Carpenter Shop": "carpenter", "Mill": "mill",
-    "Town Hall": "townhall", "Prison": "prison", "Elder's House": "elder",
-    "Seamstress Cottage": "seamstress", "Healer's Hut": "healer",
-    "Farm 1": "farm", "Farm 2": "farm", "Farm 3": "farm",
-    "Forest": "forest", "Mine": "mine", "Merchant Camp": "merchant",
+    [HUB_LOCATION]: "square", "Backstube": "bakery", "Schenke": "tavern",
+    "Schmiede": "forge", "Zimmerei": "carpenter", "Mühle": "mill",
+    [TOWNHALL_LOCATION]: "townhall", [PRISON_LOCATION]: "prison", [ELDER_HOME_LOCATION]: "elder",
+    "Flickstube": "seamstress", "Baderhütte": "healer",
+    "Unterfeld": "farm", "Ziegenweide": "farm", "Oberfeld": "farm",
+    "Köhlerwald": "forest", "Erzstollen": "mine", [MERCHANT_CAMP_LOCATION]: "merchant",
   };
   const locs = LOCATIONS as readonly string[];
   const out: Record<string, string> = {};
   for (const loc of locs) {
     const t = TYPE_MAP[loc];
     if (t) {
-      const key = villageName === "Brunnfeld" ? loc : prefixLoc(loc, villageName);
+      const key = villageName === DEFAULT_VILLAGE_NAME ? loc : prefixLoc(loc, villageName);
       out[key] = t;
     }
-    if (/Cottage \d/.test(loc)) {
-      const key = villageName === "Brunnfeld" ? loc : prefixLoc(loc, villageName);
+    if (/^Baracke \d$/.test(loc)) {
+      const key = villageName === DEFAULT_VILLAGE_NAME ? loc : prefixLoc(loc, villageName);
       out[key] = "cottage";
     }
   }
@@ -329,7 +334,7 @@ function buildVillageLocationTypes(villageName: string): Record<string, string> 
 }
 
 function resolveLocName(bare: string, villageName: string): string {
-  return villageName === "Brunnfeld" ? bare : prefixLoc(bare, villageName);
+  return villageName === DEFAULT_VILLAGE_NAME ? bare : prefixLoc(bare, villageName);
 }
 
 // ─── Agent config building ────────────────────────────────────
@@ -352,21 +357,21 @@ function buildAgentSpec(
   cottageCounter: { n: number },
 ): AgentBuildSpec {
   let bareWork = workLocationForSkill(skill, farmCounter.n);
-  if (skill === "farmer") farmCounter.n++;
+  if (skill === "bauer") farmCounter.n++;
 
   const bareHome = LIVE_AT_WORK.has(skill)
     ? bareWork
-    : COTTAGE_LOCATIONS[cottageCounter.n++ % COTTAGE_LOCATIONS.length]!;
+    : BARACKE_LOCATIONS[cottageCounter.n++ % BARACKE_LOCATIONS.length]!;
 
   const workLocation = resolveLocName(bareWork, villageName);
   const homeLocation = resolveLocName(bareHome, villageName);
 
   const SKILL_DESC: Record<Skill, string> = {
-    farmer: "a farmer", cattle: "a cattle farmer", miner: "a miner",
-    woodcutter: "a woodcutter", miller: "the miller", baker: "the baker",
-    blacksmith: "the blacksmith", carpenter: "the carpenter", tavern: "the tavern keeper",
-    healer: "the village healer", seamstress: "the seamstress", merchant: "a merchant",
-    none: "a villager",
+    bauer: "ein Feldarbeiter", hirte: "ein Hirte", knappe: "ein Knappe",
+    holzfaeller: "ein Holzfäller", mueller: "der Müller", baecker: "der Bäcker",
+    schmied: "der Schmied", zimmermann: "der Zimmermann", wirt: "der Wirt",
+    bader: "der Bader", naeherin: "die Flickerin", haendler: "ein Händler",
+    none: "ein Kolonist",
   };
 
   return {
@@ -412,18 +417,18 @@ function emptyMarketplace(): Marketplace {
 
 function profileStub(displayName: string, skill: Skill, villageName: string, workLocation: string): string {
   const SKILL_INTRO: Record<Skill, string> = {
-    farmer: `${displayName} is a farmer in ${villageName}, working the fields at ${workLocation}.\n\nA hardworking soul who knows the rhythm of the seasons, ${displayName} cares above all about a good harvest and fair prices at the market.`,
-    cattle: `${displayName} tends cattle in ${villageName} at ${workLocation}.\n\nRaising animals is slow work but steady, and ${displayName} takes pride in the quality of the milk and meat the farm produces.`,
-    miner: `${displayName} works the mine in ${villageName}.\n\nLife underground is dangerous and dark, but iron ore and coal feed the whole village's tools and hearths, and ${displayName} knows the value of that.`,
-    woodcutter: `${displayName} chops wood in the forest near ${villageName}.\n\nTimber and firewood keep homes warm through winter; ${displayName} has a strong back and a steady axe.`,
-    miller: `${displayName} runs the mill in ${villageName}.\n\nGrain into flour — the mill is the hinge on which the whole village turns, and ${displayName} knows it.`,
-    baker: `${displayName} keeps the bakery in ${villageName} running before anyone else is awake.\n\nFresh bread every morning is a simple gift, but ${displayName} takes genuine pride in it.`,
-    blacksmith: `${displayName} works the forge in ${villageName}.\n\nIron tools are the lifeblood of every farmer, miner, and woodcutter here; ${displayName} is essential — and occasionally reminds people of it.`,
-    carpenter: `${displayName} is the carpenter in ${villageName}, working from ${workLocation}.\n\nFurniture, repairs, structures — without skilled woodwork a village falls apart, and ${displayName} keeps it together.`,
-    tavern: `${displayName} runs the tavern in ${villageName}.\n\nAle and meals, gossip and warmth — the tavern is where ${villageName} comes to breathe, and ${displayName} is at the center of it all.`,
-    healer: `${displayName} is the healer in ${villageName}.\n\nHerbs and patience, calm hands and hard knowledge — ${displayName} tends the sick and hopes the plague rumors stay rumors.`,
-    seamstress: `${displayName} sews cloth into clothing in ${villageName}.\n\nA steady hand and an eye for fabric — ${displayName} is who the village turns to when winter is coming and the old coat won't last.`,
-    merchant: `${displayName} is a traveling merchant based in ${villageName}.\n\nBuying low, selling high, moving goods between places that need them — ${displayName} has a nose for opportunity.`,
+    bauer: `${displayName} is a bauer in ${villageName}, working the fields at ${workLocation}.\n\nA hardworking soul who knows the rhythm of the seasons, ${displayName} cares above all about a good harvest and fair prices at the market.`,
+    hirte: `${displayName} tends goats in ${villageName} at ${workLocation}.\n\nRaising animals is slow work but steady, and ${displayName} takes pride in the quality of the milch and fleisch the herd produces.`,
+    knappe: `${displayName} works the Erzstollen in ${villageName}.\n\nLife underground is dangerous and dark, but eisenerz and kohle feed the whole colony's tools and hearths, and ${displayName} knows the value of that.`,
+    holzfaeller: `${displayName} chops wood in the Köhlerwald near ${villageName}.\n\nBauholz and brennholz keep homes warm through winter; ${displayName} has a strong back and a steady axe.`,
+    mueller: `${displayName} runs the Mühle in ${villageName}.\n\nGerste into mehl — the Mühle is the hinge on which the whole colony turns, and ${displayName} knows it.`,
+    baecker: `${displayName} keeps the Backstube in ${villageName} running before anyone else is awake.\n\nFresh brot every morning is a simple gift, but ${displayName} takes genuine pride in it.`,
+    schmied: `${displayName} works the Schmiede in ${villageName}.\n\nWerkzeug is the lifeblood of every field hand, knappe, and holzfaeller here; ${displayName} is essential — and occasionally reminds people of it.`,
+    zimmermann: `${displayName} is the zimmermann in ${villageName}, working from ${workLocation}.\n\nHausrat, repairs, pit props — without skilled woodwork a colony falls apart, and ${displayName} keeps it together.`,
+    wirt: `${displayName} runs the Schenke in ${villageName}.\n\nBier and eintopf, gossip and warmth — the Schenke is where ${villageName} comes to breathe, and ${displayName} is at the center of it all.`,
+    bader: `${displayName} is the bader in ${villageName}.\n\nKraeuter and patience, calm hands and hard knowledge — ${displayName} tends the sick and hopes the fever rumors stay rumors.`,
+    naeherin: `${displayName} sews leinen into clothing in ${villageName}.\n\nA steady hand and an eye for fabric — ${displayName} is who the colony turns to when winter is coming and the old coat won't last.`,
+    haendler: `${displayName} is a traveling trader based in ${villageName}.\n\nBuying low, selling high, moving goods between places that need them — ${displayName} has a nose for opportunity.`,
     none: `${displayName} lives in ${villageName}, doing whatever work comes along.\n\nNot tied to a single trade, ${displayName} gets by on adaptability and a willingness to help.`,
   };
   return `# ${displayName}\n\n${SKILL_INTRO[skill]}\n`;
@@ -438,33 +443,24 @@ function memoryStub(displayName: string): string {
 function buildDefaultWorldConfig(): WorldConfig {
   const agents: AgentConfig[] = [...AGENT_NAMES].map(id => {
     const skill = AGENT_SKILLS[id] ?? "none";
-    const SKILL_DESC: Record<string, string> = {
-      hans: "a farmer", ida: "a woman from the cottages", konrad: "a cattle farmer",
-      ulrich: "a farmer", bertram: "a farmer", gerda: "the miller",
-      anselm: "the baker", volker: "the blacksmith", wulf: "the carpenter",
-      liesel: "the tavern keeper", sybille: "the village healer", friedrich: "a woodcutter",
-      otto: "the village elder", pater_markus: "the village priest",
-      dieter: "a miner", magda: "a villager", heinrich: "a farmer",
-      elke: "the seamstress", rupert: "a miner",
-    };
     return {
       id,
       displayName: AGENT_DISPLAY_NAMES[id] ?? id,
       skill,
-      homeLocation: AGENT_HOMES[id] ?? "Village Square",
-      workLocation: AGENT_WORK_LOCATIONS[id] ?? "Village Square",
-      description: SKILL_DESC[id] ?? "a villager",
+      homeLocation: AGENT_HOMES[id] ?? HUB_LOCATION,
+      workLocation: AGENT_WORK_LOCATIONS[id] ?? HUB_LOCATION,
+      description: DEFAULT_DESCRIPTIONS[id] ?? "ein Kolonist",
     };
   });
 
   const locationTypes: Record<string, string> = {};
-  for (const [loc, t] of Object.entries(buildVillageLocationTypes("Brunnfeld"))) {
+  for (const [loc, t] of Object.entries(buildVillageLocationTypes(DEFAULT_VILLAGE_NAME))) {
     locationTypes[loc] = t;
   }
 
   const village: VillageConfig = {
-    id: "brunnfeld",
-    name: "Brunnfeld",
+    id: DEFAULT_VILLAGE_ID,
+    name: DEFAULT_VILLAGE_NAME,
     agents,
     locations: [...LOCATIONS],
     locationTypes,
@@ -491,79 +487,79 @@ function buildDefaultWorldState(): WorldState {
     active_events: [],
 
     agent_locations: {
-      hans: "Cottage 1", ida: "Cottage 2", konrad: "Farm 2",
-      ulrich: "Cottage 4", bertram: "Cottage 5", gerda: "Mill",
-      anselm: "Bakery", volker: "Forge", wulf: "Carpenter Shop",
-      liesel: "Tavern", sybille: "Healer's Hut", friedrich: "Cottage 7",
-      otto: "Elder's House", pater_markus: "Town Hall",
-      dieter: "Cottage 8", magda: "Cottage 8", heinrich: "Cottage 1",
-      elke: "Seamstress Cottage", rupert: "Cottage 3",
+      brakel: "Baracke 1", rike: "Baracke 2", ottmar: "Ziegenweide",
+      wenzel: "Baracke 4", kasper: "Baracke 5", irmel: "Mühle",
+      bodo: "Backstube", eckhart: "Schmiede", lenz: "Zimmerei",
+      grete: "Schenke", walburga: "Baderhütte", jost: "Baracke 7",
+      reinhart: "Vogtshaus", bruder_anno: "Vogtei",
+      mattis: "Baracke 8", vroni: "Baracke 8", wendel: "Baracke 1",
+      minna: "Flickstube", gisbert: "Baracke 3",
     },
 
     body: {
-      hans:         { hunger: 1, energy: 9, sleep_quality: "good" },
-      ida:          { hunger: 1, energy: 8, sleep_quality: "fair" },
-      konrad:       { hunger: 2, energy: 8, sleep_quality: "good" },
-      ulrich:       { hunger: 1, energy: 9, sleep_quality: "good" },
-      bertram:      { hunger: 2, energy: 7, sleep_quality: "fair" },
-      gerda:        { hunger: 1, energy: 9, sleep_quality: "good" },
-      anselm:       { hunger: 0, energy: 8, sleep_quality: "good" },
-      volker:       { hunger: 2, energy: 9, sleep_quality: "good" },
-      wulf:         { hunger: 1, energy: 8, sleep_quality: "fair" },
-      liesel:       { hunger: 1, energy: 7, sleep_quality: "fair" },
-      sybille:      { hunger: 1, energy: 9, sleep_quality: "good" },
-      friedrich:    { hunger: 2, energy: 9, sleep_quality: "good" },
-      otto:         { hunger: 1, energy: 7, sleep_quality: "fair" },
-      pater_markus: { hunger: 1, energy: 8, sleep_quality: "good" },
-      dieter:       { hunger: 2, energy: 8, sleep_quality: "fair" },
-      magda:        { hunger: 1, energy: 8, sleep_quality: "good" },
-      heinrich:     { hunger: 1, energy: 9, sleep_quality: "good" },
-      elke:         { hunger: 1, energy: 8, sleep_quality: "fair" },
-      rupert:       { hunger: 2, energy: 9, sleep_quality: "good" },
+      brakel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      rike:        { hunger: 1, energy: 8, sleep_quality: "fair" },
+      ottmar:      { hunger: 2, energy: 8, sleep_quality: "good" },
+      wenzel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      kasper:      { hunger: 2, energy: 7, sleep_quality: "fair" },
+      irmel:       { hunger: 1, energy: 9, sleep_quality: "good" },
+      bodo:        { hunger: 0, energy: 8, sleep_quality: "good" },
+      eckhart:     { hunger: 2, energy: 9, sleep_quality: "good" },
+      lenz:        { hunger: 1, energy: 8, sleep_quality: "fair" },
+      grete:       { hunger: 1, energy: 7, sleep_quality: "fair" },
+      walburga:    { hunger: 1, energy: 9, sleep_quality: "good" },
+      jost:        { hunger: 2, energy: 9, sleep_quality: "good" },
+      reinhart:    { hunger: 1, energy: 7, sleep_quality: "fair" },
+      bruder_anno: { hunger: 1, energy: 8, sleep_quality: "good" },
+      mattis:      { hunger: 2, energy: 8, sleep_quality: "fair" },
+      vroni:       { hunger: 1, energy: 8, sleep_quality: "good" },
+      wendel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      minna:       { hunger: 1, energy: 8, sleep_quality: "fair" },
+      gisbert:     { hunger: 2, energy: 9, sleep_quality: "good" },
     },
 
     economics: {
-      hans:         { wallet: 30, inventory: { items: [{ type: "wheat", quantity: 8 }] }, tool: { type: "iron_tools", durability: 80 }, skill: "farmer",     homeLocation: "Cottage 1",        workLocation: "Farm 1",           workSchedule: { open: 6,  close: 16 } },
-      ida:          { wallet: 12, inventory: { items: [{ type: "cloth", quantity: 2 }] }, tool: null, skill: "none",       homeLocation: "Cottage 2",        workLocation: "Cottage 2",        workSchedule: { open: 6,  close: 21 } },
-      konrad:       { wallet: 40, inventory: { items: [{ type: "milk",  quantity: 3 }, { type: "meat",  quantity: 2 }] }, tool: { type: "iron_tools", durability: 90 }, skill: "cattle",    homeLocation: "Farm 2",           workLocation: "Farm 2",           workSchedule: { open: 6,  close: 15 } },
-      ulrich:       { wallet: 20, inventory: { items: [{ type: "vegetables", quantity: 4 }] }, tool: { type: "iron_tools", durability: 70 }, skill: "farmer",     homeLocation: "Cottage 4",        workLocation: "Farm 3",           workSchedule: { open: 6,  close: 16 } },
-      bertram:      { wallet: 15, inventory: { items: [{ type: "wheat", quantity: 5 }] }, tool: { type: "iron_tools", durability: 60 }, skill: "farmer",     homeLocation: "Cottage 5",        workLocation: "Farm 1",           workSchedule: { open: 6,  close: 16 } },
-      gerda:        { wallet: 45, inventory: { items: [{ type: "flour", quantity: 4 }] }, tool: null, skill: "miller",     homeLocation: "Mill",             workLocation: "Mill",             workSchedule: { open: 7,  close: 16 } },
-      anselm:       { wallet: 32, inventory: { items: [{ type: "bread", quantity: 6 }, { type: "flour", quantity: 2 }] }, tool: null, skill: "baker",      homeLocation: "Bakery",           workLocation: "Bakery",           workSchedule: { open: 6,  close: 13 } },
-      volker:       { wallet: 60, inventory: { items: [{ type: "iron_ore", quantity: 4 }, { type: "coal", quantity: 3 }] }, tool: null, skill: "blacksmith", homeLocation: "Forge",            workLocation: "Forge",            workSchedule: { open: 7,  close: 16 } },
-      wulf:         { wallet: 35, inventory: { items: [{ type: "timber", quantity: 5 }] }, tool: { type: "iron_tools", durability: 75 }, skill: "carpenter",  homeLocation: "Carpenter Shop",   workLocation: "Carpenter Shop",   workSchedule: { open: 7,  close: 16 } },
-      liesel:       { wallet: 55, inventory: { items: [{ type: "ale",   quantity: 6 }, { type: "wheat", quantity: 4 }] }, tool: null, skill: "tavern",     homeLocation: "Tavern",           workLocation: "Tavern",           workSchedule: { open: 10, close: 21 } },
-      sybille:      { wallet: 28, inventory: { items: [{ type: "herbs", quantity: 5 }, { type: "medicine", quantity: 2 }] }, tool: null, skill: "healer",     homeLocation: "Healer's Hut",     workLocation: "Healer's Hut",     workSchedule: { open: 7,  close: 17 } },
-      friedrich:    { wallet: 22, inventory: { items: [{ type: "timber", quantity: 3 }, { type: "firewood", quantity: 6 }] }, tool: { type: "iron_tools", durability: 85 }, skill: "woodcutter", homeLocation: "Cottage 7",        workLocation: "Forest",           workSchedule: { open: 6,  close: 17 } },
-      otto:         { wallet: 120, inventory: { items: [] }, tool: null, skill: "none",     homeLocation: "Elder's House",    workLocation: "Elder's House",    workSchedule: { open: 6,  close: 21 } },
-      pater_markus: { wallet: 25, inventory: { items: [] }, tool: null, skill: "none",     homeLocation: "Town Hall",        workLocation: "Town Hall",        workSchedule: { open: 6,  close: 21 } },
-      dieter:       { wallet: 18, inventory: { items: [{ type: "iron_ore", quantity: 2 }, { type: "coal", quantity: 1 }] }, tool: { type: "iron_tools", durability: 65 }, skill: "miner",      homeLocation: "Cottage 8",        workLocation: "Mine",             workSchedule: { open: 7,  close: 17 } },
-      magda:        { wallet: 10, inventory: { items: [{ type: "bread", quantity: 2 }] }, tool: null, skill: "none",     homeLocation: "Cottage 8",        workLocation: "Village Square",   workSchedule: { open: 6,  close: 21 } },
-      heinrich:     { wallet: 25, inventory: { items: [{ type: "wheat", quantity: 6 }, { type: "eggs", quantity: 3 }] }, tool: { type: "iron_tools", durability: 55 }, skill: "farmer",     homeLocation: "Cottage 1",        workLocation: "Farm 1",           workSchedule: { open: 6,  close: 16 } },
-      elke:         { wallet: 30, inventory: { items: [{ type: "cloth", quantity: 3 }] }, tool: null, skill: "seamstress", homeLocation: "Seamstress Cottage", workLocation: "Seamstress Cottage", workSchedule: { open: 7, close: 16 } },
-      rupert:       { wallet: 20, inventory: { items: [{ type: "iron_ore", quantity: 3 }, { type: "coal", quantity: 2 }] }, tool: { type: "iron_tools", durability: 80 }, skill: "miner",      homeLocation: "Cottage 3",        workLocation: "Mine",             workSchedule: { open: 7,  close: 17 } },
+      brakel:      { wallet: 30, inventory: { items: [{ type: "gerste", quantity: 8 }] }, tool: { type: "werkzeug", durability: 80 }, skill: "bauer",       homeLocation: "Baracke 1",   workLocation: "Unterfeld",   workSchedule: { open: 6,  close: 16 } },
+      rike:        { wallet: 12, inventory: { items: [{ type: "leinen", quantity: 2 }] }, tool: null, skill: "none",        homeLocation: "Baracke 2",   workLocation: "Baracke 2",   workSchedule: { open: 6,  close: 21 } },
+      ottmar:      { wallet: 40, inventory: { items: [{ type: "milch",  quantity: 3 }, { type: "fleisch",  quantity: 2 }] }, tool: { type: "werkzeug", durability: 90 }, skill: "hirte",       homeLocation: "Ziegenweide", workLocation: "Ziegenweide", workSchedule: { open: 6,  close: 15 } },
+      wenzel:      { wallet: 20, inventory: { items: [{ type: "rueben", quantity: 4 }] }, tool: { type: "werkzeug", durability: 70 }, skill: "bauer",       homeLocation: "Baracke 4",   workLocation: "Oberfeld",    workSchedule: { open: 6,  close: 16 } },
+      kasper:      { wallet: 15, inventory: { items: [{ type: "gerste", quantity: 5 }] }, tool: { type: "werkzeug", durability: 60 }, skill: "bauer",       homeLocation: "Baracke 5",   workLocation: "Unterfeld",   workSchedule: { open: 6,  close: 16 } },
+      irmel:       { wallet: 45, inventory: { items: [{ type: "mehl", quantity: 4 }] }, tool: null, skill: "mueller",     homeLocation: "Mühle",       workLocation: "Mühle",       workSchedule: { open: 7,  close: 16 } },
+      bodo:        { wallet: 32, inventory: { items: [{ type: "brot", quantity: 6 }, { type: "mehl", quantity: 2 }] }, tool: null, skill: "baecker",     homeLocation: "Backstube",   workLocation: "Backstube",   workSchedule: { open: 6,  close: 13 } },
+      eckhart:     { wallet: 60, inventory: { items: [{ type: "eisenerz", quantity: 4 }, { type: "kohle", quantity: 3 }] }, tool: null, skill: "schmied",     homeLocation: "Schmiede",    workLocation: "Schmiede",    workSchedule: { open: 7,  close: 16 } },
+      lenz:        { wallet: 35, inventory: { items: [{ type: "bauholz", quantity: 5 }] }, tool: { type: "werkzeug", durability: 75 }, skill: "zimmermann",  homeLocation: "Zimmerei",    workLocation: "Zimmerei",    workSchedule: { open: 7,  close: 16 } },
+      grete:       { wallet: 55, inventory: { items: [{ type: "bier",   quantity: 6 }, { type: "gerste", quantity: 4 }] }, tool: null, skill: "wirt",        homeLocation: "Schenke",     workLocation: "Schenke",     workSchedule: { open: 10, close: 21 } },
+      walburga:    { wallet: 28, inventory: { items: [{ type: "kraeuter", quantity: 5 }, { type: "arznei", quantity: 2 }] }, tool: null, skill: "bader",       homeLocation: "Baderhütte",  workLocation: "Baderhütte",  workSchedule: { open: 7,  close: 17 } },
+      jost:        { wallet: 22, inventory: { items: [{ type: "bauholz", quantity: 3 }, { type: "brennholz", quantity: 6 }] }, tool: { type: "werkzeug", durability: 85 }, skill: "holzfaeller", homeLocation: "Baracke 7",   workLocation: "Köhlerwald",  workSchedule: { open: 6,  close: 17 } },
+      reinhart:    { wallet: 120, inventory: { items: [] }, tool: null, skill: "none",      homeLocation: "Vogtshaus",   workLocation: "Vogtshaus",   workSchedule: { open: 6,  close: 21 } },
+      bruder_anno: { wallet: 25, inventory: { items: [] }, tool: null, skill: "none",      homeLocation: "Vogtei",      workLocation: "Vogtei",      workSchedule: { open: 6,  close: 21 } },
+      mattis:      { wallet: 18, inventory: { items: [{ type: "eisenerz", quantity: 2 }, { type: "kohle", quantity: 1 }] }, tool: { type: "werkzeug", durability: 65 }, skill: "knappe",      homeLocation: "Baracke 8",   workLocation: "Erzstollen",  workSchedule: { open: 7,  close: 17 } },
+      vroni:       { wallet: 10, inventory: { items: [{ type: "brot", quantity: 2 }] }, tool: null, skill: "none",      homeLocation: "Baracke 8",   workLocation: "Zechenplatz", workSchedule: { open: 6,  close: 21 } },
+      wendel:      { wallet: 25, inventory: { items: [{ type: "gerste", quantity: 6 }, { type: "eier", quantity: 3 }] }, tool: { type: "werkzeug", durability: 55 }, skill: "bauer",       homeLocation: "Baracke 1",   workLocation: "Unterfeld",   workSchedule: { open: 6,  close: 16 } },
+      minna:       { wallet: 30, inventory: { items: [{ type: "leinen", quantity: 3 }] }, tool: null, skill: "naeherin",    homeLocation: "Flickstube",  workLocation: "Flickstube",  workSchedule: { open: 7, close: 16 } },
+      gisbert:     { wallet: 20, inventory: { items: [{ type: "eisenerz", quantity: 3 }, { type: "kohle", quantity: 2 }] }, tool: { type: "werkzeug", durability: 80 }, skill: "knappe",      homeLocation: "Baracke 3",   workLocation: "Erzstollen",  workSchedule: { open: 7,  close: 17 } },
     },
 
     marketplace: emptyMarketplace(),
 
     doors: Object.fromEntries([
-      "Cottage 1", "Cottage 2", "Cottage 3", "Cottage 4", "Cottage 5",
-      "Cottage 6", "Cottage 7", "Cottage 8", "Cottage 9",
-      "Seamstress Cottage", "Healer's Hut", "Bakery", "Tavern", "Forge",
-      "Carpenter Shop", "Mill", "Town Hall", "Prison", "Elder's House",
-      "Farm 1", "Farm 2", "Farm 3",
+      "Baracke 1", "Baracke 2", "Baracke 3", "Baracke 4", "Baracke 5",
+      "Baracke 6", "Baracke 7", "Baracke 8", "Baracke 9",
+      "Flickstube", "Baderhütte", "Backstube", "Schenke", "Schmiede",
+      "Zimmerei", "Mühle", TOWNHALL_LOCATION, PRISON_LOCATION, ELDER_HOME_LOCATION,
+      "Unterfeld", "Ziegenweide", "Oberfeld",
     ].map(loc => [loc, "unlocked"])),
 
     message_queue: emptyRecord(() => []),
     objects: [],
     action_feedback: emptyRecord(() => []),
     acquaintances: {
-      hans: ["heinrich"], ida: [], konrad: [], ulrich: [], bertram: [],
-      gerda: ["anselm"], anselm: ["gerda"], volker: ["wulf"], wulf: ["volker"],
-      liesel: ["otto", "pater_markus"], sybille: [], friedrich: ["rupert"],
-      otto: ["pater_markus", "liesel"], pater_markus: ["otto"],
-      dieter: ["rupert"], magda: ["dieter"], heinrich: ["hans"],
-      elke: [], rupert: ["dieter", "friedrich"],
+      brakel: ["wendel"], rike: [], ottmar: [], wenzel: [], kasper: [],
+      irmel: ["bodo"], bodo: ["irmel"], eckhart: ["lenz"], lenz: ["eckhart"],
+      grete: ["reinhart", "bruder_anno"], walburga: [], jost: ["gisbert"],
+      reinhart: ["bruder_anno", "grete"], bruder_anno: ["reinhart"],
+      mattis: ["gisbert"], vroni: ["mattis"], wendel: ["brakel"],
+      minna: [], gisbert: ["mattis", "jost"],
     },
 
     economy_snapshots: [],
@@ -592,7 +588,7 @@ function buildGeneratedWorldConfig(numVillages: number, agentsPerVillage: number
   let nameOffset = 0;
 
   for (const { id: villageId, name: villageName } of villageSlots) {
-    const isDefault = villageName === "Brunnfeld";
+    const isDefault = villageName === DEFAULT_VILLAGE_NAME;
     const skills = buildAgentSkills(agentsPerVillage, rng);
     const names = allNames.slice(nameOffset, nameOffset + agentsPerVillage);
     nameOffset += agentsPerVillage;
@@ -604,12 +600,12 @@ function buildGeneratedWorldConfig(numVillages: number, agentsPerVillage: number
       buildAgentSpec(n.id, n.displayName, skills[i]!, villageName, farmCounter, cottageCounter)
     );
 
-    // Designate council: elder=first "none", plus miller, blacksmith, baker, first farmer
+    // Designate council: elder=first "none", plus mueller, schmied, baecker, first bauer
     const councilMembers: string[] = [];
     const findFirst = (s: Skill) => agentSpecs.find(a => a.skill === s)?.id;
     const firstNone = agentSpecs.find(a => a.skill === "none")?.id ?? agentSpecs[0]!.id;
     councilMembers.push(firstNone);
-    for (const s of ["miller", "blacksmith", "baker", "farmer"] as Skill[]) {
+    for (const s of ["mueller", "schmied", "baecker", "bauer"] as Skill[]) {
       const found = findFirst(s);
       if (found && !councilMembers.includes(found)) councilMembers.push(found);
       if (councilMembers.length >= 5) break;
@@ -661,12 +657,12 @@ function buildGeneratedWorldConfig(numVillages: number, agentsPerVillage: number
     const v2cfg = villages.find(v => v.id === v2.id)!;
 
     // Road adjacency entry (bidirectional)
-    const v1square = v1.name === "Brunnfeld" ? "Village Square" : prefixLoc("Village Square", v1.name);
-    const v2square = v2.name === "Brunnfeld" ? "Village Square" : prefixLoc("Village Square", v2.name);
+    const v1square = v1.name === DEFAULT_VILLAGE_NAME ? HUB_LOCATION : prefixLoc(HUB_LOCATION, v1.name);
+    const v2square = v2.name === DEFAULT_VILLAGE_NAME ? HUB_LOCATION : prefixLoc(HUB_LOCATION, v2.name);
     v1cfg.adjacency[roadName] = [v1square, v2square];
     v2cfg.adjacency[roadName] = [v1square, v2square];
 
-    // Add road to each village's adjacency for Village Square
+    // Add road to each village's adjacency for the hub (Zechenplatz)
     if (!v1cfg.adjacency[v1square]) v1cfg.adjacency[v1square] = [];
     if (!v1cfg.adjacency[v1square]!.includes(roadName)) v1cfg.adjacency[v1square]!.push(roadName);
     if (!v2cfg.adjacency[v2square]) v2cfg.adjacency[v2square] = [];
@@ -715,21 +711,21 @@ function buildGeneratedWorldState(config: WorldConfig, rng: () => number): World
   // Build doors for all lockable locations across all villages
   const doors: Record<string, "locked" | "unlocked"> = {};
   const LOCKABLE_SUFFIXES = [
-    "Cottage 1","Cottage 2","Cottage 3","Cottage 4","Cottage 5",
-    "Cottage 6","Cottage 7","Cottage 8","Cottage 9",
-    "Seamstress Cottage","Healer's Hut","Bakery","Tavern","Forge",
-    "Carpenter Shop","Mill","Town Hall","Prison","Elder's House",
-    "Farm 1","Farm 2","Farm 3",
+    "Baracke 1","Baracke 2","Baracke 3","Baracke 4","Baracke 5",
+    "Baracke 6","Baracke 7","Baracke 8","Baracke 9",
+    "Flickstube","Baderhütte","Backstube","Schenke","Schmiede",
+    "Zimmerei","Mühle",TOWNHALL_LOCATION,PRISON_LOCATION,ELDER_HOME_LOCATION,
+    "Unterfeld","Ziegenweide","Oberfeld",
   ];
   for (const village of config.villages) {
     for (const suf of LOCKABLE_SUFFIXES) {
-      const loc = village.name === "Brunnfeld" ? suf : prefixLoc(suf, village.name);
+      const loc = village.name === DEFAULT_VILLAGE_NAME ? suf : prefixLoc(suf, village.name);
       if (village.locations.includes(loc)) doors[loc] = "unlocked";
     }
   }
 
-  // Use single `marketplace` (Brunnfeld's) for backward compat; also populate `marketplaces`
-  const brunnfeldMkt = marketplaces["brunnfeld"] ?? Object.values(marketplaces)[0]!;
+  // Use single `marketplace` (default settlement's) for backward compat; also populate `marketplaces`
+  const defaultMkt = marketplaces[DEFAULT_VILLAGE_ID] ?? Object.values(marketplaces)[0]!;
 
   return {
     current_tick: 0,
@@ -741,7 +737,7 @@ function buildGeneratedWorldState(config: WorldConfig, rng: () => number): World
     agent_locations,
     body: body as WorldState["body"],
     economics: economics as WorldState["economics"],
-    marketplace: brunnfeldMkt,
+    marketplace: defaultMkt,
     marketplaces,
     doors,
     message_queue: message_queue as WorldState["message_queue"],
@@ -812,7 +808,7 @@ async function main(): Promise<void> {
   let worldState: WorldState;
 
   if (numVillages === 1 && agentsPerVillage === 19) {
-    // Exact default Brunnfeld world
+    // Exact default Schlackental world
     worldConfig = buildDefaultWorldConfig();
     worldState  = buildDefaultWorldState();
   } else if (numVillages === 1) {

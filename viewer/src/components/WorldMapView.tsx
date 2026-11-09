@@ -16,11 +16,11 @@ export default function WorldMapView({ agentLocations }: Props) {
   if (agentLocations) {
     for (const [, loc] of Object.entries(agentLocations)) {
       for (const v of villages) {
-        if (v.id === "brunnfeld" && !loc.includes(":")) {
+        if (v.id === "schlackental" && !loc.includes(":")) {
           agentCounts[v.id] = (agentCounts[v.id] ?? 0) + 1;
           break;
         }
-        if (v.id !== "brunnfeld" && loc.startsWith(`${v.name}:`)) {
+        if (v.id !== "schlackental" && loc.startsWith(`${v.name}:`)) {
           agentCounts[v.id] = (agentCounts[v.id] ?? 0) + 1;
           break;
         }

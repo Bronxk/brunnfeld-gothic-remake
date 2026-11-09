@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AgentName, ItemType, ResolvedAction, SimTime, WorldState } from "./types.js";
-import { getAgentNames, getDisplayName } from "./world-registry.js";
+import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID } from "./world-registry.js";
 
 const DATA_DIR = join(process.cwd(), "data");
 
@@ -36,7 +36,7 @@ export function writeWorldState(state: WorldState): void {
     // Per-village: merge each village's meeting — use whichever fires sooner.
     const diskMeetings = (onDisk as Record<string, unknown>).pending_meetings as Record<string, import("./types.js").PendingMeeting> | undefined
       ?? (onDisk as Record<string, unknown>).pending_meeting  // backwards compat with old single-meeting state
-        ? { brunnfeld: (onDisk as Record<string, unknown>).pending_meeting as import("./types.js").PendingMeeting }
+        ? { [DEFAULT_VILLAGE_ID]: (onDisk as Record<string, unknown>).pending_meeting as import("./types.js").PendingMeeting }
         : {};
     const currentTick = state.current_tick ?? 0;
     for (const [vid, diskMtg] of Object.entries(diskMeetings ?? {})) {
@@ -45,7 +45,7 @@ export function writeWorldState(state: WorldState): void {
       if (!memMtg || diskMtg.scheduledTick < memMtg.scheduledTick) {
         console.log(`  🏛 [Merge] Picking up disk meeting [${vid}] "${diskMtg.description}" (scheduledTick=${diskMtg.scheduledTick}) over mem "${memMtg?.description ?? "none"}"`);
         state.pending_meetings[vid] = diskMtg;
-        // Restore agent locations — God Mode teleported everyone to Town Hall
+        // Restore agent locations — God Mode teleported everyone to the Vogtei
         for (const key of Object.keys(onDisk.agent_locations ?? {})) {
           state.agent_locations[key as AgentName] = onDisk.agent_locations![key as AgentName]!;
         }

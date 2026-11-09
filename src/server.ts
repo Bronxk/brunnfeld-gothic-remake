@@ -7,7 +7,7 @@ import { readWorldState, writeWorldState } from "./memory.js";
 import { triggerEvent, triggerMeeting, runInterview } from "./god-mode.js";
 import { queueMessage } from "./messages.js";
 import type { AgentName } from "./types.js";
-import { reloadConfig, getVillages, getVillageElder, getAgentVillage } from "./world-registry.js";
+import { reloadConfig, getVillages, getVillageElder, getAgentVillage, DEFAULT_VILLAGE_ID } from "./world-registry.js";
 
 export { emitSSE };
 
@@ -243,7 +243,7 @@ const server = createServer(async (req, res) => {
       const delay = body["delay"] != null ? Number(body["delay"]) : 2;
       const teleport = body["teleport"] !== false;
       const state = readWorldState();
-      triggerMeeting(state, state.current_tick, agendaType as "tax_change" | "marketplace_hours" | "banishment" | "general_rule", description, target as import("./types.js").AgentName | undefined, "brunnfeld", delay, teleport);
+      triggerMeeting(state, state.current_tick, agendaType as "tax_change" | "marketplace_hours" | "banishment" | "general_rule", description, target as import("./types.js").AgentName | undefined, DEFAULT_VILLAGE_ID, delay, teleport);
       writeWorldState(state);
       emitSSE("event:triggered", { eventType: "meeting_called", description, agendaType, agent_locations: state.agent_locations });
       res.writeHead(200, headers);
@@ -409,7 +409,7 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Brunnfeld API: http://localhost:${PORT}\n`);
+  console.log(`\n  Schlackental API: http://localhost:${PORT}\n`);
 });
 
 export default server;

@@ -9,58 +9,58 @@ export function isWorkTime(agent: AgentName, time: SimTime): boolean {
 
   switch (agent) {
     // Farmers: work during daylight, earlier schedule in summer
-    case "hans":
-    case "heinrich":
-    case "bertram":
-    case "ulrich":
+    case "brakel":
+    case "wendel":
+    case "kasper":
+    case "wenzel":
       return time.hour >= 6 && time.hour <= 16;
 
-    // Cattle farmer: dawn chores + afternoon
-    case "konrad":
+    // Goatherd: dawn chores + afternoon
+    case "ottmar":
       return time.hour >= 6 && time.hour <= 15;
 
     // Miller: when bakery is buying (mornings and afternoons)
-    case "gerda":
+    case "irmel":
       return time.hour >= 7 && time.hour <= 16;
 
     // Baker: very early, done by early afternoon
-    case "anselm":
+    case "bodo":
       return time.hour >= 6 && time.hour <= 13;
 
     // Blacksmith: full day
-    case "volker":
+    case "eckhart":
       return time.hour >= 7 && time.hour <= 16;
 
     // Carpenter: full day
-    case "wulf":
+    case "lenz":
       return time.hour >= 7 && time.hour <= 16;
 
     // Tavern keeper: afternoon and evening only
-    case "liesel":
+    case "grete":
       return time.hour >= 10 && time.hour <= 21;
 
     // Healer: mornings and when needed
-    case "sybille":
+    case "walburga":
       return time.hour >= 7 && time.hour <= 17;
 
     // Woodcutters: daylight hours
-    case "friedrich":
+    case "jost":
       return time.hour >= 6 && time.hour <= 17;
 
     // Miners: full working day
-    case "dieter":
-    case "rupert":
+    case "mattis":
+    case "gisbert":
       return time.hour >= 7 && time.hour <= 17;
 
     // Seamstress: morning and afternoon
-    case "elke":
+    case "minna":
       return time.hour >= 7 && time.hour <= 16;
 
-    // Elder, priest, unspecialized: no forced location
-    case "otto":
-    case "pater_markus":
-    case "ida":
-    case "magda":
+    // Elder, chaplain, unspecialized: no forced location
+    case "reinhart":
+    case "bruder_anno":
+    case "rike":
+    case "vroni":
       return false;
 
     default:

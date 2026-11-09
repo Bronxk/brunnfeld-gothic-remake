@@ -10,12 +10,12 @@ export interface AgentAnimation {
 }
 
 const AGENT_DISPLAY_BASE: Record<string, string> = {
-  hans: "Hans", ida: "Ida", konrad: "Konrad", ulrich: "Ulrich", bertram: "Bertram",
-  gerda: "Gerda", anselm: "Anselm", volker: "Volker", wulf: "Wulf",
-  liesel: "Liesel", sybille: "Sybille", friedrich: "Friedrich",
-  otto: "Otto", pater_markus: "Pater Markus",
-  dieter: "Dieter", magda: "Magda", heinrich: "Heinrich",
-  elke: "Elke", rupert: "Rupert",
+  brakel: "Brakel", rike: "Rike", ottmar: "Ottmar", wenzel: "Wenzel", kasper: "Kasper",
+  irmel: "Irmel", bodo: "Bodo", eckhart: "Eckhart", lenz: "Lenz",
+  grete: "Grete", walburga: "Walburga", jost: "Jost",
+  reinhart: "Vogt Reinhart", bruder_anno: "Bruder Anno",
+  mattis: "Mattis", vroni: "Vroni", wendel: "Wendel",
+  minna: "Minna", gisbert: "Gisbert",
 };
 
 /** Format an agent ID as a display name (fallback for dynamically generated agents). */
@@ -224,7 +224,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
   needsWorldConfig: false,
   setNeedsWorldConfig: (needsWorldConfig) => set({ needsWorldConfig }),
   activeMeeting: null,
-  activeVillageId: "brunnfeld",
+  activeVillageId: "schlackental",
   villages: [],
   setWatchMode: (watchMode) => set({ watchMode }),
   setActiveVillageId: (activeVillageId) => set({ activeVillageId }),
@@ -387,7 +387,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       };
       set((s) => {
         const base = { feed: [entry, ...s.feed].slice(0, 300) };
-        if (isSpeech && e.location === "Town Hall" && s.activeMeeting) {
+        if (isSpeech && (e.location === "Vogtei" || e.location.endsWith(":Vogtei")) && s.activeMeeting) {
           return {
             ...base,
             activeMeeting: {
@@ -518,7 +518,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       const entry: FeedEntry = {
         id: feedCounter++,
         tick: get().currentTick,
-        agent: "otto",
+        agent: "reinhart",
         type: "system",
         text: `⚡ ${e.description}`,
       };

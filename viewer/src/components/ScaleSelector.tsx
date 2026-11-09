@@ -11,11 +11,11 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
   const setWorld = useVillageStore((s) => s.setWorld);
 
   const [numVillages, setNumVillages] = useState(() => {
-    const saved = localStorage.getItem("brunnfeld:numVillages");
+    const saved = localStorage.getItem("schlackental:numVillages");
     return saved ? Number(saved) : 1;
   });
   const [agentsPerVillage, setAgentsPerVillage] = useState(() => {
-    const saved = localStorage.getItem("brunnfeld:agentsPerVillage");
+    const saved = localStorage.getItem("schlackental:agentsPerVillage");
     return saved ? Number(saved) : 19;
   });
   const [generating, setGenerating] = useState(false);
@@ -27,8 +27,8 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
-    localStorage.setItem("brunnfeld:numVillages", String(numVillages));
-    localStorage.setItem("brunnfeld:agentsPerVillage", String(agentsPerVillage));
+    localStorage.setItem("schlackental:numVillages", String(numVillages));
+    localStorage.setItem("schlackental:agentsPerVillage", String(agentsPerVillage));
     try {
       const res = await fetch("/api/generate-world", {
         method: "POST",
@@ -47,7 +47,7 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
       const villages = await villagesRes.json();
       setWorld(newState);
       setVillages(villages);
-      setActiveVillageId(villages[0]?.id ?? "brunnfeld");
+      setActiveVillageId(villages[0]?.id ?? "schlackental");
 
       // Start the simulation
       await fetch("/api/start", { method: "POST" });
@@ -99,7 +99,7 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
         <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
           {VILLAGE_OPTIONS.map(n => (
             <button key={n} style={btnStyle(numVillages === n)} onClick={() => setNumVillages(n)}>
-              {n === 1 ? "Brunnfeld only" : `${n} villages`}
+              {n === 1 ? "Schlackental only" : `${n} villages`}
             </button>
           ))}
         </div>

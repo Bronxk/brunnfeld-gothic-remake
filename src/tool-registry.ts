@@ -1,8 +1,10 @@
 import type { AgentAction, AgentName, ItemType, ResolvedAction, WorldState, SimTime } from "./types.js";
+import { resolveItemInput } from "./types.js";
+import { HUB_LOCATION, isBaseLocation, resolveLocationName } from "./village-map.js";
 import type { LocationContext, NegotiationOffer } from "./location-context.js";
 import { readAgentMemory } from "./memory.js";
 import { getInventoryQty, removeFromInventory, addToInventory, feedbackToAgent } from "./inventory.js";
-import { getDisplayName, getAgentVillage, getVillages, getVillageElder, getVillageTownHall, getVillageLocations, getVillageForLocation, getLocationType, getRoads } from "./world-registry.js";
+import { getDisplayName, getAgentVillage, getVillages, getVillageElder, getVillageTownHall, getVillageLocations, getVillageForLocation, getLocationType, getRoads, getAllLocations } from "./world-registry.js";
 import { computeVillageConcerns } from "./village-concerns.js";
 import { getAgentMarketplace } from "./marketplace.js";
 import { resolveAction, type ResolveContext } from "./tools.js";
@@ -104,7 +106,7 @@ function handleLookAround(_args: Record<string, unknown>, config: HarnessToolCon
   }
 
   // Sell orders visible at marketplace locations
-  const isMarket = loc === "Village Square" || loc === "Marketplace" || loc.endsWith(":Village Square");
+  const isMarket = isBaseLocation(loc, HUB_LOCATION) || loc === "Marketplace";
   if (isMarket) {
     const mkt = getAgentMarketplace(agentId, worldState);
     const topOrders = mkt.orders
@@ -157,8 +159,8 @@ function handleCheckInventory(_args: Record<string, unknown>, config: HarnessToo
 }
 
 function handleCheckPrices(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const item = args.item as string | undefined;
-  if (!item) return { text: 'Specify item. Example: {"item": "flour"}', isInteraction: false };
+  const item = resolveItemInput(args.item);
+  if (!item) return { text: 'Specify item. Example: {"item": "mehl"}', isInteraction: false };
 
   const mkt = getAgentMarketplace(config.agentId, config.worldState);
   const acquaintances = config.worldState.acquaintances[config.agentId] ?? [];
@@ -210,7 +212,7 @@ function handleCheckBody(_args: Record<string, unknown>, config: HarnessToolConf
 
 function handleRecall(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const topic = ((args.topic as string) ?? "").toLowerCase().trim();
-  if (!topic) return { text: 'Specify topic. Example: {"topic": "wheat"}', isInteraction: false };
+  if (!topic) return { text: 'Specify topic. Example: {"topic": "gerste"}', isInteraction: false };
 
   let memory: string;
   try { memory = readAgentMemory(config.agentId); } catch {
@@ -285,7 +287,7 @@ function handleSpeak(args: Record<string, unknown>, config: HarnessToolConfig): 
 
 function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const targetName = ((args.agent as string) ?? "").toLowerCase();
-  const item = (args.item as string) ?? "";
+  const item = resolveItemInput(args.item) ?? "";
   const price = Number(args.price ?? 0);
   const qty = Number(args.qty ?? args.quantity ?? 1);
 
@@ -379,7 +381,7 @@ function handleNegotiate(args: Record<string, unknown>, config: HarnessToolConfi
 }
 
 function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const item = ((args.item as string) ?? "").trim();
+  const item = resolveItemInput(args.item) ?? "";
   const eco = config.worldState.economics[config.agentId];
   const ownSkill = eco?.skill ?? "none";
   // Hired laborers borrow their employer's skill for production
@@ -453,7 +455,9 @@ function handleProduce(args: Record<string, unknown>, config: HarnessToolConfig)
 }
 
 function handleMoveTo(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
-  const location = (args.location as string) ?? "";
+  const rawLocation = (args.location as string) ?? "";
+  // Normalize ("Muehle", "baderhütte" → exact name) before the cross-village guard looks it up.
+  const location = resolveLocationName(rawLocation, getAllLocations()) ?? rawLocation;
 
   // Cross-village guard: block direct teleport across villages without using the road
   const currentLoc = currentLocation(config);
@@ -748,7 +752,7 @@ function handleFineAgent(args: Record<string, unknown>, config: HarnessToolConfi
 
 function handleSeizeGoods(args: Record<string, unknown>, config: HarnessToolConfig): ToolResult {
   const targetName = ((args.target as string) ?? "").toLowerCase();
-  const item = (args.item as string) ?? "";
+  const item = resolveItemInput(args.item) ?? "";
   const qty = Math.max(1, Math.floor(Number(args.qty ?? args.quantity ?? 1)));
   const reason = (args.reason as string) ?? "no reason given";
 
@@ -789,7 +793,7 @@ function handleSeizeGoods(args: Record<string, unknown>, config: HarnessToolConf
 // Governance tools — separate from ALL_TOOL_DEFS, injected dynamically by assembly vote
 const GOVERNANCE_TOOL_DEFS: ToolDef[] = [
   { name: "fine_agent",  description: "Fine someone present (deducts coin, goes to village treasury)", argsHint: '{"target": "Gerard", "amount": 5, "reason": "violated curfew"}' },
-  { name: "seize_goods", description: "Confiscate items from someone present",                        argsHint: '{"target": "Gerard", "item": "wheat", "qty": 3, "reason": "unpaid debt"}' },
+  { name: "seize_goods", description: "Confiscate items from someone present",                        argsHint: '{"target": "Gerard", "item": "gerste", "qty": 3, "reason": "unpaid debt"}' },
 ];
 
 // ─── Tool registry ──────────────────────────────────────────
@@ -820,18 +824,18 @@ const TOOL_HANDLERS: Record<string, ToolHandler> = {
 
 const ALL_TOOL_DEFS: ToolDef[] = [
   { name: "check_inventory",description: "View your inventory and wallet",                      argsHint: "{}" },
-  { name: "recall",         description: "Search your memory for a topic",                      argsHint: '{"topic": "wheat trade"}' },
-  { name: "assess_person",  description: "What you know about someone (must be acquainted)",    argsHint: '{"name": "Anselm"}' },
+  { name: "recall",         description: "Search your memory for a topic",                      argsHint: '{"topic": "gerste trade"}' },
+  { name: "assess_person",  description: "What you know about someone (must be acquainted)",    argsHint: '{"name": "Bodo"}' },
   { name: "speak",          description: "Say something aloud — max 15 words, only if others present", argsHint: '{"text": "..."}' },
-  { name: "negotiate",      description: "Make a structured trade offer to someone here",       argsHint: '{"agent": "Anselm", "item": "flour", "price": 6, "qty": 3}' },
-  { name: "produce",        description: "Craft an item (must be at your work location)",       argsHint: '{"item": "flour"}' },
-  { name: "move_to",        description: "Move to a location",                                  argsHint: '{"location": "Village Square"}' },
-  { name: "post_order",     description: "Post a market buy or sell order",                     argsHint: '{"side": "sell", "item": "flour", "qty": 3, "price": 6}' },
-  { name: "buy_item",       description: "Buy from market — must be at Village Square",         argsHint: '{"item": "bread", "max_price": 5}' },
-  { name: "eat",            description: "Eat food from your inventory",                        argsHint: '{"item": "bread", "qty": 1}' },
+  { name: "negotiate",      description: "Make a structured trade offer to someone here",       argsHint: '{"agent": "Bodo", "item": "mehl", "price": 6, "qty": 3}' },
+  { name: "produce",        description: "Craft an item (must be at your work location)",       argsHint: '{"item": "mehl"}' },
+  { name: "move_to",        description: "Move to a location",                                  argsHint: `{"location": "${HUB_LOCATION}"}` },
+  { name: "post_order",     description: "Post a market buy or sell order",                     argsHint: '{"side": "sell", "item": "mehl", "qty": 3, "price": 6}' },
+  { name: "buy_item",       description: `Buy from market — must be at ${HUB_LOCATION}`,        argsHint: '{"item": "brot", "max_price": 5}' },
+  { name: "eat",            description: "Eat food from your inventory",                        argsHint: '{"item": "brot", "qty": 1}' },
   { name: "send_message",   description: "Send a written message to someone (delivered next tick)", argsHint: '{"to": "Rudolf", "text": "..."}' },
   { name: "give_coin",      description: "Give coin to someone here",                           argsHint: '{"to": "Rudolf", "amount": 5}' },
-  { name: "steal",          description: "Steal an item from someone here. You may be caught.",  argsHint: '{"target": "Gerard", "item": "bread"}' },
+  { name: "steal",          description: "Steal an item from someone here. You may be caught.",  argsHint: '{"target": "Gerard", "item": "brot"}' },
   { name: "cancel_order",   description: "Cancel your marketplace order",                       argsHint: '{"order_id": "ord_123"}' },
   { name: "hire_laborer",   description: "Pay someone here to work for you today (output goes to you)", argsHint: '{"agent": "Pabo", "wage": 5}' },
   { name: "quit_job",       description: "Quit your current job and stop working for your employer", argsHint: "{}" },

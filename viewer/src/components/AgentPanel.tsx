@@ -24,21 +24,21 @@ function getStatusBucket(body: BodyState): "dead" | "starving" | "sick" | "hungr
 // ─── Skill icons ─────────────────────────────────────────────
 
 const SKILL_ICON: Record<string, string> = {
-  farmer: "🌾", cattle: "🐄", miner: "⛏", woodcutter: "🪓",
-  miller: "⚙", baker: "🍞", blacksmith: "🔨", carpenter: "🪚",
-  tavern: "🍺", healer: "💊", merchant: "📦", seamstress: "🪡",
+  bauer: "🌾", hirte: "🐄", knappe: "⛏", holzfaeller: "🪓",
+  mueller: "⚙", baecker: "🍞", schmied: "🔨", zimmermann: "🪚",
+  wirt: "🍺", bader: "💊", haendler: "📦", naeherin: "🪡",
   none: "👤",
 };
 
 // ─── Portrait assignment ──────────────────────────────────────
 
 const AGENT_PORTRAIT: Record<AgentName, number> = {
-  hans: 1, ida: 2, konrad: 3, ulrich: 4, bertram: 5,
-  gerda: 6, anselm: 7, volker: 8, wulf: 9,
-  liesel: 10, sybille: 11, friedrich: 12,
-  otto: 13, pater_markus: 14,
-  dieter: 15, magda: 16, heinrich: 18,
-  elke: 19, rupert: 20,
+  brakel: 1, rike: 2, ottmar: 3, wenzel: 4, kasper: 5,
+  irmel: 6, bodo: 7, eckhart: 8, lenz: 9,
+  grete: 10, walburga: 11, jost: 12,
+  reinhart: 13, bruder_anno: 14,
+  mattis: 15, vroni: 16, wendel: 18,
+  minna: 19, gisbert: 20,
 };
 
 // ─── Agent bars ───────────────────────────────────────────────
@@ -96,15 +96,15 @@ function AgentList() {
     );
   }
 
-  const activeVillageName = villages.find(v => v.id === activeVillageId)?.name ?? "Brunnfeld";
+  const activeVillageName = villages.find(v => v.id === activeVillageId)?.name ?? "Schlackental";
 
   const agents = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (Object.keys(world.economics) as AgentName[])
       .filter(a => {
-        // Village filter: match by villageId or fallback for brunnfeld
+        // Village filter: match by villageId or fallback for schlackental
         const eco = world.economics[a];
-        const vid = (eco as { villageId?: string }).villageId ?? "brunnfeld";
+        const vid = (eco as { villageId?: string }).villageId ?? "schlackental";
         if (vid !== activeVillageId) return false;
         // Search filter
         if (q && !AGENT_DISPLAY[a].toLowerCase().includes(q)) return false;
@@ -356,9 +356,9 @@ export default function AgentPanel() {
   const portraitNum = String(AGENT_PORTRAIT[selectedAgent] ?? 1).padStart(2, "0");
   const portraitUrl = `/assets/ui/Human Avatars/Avatars_${portraitNum}.png`;
   const isCaravanActive = world.active_events.some(e => e.type === "caravan");
-  const isMerchant = selectedAgent === "otto" && isCaravanActive;
+  const isMerchant = selectedAgent === "reinhart" && isCaravanActive;
   const caravanOrders = isMerchant
-    ? world.marketplace.orders.filter(o => o.agentId === "otto" && o.type === "sell")
+    ? world.marketplace.orders.filter(o => o.agentId === "reinhart" && o.type === "sell")
     : [];
 
   return (

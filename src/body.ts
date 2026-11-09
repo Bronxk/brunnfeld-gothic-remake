@@ -4,13 +4,13 @@ import { getInventoryQty, removeFromInventory, feedbackToAgent } from "./invento
 
 // How much each food item reduces hunger
 export const SATIATION: Partial<Record<ItemType, number>> = {
-  bread:      2,
-  meal:       3,
-  meat:       2,
-  vegetables: 1,
-  eggs:       1,
-  milk:       1,
-  ale:        0,  // thirst only, no hunger reduction
+  brot:       2,
+  eintopf:    3,
+  fleisch:    2,
+  rueben:     1,
+  eier:       1,
+  milch:      1,
+  bier:       0,  // thirst only, no hunger reduction
 };
 
 export function updateBodyState(state: BodyState, time: SimTime): void {
@@ -72,16 +72,16 @@ export function resolveEat(
   const satiation = SATIATION[item];
   if (satiation === undefined) {
     const PROCESSING_HINTS: Partial<Record<ItemType, string>> = {
-      wheat: "Wheat must be milled into flour (at the Mill) then baked into bread (at the Bakery). Buy bread instead.",
-      flour: "Flour must be baked into bread (at the Bakery) before it can be eaten. Buy bread instead.",
-      iron_ore: "Iron ore is not food.",
-      coal: "Coal is not food.",
-      timber: "Timber is not food.",
-      firewood: "Firewood is not food.",
-      iron_tools: "Tools are not food.",
-      cloth: "Cloth is not food.",
-      furniture: "Furniture is not food.",
-      herbs: "Herbs are not directly edible — they must be processed into medicine.",
+      gerste: "Gerste must be milled into mehl (at the Mühle) then baked into brot (at the Backstube). Buy brot instead.",
+      mehl: "Mehl must be baked into brot (at the Backstube) before it can be eaten. Buy brot instead.",
+      eisenerz: "Eisenerz is not food.",
+      kohle: "Kohle is not food.",
+      bauholz: "Bauholz is not food.",
+      brennholz: "Brennholz is not food.",
+      werkzeug: "Werkzeug is not food.",
+      leinen: "Leinen is not food.",
+      hausrat: "Hausrat is not food.",
+      kraeuter: "Kräuter are not directly edible — they must be processed into arznei.",
     };
     const hint = PROCESSING_HINTS[item];
     return hint ? `[Can't eat] ${hint}` : `[Can't eat] ${item} is not edible.`;

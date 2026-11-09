@@ -2,7 +2,7 @@
  * Runtime world registry.
  *
  * Loads from data/world_config.json if present; otherwise wraps the hardcoded
- * 1-village Brunnfeld defaults. All engine modules import from here instead of
+ * 1-village Schlackental defaults. All engine modules import from here instead of
  * directly from types.ts or village-map.ts.
  */
 
@@ -22,6 +22,14 @@ import {
   ADJACENCY,
   OPENING_HOURS,
   LOCATION_TILES,
+  HUB_LOCATION,
+  PRISON_LOCATION,
+  TOWNHALL_LOCATION,
+  ELDER_HOME_LOCATION,
+  MERCHANT_CAMP_LOCATION,
+  normalizeKey,
+  resolveLocationName,
+  isBaseLocation,
 } from "./village-map.js";
 
 // ─── Schema ──────────────────────────────────────────────────
@@ -49,7 +57,7 @@ export interface VillageConfig {
 
 export interface RoadConfig {
   id: string;
-  name: string;                        // "Road: Brunnfeld→Norddorf"
+  name: string;                        // "Road: Schlackental→Rabenstollen"
   connectsVillages: [string, string];  // village IDs
   transitTicks: number;
 }
@@ -59,41 +67,53 @@ export interface WorldConfig {
   roads: RoadConfig[];
 }
 
-// ─── Default location types (for Brunnfeld's bare location names) ────────
+// ─── Default village identity ────────────────────────────────────────────
+
+export const DEFAULT_VILLAGE_ID = "schlackental";
+export const DEFAULT_VILLAGE_NAME = "Schlackental";
+
+// ─── Default location types (for Schlackental's bare location names) ─────
+
+const LOCATION_TYPE_BY_NAME: Record<string, string> = {
+  [normalizeKey("Unterfeld")]: "farm",
+  [normalizeKey("Ziegenweide")]: "farm",
+  [normalizeKey("Oberfeld")]: "farm",
+  [normalizeKey("Mühle")]: "mill",
+  [normalizeKey("Schmiede")]: "forge",
+  [normalizeKey("Erzstollen")]: "mine",
+  [normalizeKey("Köhlerwald")]: "forest",
+  [normalizeKey("Backstube")]: "bakery",
+  [normalizeKey("Schenke")]: "tavern",
+  [normalizeKey("Zimmerei")]: "carpenter",
+  [normalizeKey("Baderhütte")]: "healer",
+  [normalizeKey("Flickstube")]: "seamstress",
+  [normalizeKey(TOWNHALL_LOCATION)]: "townhall",
+  [normalizeKey(HUB_LOCATION)]: "square",
+  [normalizeKey(ELDER_HOME_LOCATION)]: "elder",
+  [normalizeKey(PRISON_LOCATION)]: "prison",
+  [normalizeKey(MERCHANT_CAMP_LOCATION)]: "merchant",
+};
 
 function inferLocationType(name: string): string | undefined {
-  const n = name.toLowerCase();
-  if (/farm \d/.test(n) || n === "farm") return "farm";
-  if (n === "mill") return "mill";
-  if (n === "forge") return "forge";
-  if (n === "mine") return "mine";
-  if (n === "forest") return "forest";
-  if (n === "bakery") return "bakery";
-  if (n === "tavern") return "tavern";
-  if (n === "carpenter shop") return "carpenter";
-  if (n === "healer's hut") return "healer";
-  if (n === "seamstress cottage") return "seamstress";
-  if (n === "town hall") return "townhall";
-  if (n === "village square") return "square";
-  if (n === "elder's house") return "elder";
-  if (/cottage \d/.test(n) || n === "cottage") return "cottage";
-  if (n === "prison") return "prison";
-  if (n === "merchant camp") return "merchant";
-  // For prefixed locations (multi-village): "Norddorf:Farm 1" → strip prefix, re-infer
+  const n = normalizeKey(name);
+  if (/^baracke_\d$/.test(n) || n === "baracke") return "cottage";
+  const byName = LOCATION_TYPE_BY_NAME[n];
+  if (byName) return byName;
+  // For prefixed locations (multi-village): "Rabenstollen:Unterfeld" → strip prefix, re-infer
   const colon = name.lastIndexOf(":");
   if (colon !== -1) return inferLocationType(name.slice(colon + 1).trim());
   return undefined;
 }
 
-// Default agent descriptions for Brunnfeld's hardcoded cast
-const DEFAULT_DESCRIPTIONS: Record<string, string> = {
-  hans: "a farmer", ida: "a woman from the cottages", konrad: "a cattle farmer",
-  ulrich: "a farmer", bertram: "a farmer", gerda: "the miller",
-  anselm: "the baker", volker: "the blacksmith", wulf: "the carpenter",
-  liesel: "the tavern keeper", sybille: "the village healer", friedrich: "a woodcutter",
-  otto: "the village elder", pater_markus: "the village priest",
-  dieter: "a miner", magda: "a villager", heinrich: "a farmer",
-  elke: "the seamstress", rupert: "a miner",
+// Default agent descriptions for Schlackental's hardcoded cast (German, shown to strangers)
+export const DEFAULT_DESCRIPTIONS: Record<string, string> = {
+  brakel: "der Rottmeister der Feldrotte", wendel: "ein Feldarbeiter", wenzel: "ein Rübenbauer",
+  kasper: "ein Feldarbeiter", ottmar: "der Ziegenhirte", irmel: "die Müllerin",
+  bodo: "der Bäcker", grete: "die Schankwirtin", eckhart: "der Schmied",
+  lenz: "der Zimmermann", jost: "ein Holzfäller", mattis: "ein Knappe",
+  gisbert: "ein Knappe", walburga: "die Baderin", minna: "die Flickerin",
+  rike: "eine Häftlingsfrau aus den Baracken", vroni: "eine Kolonistin",
+  reinhart: "der Bergvogt", bruder_anno: "der Kaplan der Kolonie",
 };
 
 // ─── Build default single-village config from hardcoded constants ────────
@@ -103,9 +123,9 @@ function buildDefaultConfig(): WorldConfig {
     id,
     displayName: AGENT_DISPLAY_NAMES[id] ?? id,
     skill: AGENT_SKILLS[id] ?? "none",
-    homeLocation: AGENT_HOMES[id] ?? "Village Square",
-    workLocation: AGENT_WORK_LOCATIONS[id] ?? "Village Square",
-    description: DEFAULT_DESCRIPTIONS[id] ?? "a villager",
+    homeLocation: AGENT_HOMES[id] ?? HUB_LOCATION,
+    workLocation: AGENT_WORK_LOCATIONS[id] ?? HUB_LOCATION,
+    description: DEFAULT_DESCRIPTIONS[id] ?? "ein Kolonist",
   }));
 
   const locationTypes: Record<string, string> = {};
@@ -115,8 +135,8 @@ function buildDefaultConfig(): WorldConfig {
   }
 
   const village: VillageConfig = {
-    id: "brunnfeld",
-    name: "Brunnfeld",
+    id: DEFAULT_VILLAGE_ID,
+    name: DEFAULT_VILLAGE_NAME,
     agents,
     locations: [...LOCATIONS],
     locationTypes,
@@ -211,7 +231,7 @@ export function getVillageAgents(villageId: string): string[] {
 
 export function getAgentVillage(agent: string): string {
   ensureMaps();
-  return _agentVillage!.get(agent) ?? "brunnfeld";
+  return _agentVillage!.get(agent) ?? DEFAULT_VILLAGE_ID;
 }
 
 export function getDisplayName(agent: string): string {
@@ -228,7 +248,7 @@ export function getSkill(agent: string): Skill {
 
 export function getDescription(agent: string): string {
   ensureMaps();
-  return _agentMap!.get(agent)?.description ?? DEFAULT_DESCRIPTIONS[agent] ?? "a villager";
+  return _agentMap!.get(agent)?.description ?? DEFAULT_DESCRIPTIONS[agent] ?? "ein Kolonist";
 }
 
 export function getCouncilMembers(villageId: string): string[] {
@@ -242,8 +262,8 @@ export function getVillageElder(villageId: string): string | undefined {
 
 export function getVillageTownHall(villageId: string): string {
   const v = getConfig().villages.find(v => v.id === villageId);
-  if (!v) return "Town Hall";
-  return v.locations.find(l => l.endsWith("Town Hall")) ?? "Town Hall";
+  if (!v) return TOWNHALL_LOCATION;
+  return v.locations.find(l => isBaseLocation(l, TOWNHALL_LOCATION)) ?? TOWNHALL_LOCATION;
 }
 
 export function getVillageLocations(villageId: string): string[] {
@@ -316,13 +336,13 @@ export function isValidLocation(loc: string): boolean {
 
 /**
  * Resolves a potentially bare location name to the fully qualified name for the given agent.
- * e.g. a Norddorf agent typing "Forest" → "Norddorf:Forest"
+ * e.g. a Rabenstollen agent typing "Köhlerwald" → "Rabenstollen:Köhlerwald"
  * If already valid (or unresolvable), returns the input unchanged.
  */
 export function resolveAgentLocation(agent: string, loc: string, currentVillageId?: string): string {
   if (isValidLocation(loc)) return loc;
 
-  // Strip hallucinated village-name prefix (e.g. "Brunnfeld:Village Square" → "Village Square")
+  // Strip hallucinated village-name prefix (e.g. "Schlackental:Zechenplatz" → "Zechenplatz")
   const cfg = getConfig();
   for (const v of cfg.villages) {
     if (v.name && loc.startsWith(`${v.name}:`)) {
@@ -335,9 +355,21 @@ export function resolveAgentLocation(agent: string, loc: string, currentVillageI
 
   const vid = currentVillageId ?? getAgentVillage(agent);
   const vName = cfg.villages.find(v => v.id === vid)?.name ?? "";
-  if (!vName) return loc;
-  const prefixed = `${vName}:${loc}`;
-  return isValidLocation(prefixed) ? prefixed : loc;
+  if (vName) {
+    const prefixed = `${vName}:${loc}`;
+    if (isValidLocation(prefixed)) return prefixed;
+  }
+
+  // Normalized match ("Muehle", "baderhütte" → "Mühle", "Baderhütte"), on the agent's own village first.
+  const candidates = getVillageLocations(vid);
+  const direct = resolveLocationName(loc, candidates);
+  if (direct) return direct;
+  const bareCandidates = candidates.map(c => c.slice(c.lastIndexOf(":") + 1));
+  const bareInput = loc.slice(loc.lastIndexOf(":") + 1);
+  const bare = resolveLocationName(bareInput, bareCandidates);
+  if (bare) return candidates[bareCandidates.indexOf(bare)]!;
+
+  return loc;
 }
 
 /** Returns opening hours for any location, regardless of which village it belongs to. */
@@ -358,10 +390,10 @@ export function isLocationOpenByRegistry(loc: string, hourIndex: number): boolea
 
 export function getAgentHomeLocation(agent: string): string {
   ensureMaps();
-  return _agentMap!.get(agent)?.homeLocation ?? AGENT_HOMES[agent] ?? "Village Square";
+  return _agentMap!.get(agent)?.homeLocation ?? AGENT_HOMES[agent] ?? HUB_LOCATION;
 }
 
 export function getAgentWorkLocation(agent: string): string {
   ensureMaps();
-  return _agentMap!.get(agent)?.workLocation ?? AGENT_WORK_LOCATIONS[agent] ?? "Village Square";
+  return _agentMap!.get(agent)?.workLocation ?? AGENT_WORK_LOCATIONS[agent] ?? HUB_LOCATION;
 }

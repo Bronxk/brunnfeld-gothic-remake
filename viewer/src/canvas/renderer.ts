@@ -24,30 +24,30 @@ const SPRITES = {
 // ─── Agent → sprite mapping ───────────────────────────────────────────────
 
 const AGENT_SPRITE: Record<string, keyof typeof SPRITES> = {
-  hans: "pawnAxe", ida: "pawnIdle", konrad: "pawnIdle", ulrich: "pawnAxe",
-  bertram: "pawnAxe", gerda: "pawnHammer", anselm: "pawnHammer",
-  volker: "pawnHammer", wulf: "pawnHammer", liesel: "pawnIdle",
-  sybille: "pawnIdle", friedrich: "pawnWood",
-  otto: "warriorIdle", pater_markus: "monkIdle",
-  dieter: "pawnPickaxe", magda: "pawnIdle", heinrich: "pawnAxe", elke: "pawnIdle", rupert: "pawnPickaxe",
+  brakel: "pawnAxe", rike: "pawnIdle", ottmar: "pawnIdle", wenzel: "pawnAxe",
+  kasper: "pawnAxe", irmel: "pawnHammer", bodo: "pawnHammer",
+  eckhart: "pawnHammer", lenz: "pawnHammer", grete: "pawnIdle",
+  walburga: "pawnIdle", jost: "pawnWood",
+  reinhart: "warriorIdle", bruder_anno: "monkIdle",
+  mattis: "pawnPickaxe", vroni: "pawnIdle", wendel: "pawnAxe", minna: "pawnIdle", gisbert: "pawnPickaxe",
 };
 
 // Skill → sprite fallback for dynamically generated agents
 const SKILL_SPRITE: Record<string, keyof typeof SPRITES> = {
-  farmer: "pawnAxe",   cattle: "pawnIdle",     miner: "pawnPickaxe",
-  woodcutter: "pawnWood", miller: "pawnHammer", baker: "pawnHammer",
-  blacksmith: "pawnHammer", carpenter: "pawnHammer",
-  tavern: "pawnIdle",  healer: "pawnIdle",     seamstress: "pawnIdle",
+  bauer: "pawnAxe",   hirte: "pawnIdle",     knappe: "pawnPickaxe",
+  holzfaeller: "pawnWood", mueller: "pawnHammer", baecker: "pawnHammer",
+  schmied: "pawnHammer", zimmermann: "pawnHammer",
+  wirt: "pawnIdle",  bader: "pawnIdle",     naeherin: "pawnIdle",
   none: "pawnIdle",
 };
 
 // ─── Agent color tints (CSS hue-rotate-like effect via colored overlays) ─
 const AGENT_COLORS: Record<string, string> = {
-  hans: "#e8c87a", ida: "#f4b8d4", konrad: "#a8d48a", ulrich: "#c8a84a",
-  bertram: "#d4a870", gerda: "#d4d4a0", anselm: "#f0d890", volker: "#c84c4c",
-  wulf: "#a07040", liesel: "#d878a8", sybille: "#80c8d8", friedrich: "#80a850",
-  otto: "#a8a0c8", pater_markus: "#c8c8e8", dieter: "#909090", magda: "#e8b090",
-  heinrich: "#d8c060", elke: "#e878b8", rupert: "#b0b0b0",
+  brakel: "#e8c87a", rike: "#f4b8d4", ottmar: "#a8d48a", wenzel: "#c8a84a",
+  kasper: "#d4a870", irmel: "#d4d4a0", bodo: "#f0d890", eckhart: "#c84c4c",
+  lenz: "#a07040", grete: "#d878a8", walburga: "#80c8d8", jost: "#80a850",
+  reinhart: "#a8a0c8", bruder_anno: "#c8c8e8", mattis: "#909090", vroni: "#e8b090",
+  wendel: "#d8c060", minna: "#e878b8", gisbert: "#b0b0b0",
 };
 
 function agentColor(agent: string): string {
@@ -305,7 +305,7 @@ function drawGround(ctx: CanvasRenderingContext2D): void {
   ctx.fillRect(0, 0, 10 * TILE_SIZE, 3 * TILE_SIZE);
 
   // ── Terrain detail: Farm rows ─────────────────────────────────
-  const farmLocs = ["Farm 1", "Farm 2", "Farm 3"] as const;
+  const farmLocs = ["Unterfeld", "Ziegenweide", "Oberfeld"] as const;
   for (const name of farmLocs) {
     const tile = findTile(name);
     if (!tile) continue;
@@ -322,7 +322,7 @@ function drawGround(ctx: CanvasRenderingContext2D): void {
   }
 
   // ── Terrain detail: Forest tree silhouettes ───────────────────
-  const forestTile = findTile("Forest");
+  const forestTile = findTile("Köhlerwald");
   if (forestTile) {
     const fx = forestTile.tx * TILE_SIZE - TILE_SIZE;
     const fy = forestTile.ty * TILE_SIZE - TILE_SIZE / 2;
@@ -342,7 +342,7 @@ function drawGround(ctx: CanvasRenderingContext2D): void {
   }
 
   // ── Terrain detail: Mine rocky texture ────────────────────────
-  const mineTile = findTile("Mine");
+  const mineTile = findTile("Erzstollen");
   if (mineTile) {
     const mx = mineTile.tx * TILE_SIZE;
     const my = mineTile.ty * TILE_SIZE;
@@ -499,13 +499,13 @@ function drawAgents(
   animations: Map<AgentName, ActiveAnimation>,
 ): void {
   const now = performance.now();
-  // When caravan is active, Otto is rendered by the event overlay as the Gipsy merchant sprite
+  // When caravan is active, Reinhart is rendered by the event overlay as the Gipsy merchant sprite
   const caravanActive = world.active_events.some(e => e.type === "caravan");
 
   const byLoc: Record<string, AgentName[]> = {};
   for (const [agent, loc] of Object.entries(world.agent_locations)) {
     if (animations.has(agent as AgentName)) continue;
-    if (caravanActive && agent === "otto" && loc === "Merchant Camp") continue;
+    if (caravanActive && agent === "reinhart" && loc === "Schmugglerpfad") continue;
     if (!byLoc[loc]) byLoc[loc] = [];
     byLoc[loc]!.push(agent as AgentName);
   }
@@ -529,7 +529,7 @@ function drawAgents(
   }
 
   for (const [agent, anim] of animations) {
-    if (caravanActive && agent === "otto" && anim.toLoc === "Merchant Camp") continue;
+    if (caravanActive && agent === "reinhart" && anim.toLoc === "Schmugglerpfad") continue;
     const t = Math.min(1, (now - anim.startMs) / anim.durationMs);
     const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
     const cx = anim.fromX + (anim.toX - anim.fromX) * ease;
@@ -575,7 +575,7 @@ function drawEventOverlays(
     switch (ev.type) {
 
       case "drought": {
-        for (const name of ["Farm 1", "Farm 2", "Farm 3"]) {
+        for (const name of ["Unterfeld", "Ziegenweide", "Oberfeld"]) {
           const tile = findTile(name);
           if (!tile) continue;
           const px = tile.tx * TILE_SIZE;
@@ -597,7 +597,7 @@ function drawEventOverlays(
 
       case "double_harvest": {
         const a = 0.15 + pulse * 0.20;
-        for (const name of ["Farm 1", "Farm 2", "Farm 3"]) {
+        for (const name of ["Unterfeld", "Ziegenweide", "Oberfeld"]) {
           const tile = findTile(name);
           if (!tile) continue;
           const px = tile.tx * TILE_SIZE;
@@ -613,7 +613,7 @@ function drawEventOverlays(
       }
 
       case "mine_collapse": {
-        const tile = findTile("Mine");
+        const tile = findTile("Erzstollen");
         if (!tile) break;
         const px = tile.tx * TILE_SIZE;
         const py = tile.ty * TILE_SIZE;
@@ -632,7 +632,7 @@ function drawEventOverlays(
       }
 
       case "caravan": {
-        const tile = findTile("Merchant Camp");
+        const tile = findTile("Schmugglerpfad");
         if (!tile) break;
         const px = tile.tx * TILE_SIZE;
         const py = tile.ty * TILE_SIZE;
@@ -651,7 +651,7 @@ function drawEventOverlays(
         const cy = py + TILE_SIZE / 2 + 4;
 
         // Selection ring (drawn behind sprite)
-        if (selectedAgent === "otto") {
+        if (selectedAgent === "reinhart") {
           ctx.strokeStyle = "#ffd700";
           ctx.lineWidth = 2;
           ctx.beginPath();
@@ -668,13 +668,13 @@ function drawEventOverlays(
           ctx.fill();
         }
 
-        // "Otto" label above sprite + "Merchant" below
+        // "Reinhart" label above sprite + "Merchant" below
         ctx.font = "bold 8px monospace";
         ctx.textAlign = "center";
         ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillText("Otto", cx + 1, cy - MERCHANT_DISPLAY / 2 - 2);
-        ctx.fillStyle = selectedAgent === "otto" ? "#ffd700" : "#ffe8c0";
-        ctx.fillText("Otto", cx, cy - MERCHANT_DISPLAY / 2 - 3);
+        ctx.fillText("Reinhart", cx + 1, cy - MERCHANT_DISPLAY / 2 - 2);
+        ctx.fillStyle = selectedAgent === "reinhart" ? "#ffd700" : "#ffe8c0";
+        ctx.fillText("Reinhart", cx, cy - MERCHANT_DISPLAY / 2 - 3);
         ctx.fillStyle = "rgba(0,0,0,0.55)";
         ctx.fillText("Merchant", cx + 1, cy + MERCHANT_DISPLAY / 2 + 11);
         ctx.fillStyle = "#f0c040";

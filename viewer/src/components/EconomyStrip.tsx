@@ -1,15 +1,15 @@
 import { useVillageStore } from "../store";
 
 const STRIP_ITEMS = [
-  "wheat", "flour", "bread", "meat", "timber", "coal", "iron_tools", "ale", "cloth", "medicine",
+  "gerste", "mehl", "brot", "fleisch", "bauholz", "kohle", "werkzeug", "bier", "leinen", "arznei",
 ] as const;
 
 const ITEM_EMOJI: Record<string, string> = {
-  wheat: "🌾", flour: "⚪", bread: "🍞", meat: "🥩", milk: "🥛",
-  eggs: "🥚", vegetables: "🥦", herbs: "🌿", medicine: "💊",
-  iron_ore: "🪨", coal: "⬛", iron_tools: "⚒",
-  timber: "🪵", firewood: "🔥", furniture: "🪑",
-  ale: "🍺", meal: "🍲", cloth: "🧵",
+  gerste: "🌾", mehl: "⚪", brot: "🍞", fleisch: "🥩", milch: "🥛",
+  eier: "🥚", rueben: "🥦", kraeuter: "🌿", arznei: "💊",
+  eisenerz: "🪨", kohle: "⬛", werkzeug: "⚒",
+  bauholz: "🪵", brennholz: "🔥", hausrat: "🪑",
+  bier: "🍺", eintopf: "🍲", leinen: "🧵",
 };
 
 export default function EconomyStrip() {

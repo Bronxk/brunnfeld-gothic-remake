@@ -14,13 +14,14 @@ const BARTER_KEYWORDS = ["trade", "barter", "deal", "exchange", "give you", "swa
 const ACCEPT_KEYWORDS = ["deal", "agreed", "fine", "ok", "yes", "accept", "done", "sure", "i agree", "sounds good"];
 
 const ITEM_WORDS: Record<string, ItemType> = {
-  wheat: "wheat", flour: "flour", bread: "bread", meat: "meat", milk: "milk",
-  eggs: "eggs", egg: "eggs", vegetables: "vegetables", veg: "vegetables",
-  herbs: "herbs", herb: "herbs", medicine: "medicine",
-  "iron ore": "iron_ore", ore: "iron_ore", coal: "coal",
-  "iron tools": "iron_tools", tools: "iron_tools",
-  timber: "timber", firewood: "firewood", wood: "timber",
-  furniture: "furniture", ale: "ale", meal: "meal", cloth: "cloth",
+  gerste: "gerste", mehl: "mehl", brot: "brot", fleisch: "fleisch", milch: "milch",
+  ziegenmilch: "milch", eier: "eier", rueben: "rueben", "rüben": "rueben",
+  kraeuter: "kraeuter", "kräuter": "kraeuter", arznei: "arznei",
+  eisenerz: "eisenerz", kohle: "kohle",
+  werkzeug: "werkzeug",
+  bauholz: "bauholz", brennholz: "brennholz",
+  hausrat: "hausrat", bier: "bier", "dünnbier": "bier", duennbier: "bier",
+  eintopf: "eintopf", leinen: "leinen",
 };
 
 function parseItemsFromText(text: string): { item: ItemType; quantity: number }[] {

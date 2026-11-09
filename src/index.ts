@@ -8,6 +8,7 @@ import { readWorldState } from "./memory.js";
 import { runSimulation } from "./engine.js";
 import type { WorldState } from "./types.js";
 import { ALL_ITEMS } from "./types.js";
+import { HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION } from "./village-map.js";
 import { eventBus } from "./events.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -25,122 +26,122 @@ function initWorldState(): WorldState {
     active_events: [],
 
     agent_locations: {
-      hans: "Cottage 1", ida: "Cottage 2", konrad: "Farm 2",
-      ulrich: "Cottage 4", bertram: "Cottage 5", gerda: "Mill",
-      anselm: "Bakery", volker: "Forge", wulf: "Carpenter Shop",
-      liesel: "Tavern", sybille: "Healer's Hut", friedrich: "Cottage 7",
-      otto: "Elder's House", pater_markus: "Town Hall",
-      dieter: "Cottage 8", magda: "Cottage 8", heinrich: "Cottage 1", elke: "Seamstress Cottage", rupert: "Cottage 3",
-      player: "Village Square",
+      brakel: "Baracke 1", rike: "Baracke 2", ottmar: "Ziegenweide",
+      wenzel: "Baracke 4", kasper: "Baracke 5", irmel: "Mühle",
+      bodo: "Backstube", eckhart: "Schmiede", lenz: "Zimmerei",
+      grete: "Schenke", walburga: "Baderhütte", jost: "Baracke 7",
+      reinhart: "Vogtshaus", bruder_anno: "Vogtei",
+      mattis: "Baracke 8", vroni: "Baracke 8", wendel: "Baracke 1", minna: "Flickstube", gisbert: "Baracke 3",
+      player: HUB_LOCATION,
     },
 
     body: {
-      hans:         { hunger: 1, energy: 9, sleep_quality: "good" },
-      ida:          { hunger: 1, energy: 8, sleep_quality: "fair" },
-      konrad:       { hunger: 2, energy: 8, sleep_quality: "good" },
-      ulrich:       { hunger: 1, energy: 9, sleep_quality: "good" },
-      bertram:      { hunger: 2, energy: 7, sleep_quality: "fair" },
-      gerda:        { hunger: 1, energy: 9, sleep_quality: "good" },
-      anselm:       { hunger: 0, energy: 8, sleep_quality: "good" },
-      volker:       { hunger: 2, energy: 9, sleep_quality: "good" },
-      wulf:         { hunger: 1, energy: 8, sleep_quality: "fair" },
-      liesel:       { hunger: 1, energy: 7, sleep_quality: "fair" },
-      sybille:      { hunger: 1, energy: 9, sleep_quality: "good" },
-      friedrich:    { hunger: 2, energy: 9, sleep_quality: "good" },
-      otto:         { hunger: 1, energy: 7, sleep_quality: "fair" },
-      pater_markus: { hunger: 1, energy: 8, sleep_quality: "good" },
-      dieter:       { hunger: 2, energy: 8, sleep_quality: "fair" },
-      magda:        { hunger: 1, energy: 8, sleep_quality: "good" },
-      heinrich:     { hunger: 1, energy: 9, sleep_quality: "good" },
-      elke:         { hunger: 1, energy: 8, sleep_quality: "fair" },
-      rupert:       { hunger: 2, energy: 9, sleep_quality: "good" },
-      player:       { hunger: 0, energy: 8, sleep_quality: "good" },
+      brakel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      rike:        { hunger: 1, energy: 8, sleep_quality: "fair" },
+      ottmar:      { hunger: 2, energy: 8, sleep_quality: "good" },
+      wenzel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      kasper:      { hunger: 2, energy: 7, sleep_quality: "fair" },
+      irmel:       { hunger: 1, energy: 9, sleep_quality: "good" },
+      bodo:        { hunger: 0, energy: 8, sleep_quality: "good" },
+      eckhart:     { hunger: 2, energy: 9, sleep_quality: "good" },
+      lenz:        { hunger: 1, energy: 8, sleep_quality: "fair" },
+      grete:       { hunger: 1, energy: 7, sleep_quality: "fair" },
+      walburga:    { hunger: 1, energy: 9, sleep_quality: "good" },
+      jost:        { hunger: 2, energy: 9, sleep_quality: "good" },
+      reinhart:    { hunger: 1, energy: 7, sleep_quality: "fair" },
+      bruder_anno: { hunger: 1, energy: 8, sleep_quality: "good" },
+      mattis:      { hunger: 2, energy: 8, sleep_quality: "fair" },
+      vroni:       { hunger: 1, energy: 8, sleep_quality: "good" },
+      wendel:      { hunger: 1, energy: 9, sleep_quality: "good" },
+      minna:       { hunger: 1, energy: 8, sleep_quality: "fair" },
+      gisbert:     { hunger: 2, energy: 9, sleep_quality: "good" },
+      player:      { hunger: 0, energy: 8, sleep_quality: "good" },
     },
 
     economics: {
-      hans:         { wallet: 30, inventory: { items: [{ type: "wheat", quantity: 8 }] }, tool: { type: "iron_tools", durability: 80 }, skill: "farmer", homeLocation: "Cottage 1", workLocation: "Farm 1", workSchedule: { open: 6, close: 16 } },
-      ida:          { wallet: 12, inventory: { items: [{ type: "cloth", quantity: 2 }] }, tool: null, skill: "none", homeLocation: "Cottage 2", workLocation: "Cottage 2", workSchedule: { open: 6, close: 21 } },
-      konrad:       { wallet: 40, inventory: { items: [{ type: "milk", quantity: 3 }, { type: "meat", quantity: 2 }] }, tool: { type: "iron_tools", durability: 90 }, skill: "cattle", homeLocation: "Farm 2", workLocation: "Farm 2", workSchedule: { open: 6, close: 15 } },
-      ulrich:       { wallet: 20, inventory: { items: [{ type: "vegetables", quantity: 4 }] }, tool: { type: "iron_tools", durability: 70 }, skill: "farmer", homeLocation: "Cottage 4", workLocation: "Farm 3", workSchedule: { open: 6, close: 16 } },
-      bertram:      { wallet: 15, inventory: { items: [{ type: "wheat", quantity: 5 }] }, tool: { type: "iron_tools", durability: 60 }, skill: "farmer", homeLocation: "Cottage 5", workLocation: "Farm 1", workSchedule: { open: 6, close: 16 } },
-      gerda:        { wallet: 45, inventory: { items: [{ type: "flour", quantity: 4 }] }, tool: null, skill: "miller", homeLocation: "Mill", workLocation: "Mill", workSchedule: { open: 7, close: 16 } },
-      anselm:       { wallet: 32, inventory: { items: [{ type: "bread", quantity: 6 }, { type: "flour", quantity: 2 }] }, tool: null, skill: "baker", homeLocation: "Bakery", workLocation: "Bakery", workSchedule: { open: 6, close: 13 } },
-      volker:       { wallet: 60, inventory: { items: [{ type: "iron_ore", quantity: 4 }, { type: "coal", quantity: 3 }] }, tool: null, skill: "blacksmith", homeLocation: "Forge", workLocation: "Forge", workSchedule: { open: 7, close: 16 } },
-      wulf:         { wallet: 35, inventory: { items: [{ type: "timber", quantity: 5 }] }, tool: { type: "iron_tools", durability: 75 }, skill: "carpenter", homeLocation: "Carpenter Shop", workLocation: "Carpenter Shop", workSchedule: { open: 7, close: 16 } },
-      liesel:       { wallet: 55, inventory: { items: [{ type: "ale", quantity: 6 }, { type: "wheat", quantity: 4 }] }, tool: null, skill: "tavern", homeLocation: "Tavern", workLocation: "Tavern", workSchedule: { open: 10, close: 21 } },
-      sybille:      { wallet: 28, inventory: { items: [{ type: "herbs", quantity: 5 }, { type: "medicine", quantity: 2 }] }, tool: null, skill: "healer", homeLocation: "Healer's Hut", workLocation: "Healer's Hut", workSchedule: { open: 7, close: 17 } },
-      friedrich:    { wallet: 22, inventory: { items: [{ type: "timber", quantity: 3 }, { type: "firewood", quantity: 6 }] }, tool: { type: "iron_tools", durability: 85 }, skill: "woodcutter", homeLocation: "Cottage 7", workLocation: "Forest", workSchedule: { open: 6, close: 17 } },
-      otto:         { wallet: 120, inventory: { items: [] }, tool: null, skill: "none", homeLocation: "Elder's House", workLocation: "Elder's House", workSchedule: { open: 6, close: 21 } },
-      pater_markus: { wallet: 25, inventory: { items: [] }, tool: null, skill: "none", homeLocation: "Town Hall", workLocation: "Town Hall", workSchedule: { open: 6, close: 21 } },
-      dieter:       { wallet: 18, inventory: { items: [{ type: "iron_ore", quantity: 2 }, { type: "coal", quantity: 1 }] }, tool: { type: "iron_tools", durability: 65 }, skill: "miner", homeLocation: "Cottage 8", workLocation: "Mine", workSchedule: { open: 7, close: 17 } },
-      magda:        { wallet: 10, inventory: { items: [{ type: "bread", quantity: 2 }] }, tool: null, skill: "none", homeLocation: "Cottage 8", workLocation: "Village Square", workSchedule: { open: 6, close: 21 } },
-      heinrich:     { wallet: 25, inventory: { items: [{ type: "wheat", quantity: 6 }, { type: "eggs", quantity: 3 }] }, tool: { type: "iron_tools", durability: 55 }, skill: "farmer", homeLocation: "Cottage 1", workLocation: "Farm 1", workSchedule: { open: 6, close: 16 } },
-      elke:         { wallet: 30, inventory: { items: [{ type: "cloth", quantity: 3 }] }, tool: null, skill: "seamstress", homeLocation: "Seamstress Cottage", workLocation: "Seamstress Cottage", workSchedule: { open: 7, close: 16 } },
-      rupert:       { wallet: 20, inventory: { items: [{ type: "iron_ore", quantity: 3 }, { type: "coal", quantity: 2 }] }, tool: { type: "iron_tools", durability: 80 }, skill: "miner", homeLocation: "Cottage 3", workLocation: "Mine", workSchedule: { open: 7, close: 17 } },
-      player:       { wallet: 0, inventory: { items: [] }, tool: null, skill: "none", homeLocation: "Village Square", workLocation: "Village Square", workSchedule: { open: 6, close: 21 } },
+      brakel:      { wallet: 30, inventory: { items: [{ type: "gerste", quantity: 8 }] }, tool: { type: "werkzeug", durability: 80 }, skill: "bauer", homeLocation: "Baracke 1", workLocation: "Unterfeld", workSchedule: { open: 6, close: 16 } },
+      rike:        { wallet: 12, inventory: { items: [{ type: "leinen", quantity: 2 }] }, tool: null, skill: "none", homeLocation: "Baracke 2", workLocation: "Baracke 2", workSchedule: { open: 6, close: 21 } },
+      ottmar:      { wallet: 40, inventory: { items: [{ type: "milch", quantity: 3 }, { type: "fleisch", quantity: 2 }] }, tool: { type: "werkzeug", durability: 90 }, skill: "hirte", homeLocation: "Ziegenweide", workLocation: "Ziegenweide", workSchedule: { open: 6, close: 15 } },
+      wenzel:      { wallet: 20, inventory: { items: [{ type: "rueben", quantity: 4 }] }, tool: { type: "werkzeug", durability: 70 }, skill: "bauer", homeLocation: "Baracke 4", workLocation: "Oberfeld", workSchedule: { open: 6, close: 16 } },
+      kasper:      { wallet: 15, inventory: { items: [{ type: "gerste", quantity: 5 }] }, tool: { type: "werkzeug", durability: 60 }, skill: "bauer", homeLocation: "Baracke 5", workLocation: "Unterfeld", workSchedule: { open: 6, close: 16 } },
+      irmel:       { wallet: 45, inventory: { items: [{ type: "mehl", quantity: 4 }] }, tool: null, skill: "mueller", homeLocation: "Mühle", workLocation: "Mühle", workSchedule: { open: 7, close: 16 } },
+      bodo:        { wallet: 32, inventory: { items: [{ type: "brot", quantity: 6 }, { type: "mehl", quantity: 2 }] }, tool: null, skill: "baecker", homeLocation: "Backstube", workLocation: "Backstube", workSchedule: { open: 6, close: 13 } },
+      eckhart:     { wallet: 60, inventory: { items: [{ type: "eisenerz", quantity: 4 }, { type: "kohle", quantity: 3 }] }, tool: null, skill: "schmied", homeLocation: "Schmiede", workLocation: "Schmiede", workSchedule: { open: 7, close: 16 } },
+      lenz:        { wallet: 35, inventory: { items: [{ type: "bauholz", quantity: 5 }] }, tool: { type: "werkzeug", durability: 75 }, skill: "zimmermann", homeLocation: "Zimmerei", workLocation: "Zimmerei", workSchedule: { open: 7, close: 16 } },
+      grete:       { wallet: 55, inventory: { items: [{ type: "bier", quantity: 6 }, { type: "gerste", quantity: 4 }] }, tool: null, skill: "wirt", homeLocation: "Schenke", workLocation: "Schenke", workSchedule: { open: 10, close: 21 } },
+      walburga:    { wallet: 28, inventory: { items: [{ type: "kraeuter", quantity: 5 }, { type: "arznei", quantity: 2 }] }, tool: null, skill: "bader", homeLocation: "Baderhütte", workLocation: "Baderhütte", workSchedule: { open: 7, close: 17 } },
+      jost:        { wallet: 22, inventory: { items: [{ type: "bauholz", quantity: 3 }, { type: "brennholz", quantity: 6 }] }, tool: { type: "werkzeug", durability: 85 }, skill: "holzfaeller", homeLocation: "Baracke 7", workLocation: "Köhlerwald", workSchedule: { open: 6, close: 17 } },
+      reinhart:    { wallet: 120, inventory: { items: [] }, tool: null, skill: "none", homeLocation: "Vogtshaus", workLocation: "Vogtshaus", workSchedule: { open: 6, close: 21 } },
+      bruder_anno: { wallet: 25, inventory: { items: [] }, tool: null, skill: "none", homeLocation: "Vogtei", workLocation: "Vogtei", workSchedule: { open: 6, close: 21 } },
+      mattis:      { wallet: 18, inventory: { items: [{ type: "eisenerz", quantity: 2 }, { type: "kohle", quantity: 1 }] }, tool: { type: "werkzeug", durability: 65 }, skill: "knappe", homeLocation: "Baracke 8", workLocation: "Erzstollen", workSchedule: { open: 7, close: 17 } },
+      vroni:       { wallet: 10, inventory: { items: [{ type: "brot", quantity: 2 }] }, tool: null, skill: "none", homeLocation: "Baracke 8", workLocation: "Zechenplatz", workSchedule: { open: 6, close: 21 } },
+      wendel:      { wallet: 25, inventory: { items: [{ type: "gerste", quantity: 6 }, { type: "eier", quantity: 3 }] }, tool: { type: "werkzeug", durability: 55 }, skill: "bauer", homeLocation: "Baracke 1", workLocation: "Unterfeld", workSchedule: { open: 6, close: 16 } },
+      minna:       { wallet: 30, inventory: { items: [{ type: "leinen", quantity: 3 }] }, tool: null, skill: "naeherin", homeLocation: "Flickstube", workLocation: "Flickstube", workSchedule: { open: 7, close: 16 } },
+      gisbert:     { wallet: 20, inventory: { items: [{ type: "eisenerz", quantity: 3 }, { type: "kohle", quantity: 2 }] }, tool: { type: "werkzeug", durability: 80 }, skill: "knappe", homeLocation: "Baracke 3", workLocation: "Erzstollen", workSchedule: { open: 7, close: 17 } },
+      player:      { wallet: 0, inventory: { items: [] }, tool: null, skill: "none", homeLocation: HUB_LOCATION, workLocation: HUB_LOCATION, workSchedule: { open: 6, close: 21 } },
     },
 
     marketplace: {
       orders: [],
       history: [],
       priceIndex: {
-        wheat: 2, flour: 5, bread: 3, meat: 8, milk: 2,
-        iron_tools: 15, coal: 3, iron_ore: 4, timber: 3, firewood: 2,
-        herbs: 1, medicine: 10, ale: 3, meal: 6, cloth: 5,
-        furniture: 12, eggs: 1, vegetables: 2,
+        gerste: 2, mehl: 5, brot: 3, fleisch: 8, milch: 2,
+        werkzeug: 15, kohle: 3, eisenerz: 4, bauholz: 3, brennholz: 2,
+        kraeuter: 1, arznei: 10, bier: 3, eintopf: 6, leinen: 5,
+        hausrat: 12, eier: 1, rueben: 2,
       },
       priceHistory: Object.fromEntries(ALL_ITEMS.map(i => [i, []])) as Record<string, []>,
     },
 
     doors: {
-      "Cottage 1": "unlocked", "Cottage 2": "unlocked", "Cottage 3": "unlocked",
-      "Cottage 4": "unlocked", "Cottage 5": "unlocked", "Cottage 6": "unlocked",
-      "Cottage 7": "unlocked", "Cottage 8": "unlocked", "Cottage 9": "unlocked",
-      "Seamstress Cottage": "unlocked", "Healer's Hut": "unlocked",
-      "Bakery": "unlocked", "Tavern": "unlocked", "Forge": "unlocked",
-      "Carpenter Shop": "unlocked", "Mill": "unlocked",
-      "Town Hall": "unlocked", "Prison": "unlocked",
-      "Elder's House": "unlocked",
-      "Farm 1": "unlocked", "Farm 2": "unlocked", "Farm 3": "unlocked",
+      "Baracke 1": "unlocked", "Baracke 2": "unlocked", "Baracke 3": "unlocked",
+      "Baracke 4": "unlocked", "Baracke 5": "unlocked", "Baracke 6": "unlocked",
+      "Baracke 7": "unlocked", "Baracke 8": "unlocked", "Baracke 9": "unlocked",
+      "Flickstube": "unlocked", "Baderhütte": "unlocked",
+      "Backstube": "unlocked", "Schenke": "unlocked", "Schmiede": "unlocked",
+      "Zimmerei": "unlocked", "Mühle": "unlocked",
+      [TOWNHALL_LOCATION]: "unlocked", [PRISON_LOCATION]: "unlocked",
+      [ELDER_HOME_LOCATION]: "unlocked",
+      "Unterfeld": "unlocked", "Ziegenweide": "unlocked", "Oberfeld": "unlocked",
     },
 
     message_queue: {
-      hans: [], ida: [], konrad: [], ulrich: [], bertram: [],
-      gerda: [], anselm: [], volker: [], wulf: [],
-      liesel: [], sybille: [], friedrich: [],
-      otto: [], pater_markus: [],
-      dieter: [], magda: [], heinrich: [], elke: [], rupert: [],
+      brakel: [], rike: [], ottmar: [], wenzel: [], kasper: [],
+      irmel: [], bodo: [], eckhart: [], lenz: [],
+      grete: [], walburga: [], jost: [],
+      reinhart: [], bruder_anno: [],
+      mattis: [], vroni: [], wendel: [], minna: [], gisbert: [],
     },
 
     objects: [],
     action_feedback: {
-      hans: [], ida: [], konrad: [], ulrich: [], bertram: [],
-      gerda: [], anselm: [], volker: [], wulf: [],
-      liesel: [], sybille: [], friedrich: [],
-      otto: [], pater_markus: [],
-      dieter: [], magda: [], heinrich: [], elke: [], rupert: [],
+      brakel: [], rike: [], ottmar: [], wenzel: [], kasper: [],
+      irmel: [], bodo: [], eckhart: [], lenz: [],
+      grete: [], walburga: [], jost: [],
+      reinhart: [], bruder_anno: [],
+      mattis: [], vroni: [], wendel: [], minna: [], gisbert: [],
     },
 
     acquaintances: {
-      hans: ["heinrich"],    // housemates
-      ida: [],
-      konrad: [],
-      ulrich: [],
-      bertram: [],
-      gerda: ["anselm"],     // miller + baker working relationship
-      anselm: ["gerda"],
-      volker: ["wulf"],      // forge + carpenter side by side
-      wulf: ["volker"],
-      liesel: ["otto", "pater_markus"],   // tavern keeper knows community leaders
-      sybille: [],
-      friedrich: ["rupert"], // both woodsy types
-      otto: ["pater_markus", "liesel"],
-      pater_markus: ["otto"],
-      dieter: ["rupert"],    // mine workers
-      magda: ["dieter"],     // housemates
-      heinrich: ["hans"],    // housemates
-      elke: [],
-      rupert: ["dieter", "friedrich"],
+      brakel: ["wendel"],    // bunkmates
+      rike: [],
+      ottmar: [],
+      wenzel: [],
+      kasper: [],
+      irmel: ["bodo"],       // miller + baker working relationship
+      bodo: ["irmel"],
+      eckhart: ["lenz"],     // forge + carpenter side by side
+      lenz: ["eckhart"],
+      grete: ["reinhart", "bruder_anno"],   // tavern keeper knows community leaders
+      walburga: [],
+      jost: ["gisbert"],     // woodsy type + old miner
+      reinhart: ["bruder_anno", "grete"],
+      bruder_anno: ["reinhart"],
+      mattis: ["gisbert"],   // mine workers
+      vroni: ["mattis"],     // bunkmates
+      wendel: ["brakel"],    // bunkmates
+      minna: [],
+      gisbert: ["mattis", "jost"],
     },
 
     economy_snapshots: [],
@@ -160,7 +161,7 @@ function initWorldState(): WorldState {
 // ─── Reset ────────────────────────────────────────────────────
 
 function resetSimulation(): void {
-  console.log("Resetting Brunnfeld to initial state...\n");
+  console.log("Resetting Schlackental to initial state...\n");
 
   // Restore initial memories — clear first so stale files from old worlds don't linger
   if (existsSync(INITIAL_MEMORIES_DIR)) {

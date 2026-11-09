@@ -1,4 +1,6 @@
 import type { AgentAction, AgentName, ItemType, Loan, ResolvedAction, WorldState, SimTime, StealRecord } from "./types.js";
+import { resolveItemInput } from "./types.js";
+import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation } from "./village-map.js";
 import { getAgentNames, getDisplayName, getAgentVillage, getVillageElder, getVillageTownHall, getVillageAgents, isValidLocation, getLocationHours, isLocationOpenByRegistry, getVillageLocations, getVillages, resolveAgentLocation, isRoadLocation, getRoads, getVillageForLocation } from "./world-registry.js";
 import { getAgentMarketplace } from "./marketplace.js";
 import { getHourIndex } from "./time.js";
@@ -27,7 +29,7 @@ Available actions:
 - produce: Craft or gather an item. Fields: item. Must be at the right location with skill and inputs. Once per turn.
 - eat: Eat food from your inventory. Fields: item, quantity.
 - post_order: Post a buy or sell order. Fields: side ("sell"|"buy"), item, quantity, price (per unit).
-- buy_item: Buy from the marketplace. Fields: item, max_price, quantity (optional, defaults to full order quantity). Fills the cheapest matching sell order regardless of seller. To trade with a specific person, they must post a sell order and your price must match. Must be at Village Square.
+- buy_item: Buy from the marketplace. Fields: item, max_price, quantity (optional, defaults to full order quantity). Fills the cheapest matching sell order regardless of seller. To trade with a specific person, they must post a sell order and your price must match. Must be at ${HUB_LOCATION}.
 - cancel_order: Cancel your marketplace order. Fields: order_id.
 - send_message: Send a written message. Fields: to (first name), text.
 - give_coin: Give coin (payment, repayment, gift). Fields: to (first name), amount.
@@ -48,7 +50,7 @@ export function buildActionSchema(
   } else if (agent === getVillageElder(getAgentVillage(agent)) && hasConcerns) {
     schema += `\n- call_meeting: Call a village meeting for next dawn. Fields: agenda_type ("tax_change"|"marketplace_hours"|"banishment"|"general_rule"|"grant_tools"|"curfew"|"trade_restriction"|"repeal"), text (the agenda), target? (first name, for banishment/grant_tools).`;
   } else if (agent !== getVillageElder(getAgentVillage(agent)) && hasConcerns) {
-    schema += `\n- petition_meeting: Ask Otto to call a village meeting. Fields: text (what it should address).`;
+    schema += `\n- petition_meeting: Ask ${getDisplayName(getVillageElder(getAgentVillage(agent)) ?? "the elder")} to call a village meeting. Fields: text (what it should address).`;
   }
   return schema;
 }
@@ -202,7 +204,7 @@ export function resolveAction(
 
     case "post_order": {
       const side = action.side;
-      const item = action.item as ItemType | undefined;
+      const item = resolveItemInput(action.item);
       const quantity = action.quantity != null ? Number(action.quantity) : undefined;
       const price = action.price != null ? Number(action.price) : undefined;
 
@@ -292,7 +294,7 @@ export function resolveAction(
 
     // buy_item resolves immediately so the agent can eat in the same turn
     case "buy_item": {
-      const item = action.item as ItemType | undefined;
+      const item = resolveItemInput(action.item);
       const maxPrice = action.max_price != null ? Number(action.max_price) : undefined;
       if (!item || maxPrice == null) {
         return { ...action, result: "[Can't do that] buy_item requires item and max_price.", visible: false };
@@ -311,10 +313,10 @@ export function resolveAction(
         }
       }
       const currentLoc = state.agent_locations[agent];
-      // Allow buying at any "square"-type location (covers "Village Square", "Norddorf:Village Square", etc.)
-      const atSquare = currentLoc === "Village Square" || currentLoc === "Marketplace" || currentLoc.endsWith(":Village Square");
+      // Allow buying at any "square"-type location (covers "Zechenplatz", "Rabenstollen:Zechenplatz", etc.)
+      const atSquare = isBaseLocation(currentLoc, HUB_LOCATION) || currentLoc === "Marketplace";
       if (!atSquare) {
-        return { ...action, result: "[Can't do that] You must be at the Village Square to buy.", visible: false };
+        return { ...action, result: `[Can't do that] You must be at the ${HUB_LOCATION} to buy.`, visible: false };
       }
       const buyMkt = getAgentMarketplace(agent, state);
       const matches = buyMkt.orders
@@ -346,7 +348,7 @@ export function resolveAction(
     }
 
     case "eat": {
-      const item = action.item as ItemType | undefined;
+      const item = resolveItemInput(action.item);
       const qty = action.quantity ?? 1;
       if (!item) return { ...action, result: "[Can't eat] No item specified.", visible: false };
       const result = resolveEat(agent, item, qty, state);
@@ -439,7 +441,7 @@ export function resolveAction(
       if (state.agent_locations[targetAgent] !== agentLocation) {
         return { ...action, result: `[Can't do that] ${getDisplayName(targetAgent)} is not here.`, visible: false };
       }
-      const stealItem = action.item as ItemType | undefined;
+      const stealItem = resolveItemInput(action.item);
       if (!stealItem) {
         return { ...action, result: `[Can't do that] steal requires an item field.`, visible: false };
       }
@@ -533,12 +535,12 @@ export function resolveAction(
       // Replace any existing petition from this agent (one petition per agent at a time)
       state.pending_petitions = state.pending_petitions.filter(p => p.agent !== agent);
       state.pending_petitions.push({ agent, topic, tick: time.tick, villageId: getAgentVillage(agent) });
-      return { ...action, result: `${name} petitions Otto to call a village meeting: "${topic.substring(0, 80)}"`, visible: true };
+      return { ...action, result: `${name} petitions ${getDisplayName(getVillageElder(getAgentVillage(agent)) ?? "the elder")} to call a village meeting: "${topic.substring(0, 80)}"`, visible: true };
     }
 
     case "propose_rule": {
       if (agentLocation !== getVillageTownHall(getAgentVillage(agent))) {
-        return { ...action, result: `[Can't do that] propose_rule is only valid at the Town Hall during a meeting.`, visible: false };
+        return { ...action, result: `[Can't do that] propose_rule is only valid at the ${TOWNHALL_LOCATION} during a meeting.`, visible: false };
       }
       if (!state.pending_meetings[getAgentVillage(agent)]) {
         return { ...action, result: `[Can't do that] No meeting is in progress.`, visible: false };
@@ -551,7 +553,7 @@ export function resolveAction(
 
     case "propose_repeal": {
       if (agentLocation !== getVillageTownHall(getAgentVillage(agent))) {
-        return { ...action, result: `[Can't do that] propose_repeal is only valid at the Town Hall during a meeting.`, visible: false };
+        return { ...action, result: `[Can't do that] propose_repeal is only valid at the ${TOWNHALL_LOCATION} during a meeting.`, visible: false };
       }
       if (!state.pending_meetings[getAgentVillage(agent)]) {
         return { ...action, result: `[Can't do that] No meeting is in progress.`, visible: false };
@@ -570,7 +572,7 @@ export function resolveAction(
 
     case "vote": {
       if (agentLocation !== getVillageTownHall(getAgentVillage(agent))) {
-        return { ...action, result: `[Can't do that] vote is only valid at the Town Hall during a meeting.`, visible: false };
+        return { ...action, result: `[Can't do that] vote is only valid at the ${TOWNHALL_LOCATION} during a meeting.`, visible: false };
       }
       if (!state.pending_meetings[getAgentVillage(agent)]) {
         return { ...action, result: `[Can't do that] No vote is in progress.`, visible: false };

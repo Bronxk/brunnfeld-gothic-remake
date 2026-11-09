@@ -169,7 +169,7 @@ async function callOpenRouter(
       prompt,
       {
         "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "X-Title": "Brunnfeld Simulation",
+        "X-Title": "Schlackental Simulation",
       },
       options?.onChunk,
     );
@@ -320,7 +320,7 @@ export async function callClaudeWithPrefix(
           content,
           {
             "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-            "X-Title": "Brunnfeld Simulation",
+            "X-Title": "Schlackental Simulation",
           },
           options?.onChunk,
         );

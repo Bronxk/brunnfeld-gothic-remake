@@ -8,7 +8,7 @@ function getElderSet(): Set<string> {
   return new Set(getVillages().map(v => getVillageElder(v.id)).filter(Boolean) as string[]);
 }
 
-const FOOD_ITEMS = new Set(["bread", "meal", "meat", "vegetables", "eggs", "milk"]);
+const FOOD_ITEMS = new Set(["brot", "eintopf", "fleisch", "rueben", "eier", "milch"]);
 
 export function computeVillageConcerns(state: WorldState, currentTick: number): string[] {
   const concerns: string[] = [];

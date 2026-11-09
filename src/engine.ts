@@ -22,7 +22,7 @@ import { resolveMarketplace } from "./marketplace-resolver.js";
 import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
-import { isLocationOpen } from "./village-map.js";
+import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
 // ─── Agent descriptions for unknown acquaintances ────────────
 
@@ -121,12 +121,13 @@ function enforceOpeningHours(state: WorldState, time: SimTime): void {
       curfewIdx = law.value;
     }
   }
-  const CURFEW_EXEMPT = new Set(["Tavern", "Town Hall"]);
+  const TAVERN_LOCATION = "Schenke";
+  const CURFEW_EXEMPT = new Set([TAVERN_LOCATION, TOWNHALL_LOCATION]);
   for (const agent of getAgentNames()) {
     const loc = state.agent_locations[agent];
     const home = state.economics[agent]?.homeLocation;
     // Marketplace hours law
-    if (loc === "Village Square" && marketplaceCloseIdx != null) {
+    if (loc === HUB_LOCATION && marketplaceCloseIdx != null) {
       if (hourIdx >= marketplaceCloseIdx) {
         state.agent_locations[agent] = home;
       }
@@ -134,7 +135,7 @@ function enforceOpeningHours(state: WorldState, time: SimTime): void {
     }
     // Curfew law — send home unless at home, tavern, or town hall
     if (curfewIdx != null && hourIdx >= curfewIdx) {
-      if (loc !== home && !CURFEW_EXEMPT.has(loc) && !loc.endsWith(":Tavern") && !loc.endsWith(":Town Hall")) {
+      if (loc !== home && !CURFEW_EXEMPT.has(loc) && !isBaseLocation(loc, TAVERN_LOCATION) && !isBaseLocation(loc, TOWNHALL_LOCATION)) {
         state.agent_locations[agent] = home;
         feedbackToAgent(agent, state, `[Curfew] Village law requires you home by ${String(6 + curfewIdx).padStart(2, "0")}:00.`);
       }
@@ -171,8 +172,8 @@ function applyLawEffect(law: Law, state: WorldState, time: SimTime): void {
     case "banishment":
       if (law.target) {
         state.banned[law.target] = time.tick + 32;
-        state.agent_locations[law.target] = "Prison";
-        feedbackToAgent(law.target, state, `You have been banished by village law. You are confined to the Prison for 2 days.`);
+        state.agent_locations[law.target] = PRISON_LOCATION;
+        feedbackToAgent(law.target, state, `You have been banished by village law. You are confined to the ${PRISON_LOCATION} for 2 days.`);
         console.log(`  ⚖ ${getDisplayName(law.target ?? "")} banished until tick ${time.tick + 32}`);
       }
       break;
@@ -203,7 +204,7 @@ function applyLawEffect(law: Law, state: WorldState, time: SimTime): void {
   }
 }
 
-// ─── Village Bell — summon agents to Town Hall ───────────
+// ─── Village Bell — summon agents to the Vogtei ───────────
 
 function ringVillageBell(state: WorldState, time: SimTime, villageId: string): void {
   const townHall = getVillageTownHall(villageId);
@@ -476,8 +477,8 @@ export async function runTick(tick: number): Promise<void> {
       const bannedUntil = state.banned[agent];
       if (bannedUntil == null) continue;
       if (time.tick < bannedUntil) {
-        if (state.agent_locations[agent] !== "Prison") {
-          state.agent_locations[agent] = "Prison";
+        if (state.agent_locations[agent] !== PRISON_LOCATION) {
+          state.agent_locations[agent] = PRISON_LOCATION;
         }
       } else {
         delete state.banned[agent];
@@ -715,12 +716,12 @@ export async function runTick(tick: number): Promise<void> {
   // ── 8b. MARKETPLACE HINT ────────────────────────────────────
   const TRADE_WORDS = /\b(sell|buy|purchase|marketplace|post.?order|buy.?item|price|coins?)\b/i;
   for (const result of allResults) {
-    if (state.agent_locations[result.agent] !== "Village Square") continue;
+    if (state.agent_locations[result.agent] !== HUB_LOCATION) continue;
     const spokeAboutTrade = result.actions.some(a => a.type === "speak" && TRADE_WORDS.test(a.text ?? ""));
     if (!spokeAboutTrade) continue;
     const usedMarket = result.actions.some(a => a.type === "post_order" || a.type === "buy_item");
     if (usedMarket) continue;
-    feedbackToAgent(result.agent, state, `[Hint] You're at Village Square. Use post_order to list items for sale or buy_item to purchase from the board. Speaking about goods does not create a trade.`);
+    feedbackToAgent(result.agent, state, `[Hint] You're at ${HUB_LOCATION}. Use post_order to list items for sale or buy_item to purchase from the board. Speaking about goods does not create a trade.`);
   }
 
 
@@ -805,7 +806,7 @@ export async function runSimulation(startTick?: number, tickOnce = false): Promi
   const state = readWorldState();
   let tick = startTick ?? state.current_tick + 1;
 
-  console.log(`\nBrunnfeld — Medieval Village Economy Simulation`);
+  console.log(`\nSchlackental — Mining Colony Economy Simulation`);
   console.log(`Starting at tick ${tick} (${tickToTime(tick).timeLabel})\n`);
 
   while (true) {
