@@ -136,7 +136,7 @@ function HudBody({ player, seeOpen }: { player: PlayerView; seeOpen: boolean }) 
 
       <Collapse title="Was du siehst" icon="eye" open={see} onToggle={() => setSee((v) => !v)}>
         {player.perception
-          ? <div className="see">{player.perception}</div>
+          ? <div className="see">{player.perception.replace(/^REGEL:.*\n+/, "")}</div>
           : <div className="muted hud-empty">Wird geladen …</div>}
       </Collapse>
       <Collapse title="Tagebuch" icon="book" count={diary.length} open={book} onToggle={() => setBook((v) => !v)}>
