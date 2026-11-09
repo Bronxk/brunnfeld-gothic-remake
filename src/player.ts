@@ -31,7 +31,7 @@ import {
 import {
   createLocationContext, getLiveContext, type LocationContext,
 } from "./location-context.js";
-import { buildPerception, describeAgent } from "./agent-runner.js";
+import { buildPerception, describeAgent, getProducibleHere } from "./agent-runner.js";
 import { getSounds, getLastTickActions } from "./sounds.js";
 import { deliverMessages } from "./messages.js";
 import { feedbackToAgent } from "./inventory.js";
@@ -176,7 +176,7 @@ function viewOf(state: WorldState, tick: number, withPerception: boolean): Recor
   if (!p?.created || !eco) {
     return {
       created: false, name: "", skill: "none", location: null, body: null, wallet: 0,
-      inventory: [], tool: null, budgetLeft: 0, budget: ACTION_BUDGET,
+      inventory: [], tool: null, producible: [], budgetLeft: 0, budget: ACTION_BUDGET,
       ...(withPerception ? { perception: "" } : {}),
     };
   }
@@ -192,6 +192,8 @@ function viewOf(state: WorldState, tick: number, withPerception: boolean): Recor
     wallet: eco.wallet,
     inventory: eco.inventory.items,
     tool: eco.tool,
+    /** What produce can do right here (same data as the perception's "Hier kannst du herstellen"). */
+    producible: getProducibleHere(PLAYER_ID, state),
     budgetLeft: budgetLeft(p),
     budget: ACTION_BUDGET,
     tick,

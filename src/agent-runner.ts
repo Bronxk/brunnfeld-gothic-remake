@@ -208,20 +208,32 @@ function buildMarketboardLines(agent: AgentName, state: WorldState): string {
     .join("\n");
 }
 
-function getProducibleBlock(agent: AgentName, state: WorldState): string {
+/** What `agent` can produce at their current location (same data the "Hier kannst du herstellen" block lists). */
+export interface ProducibleHere {
+  item: string;
+  label: string;
+  /** Output summary, e.g. "3 Eisenerz". */
+  output: string;
+  ready: boolean;
+  /** Why it is not ready (German, without brackets); set when `ready` is false. */
+  reason?: string;
+}
+
+export function getProducibleHere(agent: AgentName, state: WorldState): ProducibleHere[] {
   const eco = state.economics[agent];
   const location = state.agent_locations[agent];
-  const lines: string[] = [];
+  const result: ProducibleHere[] = [];
 
   for (const [itemKey, recipe] of Object.entries(RECIPES)) {
     if (recipe.skill !== eco.skill) continue;
     const validLocations = MULTI_FARM_ITEMS[itemKey] ?? [recipe.location];
     if (!validLocations.includes(location)) continue;
 
-    const outputStr = Object.entries(recipe.output).map(([k, v]) => `${v} ${itemLabel(k)}`).join(", ");
+    const output = Object.entries(recipe.output).map(([k, v]) => `${v} ${itemLabel(k)}`).join(", ");
+    const base = { item: itemKey, label: itemLabel(itemKey), output };
 
     if (recipe.tool && (!eco.tool || eco.tool.durability <= 0)) {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [braucht Werkzeug — deins ist kaputt oder fehlt]`);
+      result.push({ ...base, ready: false, reason: "braucht Werkzeug — deins ist kaputt oder fehlt" });
       continue;
     }
 
@@ -231,13 +243,16 @@ function getProducibleBlock(agent: AgentName, state: WorldState): string {
       if (have < qty) missing.push(`${itemLabel(inputItem)} (brauchst ${qty}, hast ${have})`);
     }
 
-    if (missing.length === 0) {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [jetzt möglich]`);
-    } else {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [fehlt: ${missing.join(", ")}]`);
-    }
+    result.push(missing.length === 0
+      ? { ...base, ready: true }
+      : { ...base, ready: false, reason: `fehlt: ${missing.join(", ")}` });
   }
+  return result;
+}
 
+function getProducibleBlock(agent: AgentName, state: WorldState): string {
+  const lines = getProducibleHere(agent, state).map(p =>
+    `- produce "${p.item}" → ${p.output} [${p.ready ? "jetzt möglich" : p.reason}]`);
   if (lines.length === 0) return "";
   return `\nHier kannst du herstellen:\n${lines.join("\n")}`;
 }
