@@ -317,6 +317,8 @@ export function createPlayer(input: unknown): ApiResult {
     purgePlayer(state);
   }
   const carriedBudget = previous && previous.budgetTick === a.tick ? (previous.actionsUsed ?? 0) : 0;
+  // A world reset (npm run reset) while the server runs leaves no previous player to purge.
+  movedThisTick.clear();
 
   const chosen = skill as PlayerSkillChoice;
   const recipes = Object.values(RECIPES).filter(r => r.skill === chosen);
