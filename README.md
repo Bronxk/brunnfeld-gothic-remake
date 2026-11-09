@@ -37,9 +37,11 @@ The agents produce interesting economic behavior because two things collide: wha
 git clone https://github.com/Bronxk/brunnfeld-gothic-remake schlackental
 cd schlackental
 npm install
-cp .env.example .env    # add OPENROUTER_API_KEY, or leave blank to use Claude CLI
-npm start               # builds the viewer, streams live to http://localhost:3333
+cp .env.example .env    # set ANTHROPIC_API_KEY (or OPENROUTER_API_KEY); all blank = Claude Code CLI
+npm run dev             # builds the viewer, then serves http://localhost:3333
 ```
+
+Open the page and pick **Diese Welt starten** in the start dialog, or close it, set models and roles in the **Regie** tab first and press **Starten** there.
 
 Reset to tick 1 at any time:
 
@@ -1159,11 +1161,19 @@ With two or more colonies, every pair has a relation: **Frieden**, **Spannung** 
 
 ### Director Controls (Regie)
 
+In the viewer you can do all of this without curl:
+
+- **Regie tab** (gavel icon, right panel), simulation: start, pause, one tick, a tick budget with its estimated cost, and the tempo.
+- **Regie tab**, war: pick two colonies, then stir trouble, declare war, make peace, pay tribute or send a war party (size 1–8). Marching raiders are listed there and carry a red banner in 3D.
+- **Colonist panel** (click a colonist): change their craft, council seat, character note and LLM model.
+
+The same controls as routes:
+
 | Route | What it does |
 |---|---|
 | `GET/POST /api/agents/<id>/role` | Read or change a colonist's craft (`skill`, which also moves their workplace), council seat (`council`) and a free-text character note (`character`, stored in the profile under `## Regie-Notiz` and included in the prompt) |
 | `GET/POST /api/agents/models`, `/api/agents/<id>/model` | LLM tier per colonist (see Environment Variables) |
-| `GET /api/sim` | Simulation control status |
+| `GET /api/sim` | Simulation control status. `awaitingStart: true` means a fresh world waits for its first tick; `/resume` or `/step` start it |
 | `POST /api/sim/pause`, `/resume`, `/step` | Pause after the current tick, continue, or run exactly one tick while paused |
 | `POST /api/sim/budget` | `{ "ticks": 10 }` pauses automatically after 10 more ticks (`null` = no limit). Use it to cap spend |
 | `POST /api/sim/speed` | `{ "delayMs": 30000 }` adds a pause between ticks |
@@ -1191,6 +1201,7 @@ The web viewer at `http://localhost:5173` (dev) or `http://localhost:3333` (prod
 - **Right panel** — agent detail, Tauschbrett, economy charts, world events
 - **Activity drawer** — collapsible scene chronicle
 - **Economy strip** — always-visible wealth bar
+- **Start dialog** — before the first tick: start the world on disk, or generate a new one (1–5 colonies, 6–20 colonists per neighbour colony, with an estimated cost per tick)
 
 ### 3D view
 

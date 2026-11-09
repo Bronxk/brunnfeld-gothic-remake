@@ -10,3 +10,7 @@
    - A: committen, damit die Startwelt reproduzierbar ist *(Vorschlag)*
    - B: so lassen, Welt wird bei Bedarf neu generiert
 4. **Rollenwechsel** ändert Handwerk + Arbeitsort, aber nicht Tagesplan/Zuhause. Reicht das?
+5. **Haiku-Kolonisten ziehen kaum von selbst in den Krieg.** Im Testlauf (35 Kolonisten) hat nach der Kriegserklärung niemand `ueberfallen` gewählt; Kriegszüge kamen nur über die Regie.
+   - A: Rat ruft bei Kriegserklärung automatisch einen Kriegszug aus (3 Leute, danach alle ~8 Ticks einer, solange Krieg) *(Vorschlag, mehr Action)*
+   - B: so lassen, du schickst Kriegszüge selbst per Regie-Tab
+   - C: Kriegs-Hinweis im Prompt deutlich lauter machen, Entscheidung bleibt bei den LLMs (unsicher, ob Haiku dann anbeißt)

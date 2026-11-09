@@ -3,23 +3,29 @@
 Annahmen (ju hat nicht explizit gewählt):
 - 3D = Variante B (Diorama) als Standard + Folge-Kamera/Auto-Tour aus C. Zunächst als Umschalter, 2D bleibt Standard.
 - Welt = Schlackental (handgeschriebene 19) + 2 kleine Nachbarsiedlungen (Rabenstollen, Kehlhof), je ~8 Kolonisten.
-- Alter Spielstand gesichert unter `../brunnfeld-data-backup-20261109-2335`.
+- Alter Spielstand gesichert unter `../brunnfeld-data-backup-20261109-2335`, Testwelt der Nacht unter `../brunnfeld-data-test-20261110`.
 
-## Läuft / offen
-- [ ] Regie-UI: Rollen, Krieg/Provokation, Ereignisse, Pause/Budget im Viewer
-- [ ] Kurzer Echtlauf mit Kriegszügen + Kostenmessung
-- [ ] Frische Startwelt für ju (Seed 1109, pausiert starten)
-- [ ] README: 3D-Ansicht, Regie-UI
+## Offen (siehe fragen.md)
+- [ ] Deko-Grafiken der 2D-Karte fehlen (`viewer/public/assets/terrain/decos/…` nicht im Repo, Renderer warnt nur)
+- [ ] 3D-Chunk > 500 kB (three.js); lädt nur bei Klick auf 3D, ok für jetzt
+- [ ] 3D-Layout der Siedlungen ist eine Reihe, keine echte Talkarte
 
 ## Erledigt
 - [x] Modell pro Kolonist (API + Viewer)
-- [x] Claude-API-Backend mit Prompt-Caching
+- [x] Claude-API-Backend mit Prompt-Caching (Prefix pro Kolonist, gemessen ~11 % billiger)
 - [x] Mehrere Siedlungen: Generator behält die Schlackental-Besetzung, Nachbarn deutsch, Straßen im Dreieck
 - [x] Krieg: Spannung, Provokation, Kriegserklärung, Überfälle, Wache, Frieden/Tribut (`src/war.ts`)
 - [x] Kriegszug: Angreifer marschieren über die Straße, überfallen bei Ankunft, ziehen heim
-- [x] Rollen live setzen: Handwerk, Ratsmitglied, Charakter-Notiz (Backend)
-- [x] Sim-Steuerung: Pause, Einzelschritt, Tick-Budget, Tempo (Backend)
+- [x] Kriegszug per Regie schicken (`POST /api/war/raid`), Live-Test: Marsch → Kampf → Heimweg
+- [x] Fix: Appell-Glocke holt Angreifer nicht mehr aus dem Kriegszug
+- [x] Fix: Kolonisten teleportieren nicht mehr per Ortsname in fremde Siedlungen
+- [x] Rollen live setzen: Handwerk, Ratsmitglied, Charakter-Notiz (Backend + Viewer)
+- [x] Sim-Steuerung: Pause, Einzelschritt, Tick-Budget, Tempo (Backend + Viewer)
+- [x] Regie-Tab im Viewer: Sim, Krieg, Kriegszug; Start auch ohne Start-Dialog
+- [x] Start-Dialog: „Diese Welt starten“, Größe = aktuelle Welt, Kosten-Schätzung
 - [x] Integration: Routes in `server.ts`, SSE-Whitelist, Pause-Gate in `runSimulation`
 - [x] Review (Opus) für Krieg/Geldflüsse + Fixes
 - [x] 3D-Ansicht im echten Viewer (Diorama + Folge-Kamera + Auto-Tour)
-- [x] README: Krieg, Regie-Routen
+- [x] Echtlauf (35 Kolonisten, Haiku): stabil, ~7 ct/Tick, ~3–4 min/Tick
+- [x] Frische Startwelt (Seed 1109, Tick 0, 3 Siedlungen, 35 Kolonisten)
+- [x] README: Krieg, Regie-Routen, Regie-Tab, Start-Dialog, 3D-Ansicht
