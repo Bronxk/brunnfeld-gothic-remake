@@ -350,6 +350,7 @@ export function triggerMeeting(
   const villageAgents = getVillageAgents(villageId);
   if (teleport) {
     for (const a of villageAgents) {
+      if (state.war_marches?.[a]) continue; // away on a war march
       state.agent_locations[a] = townHall;
     }
   }

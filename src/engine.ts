@@ -251,7 +251,8 @@ function ringVillageBell(state: WorldState, time: SimTime, villageId: string): v
   for (const agent of villageAgents) {
     if (isAgentDead(state.body[agent])) continue;
     if (state.banned?.[agent] != null && time.tick < state.banned[agent]!) continue;
-    if (isRoadLocation(state.agent_locations[agent])) {
+    // On the road or on a war march (also while fighting in the enemy village): too far away for the bell.
+    if (isRoadLocation(state.agent_locations[agent]) || state.war_marches?.[agent]) {
       feedbackToAgent(agent, state,
         `Du hörst von weitem das schwache Läuten der Grubenglocke. Ein Appell findet statt, aber du bist zu weit weg, um teilzunehmen.`);
       continue;
