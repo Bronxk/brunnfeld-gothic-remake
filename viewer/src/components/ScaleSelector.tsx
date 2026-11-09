@@ -39,8 +39,11 @@ export default function ScaleSelector({ onWorldGenerated, onClose, canStartExist
   const existing = useVillageStore((s) => s.villages);
   const existingAgents = existing.reduce((n, v) => n + v.agentCount, 0);
 
+  // The world on disk wins over an old browser choice, so "Welt erzeugen" never shrinks it by surprise.
   const [numVillages, setNumVillages] = useState(() =>
-    readSaved("schlackental:numVillages", existing.length > 0 ? existing.length : 3));
+    existing.length > 0 ? existing.length : readSaved("schlackental:numVillages", 3));
+  // The village list can arrive after the dialog opened.
+  useEffect(() => { if (existing.length > 0) setNumVillages(existing.length); }, [existing.length]);
   const [neighbourAgents, setNeighbourAgents] = useState(() => readSaved("schlackental:neighbourAgents", 8));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
