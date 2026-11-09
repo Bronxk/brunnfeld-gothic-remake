@@ -5,7 +5,7 @@ import { createLocationContext, registerLiveContext, unregisterLiveContext } fro
 import { seedLocationContext, captureOffersForPlayer, playerSeedLines } from "./player.js";
 import { callClaudeWithPrefix } from "./llm.js";
 import { emitSSE } from "./events.js";
-import { readAgentProfile, readAgentMemory } from "./memory.js";
+import { readAgentDirective, readAgentMemory } from "./memory.js";
 import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall, getAgentModel } from "./world-registry.js";
 import { deliverMessages } from "./messages.js";
 import { warPerceptionLines } from "./war.js";
@@ -211,7 +211,10 @@ export async function* runAgentHarness(config: HarnessConfig): AsyncGenerator<vo
   const budget = budgetForAgent(agentId, worldState);
 
   let memory = "";
-  try { readAgentProfile(agentId); } catch { /* ok */ }
+  let directive = "";
+  try { directive = readAgentDirective(agentId); } catch (err) {
+    console.warn(`[harness] ${agentId}: character note unreadable: ${(err as Error).message}`);
+  }
   try { memory = readAgentMemory(agentId); } catch { /* ok */ }
 
   const executedActions: ResolvedAction[] = [];
@@ -229,7 +232,9 @@ export async function* runAgentHarness(config: HarnessConfig): AsyncGenerator<vo
   };
 
   const historyLines: string[] = [];
-  const seedContext = buildSeedContext(config, displayName);
+  // The observer's character note (Regie) belongs to the stable part of the prompt.
+  const seedContext = buildSeedContext(config, displayName)
+    + (directive ? `\n\n--- Charakter (Regie) ---\n${directive}` : "");
 
   // Build static prefix once — seed context + memory + tool descriptions.
   // Tools are computed once here; they rarely change mid-harness and the caching

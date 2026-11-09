@@ -7,6 +7,8 @@ import { readWorldState, writeWorldState } from "./memory.js";
 import { triggerEvent, triggerMeeting, runInterview } from "./god-mode.js";
 import { queueMessage } from "./messages.js";
 import { getPlayerView, getPlayerTools, createPlayer, performPlayerAction } from "./player.js";
+import { handleWarRoute } from "./routes-war.js";
+import { handleRegieRoute } from "./routes-regie.js";
 import type { AgentName } from "./types.js";
 import {
   reloadConfig, getVillages, getVillageElder, getAgentVillage, DEFAULT_VILLAGE_ID,
@@ -110,6 +112,11 @@ const server = createServer(async (req, res) => {
         "harness:tool":       (e) => send({ type: "harness:tool",       ...(e as object) }),
         "player:update":      (e) => send({ type: "player:update",      ...(e as object) }),
         "agent:model":        (e) => send({ type: "agent:model",        ...(e as object) }),
+        "agent:role":         (e) => send({ type: "agent:role",         ...(e as object) }),
+        "sim:control":        (e) => send({ type: "sim:control",        ...(e as object) }),
+        "war:update":         (e) => send({ type: "war:update",         ...(e as object) }),
+        "war:event":          (e) => send({ type: "war:event",          ...(e as object) }),
+        "war:raid":           (e) => send({ type: "war:raid",           ...(e as object) }),
       };
 
       for (const [evt, handler] of Object.entries(handlers)) {
@@ -160,6 +167,10 @@ const server = createServer(async (req, res) => {
       res.end(JSON.stringify(result.body));
       return;
     }
+
+    // ─── Director routes: war/diplomacy (routes-war.ts), roles + sim control + world (routes-regie.ts) ───
+    if (await handleWarRoute(req, res, path, headers)) return;
+    if (await handleRegieRoute(req, res, path, headers)) return;
 
     // ─── Per-colonist LLM model (world-registry: getAgentModel / setAgentModel) ───
     if (path === "/api/agents/models" && req.method === "GET") {
@@ -408,13 +419,16 @@ const server = createServer(async (req, res) => {
       const villages = Math.min(5, Math.max(1, Number(body["villages"] ?? 1)));
       const agentsPerVillage = Math.min(200, Math.max(7, Number(body["agentsPerVillage"] ?? 19)));
       const seed = body["seed"] ? String(body["seed"]) : String(Date.now());
+      // With several villages, village 1 is always the hand-written cast; the size applies to the
+      // generated neighbours (default 8 keeps the per-tick LLM cost moderate).
+      const neighbourAgents = Math.min(40, Math.max(4, Number(body["neighbourAgents"] ?? 8)));
 
       try {
         const { spawnSync } = await import("child_process");
         const result = spawnSync(
           process.execPath,
           ["--import", "tsx/esm", "src/generate-world.ts",
-           `--villages=${villages}`, `--agents=${agentsPerVillage}`, `--seed=${seed}`],
+           `--villages=${villages}`, `--agents=${agentsPerVillage}`, `--neighbour-agents=${neighbourAgents}`, `--seed=${seed}`],
           { cwd: process.cwd(), encoding: "utf-8", timeout: 60000 },
         );
         if (result.status !== 0) {

@@ -59,6 +59,11 @@ export function readWorldState(): WorldState {
   state.banned ??= {};
   state.tax_rate ??= 0.10;
   state.pending_petitions ??= [];
+  // Multi-village saves store the default village's market twice (`marketplace` and
+  // `marketplaces[default]`). Alias them so modules that still read `state.marketplace`
+  // (prices, concerns, economy tracker) see the live market instead of a stale copy.
+  const defaultMarket = state.marketplaces?.[DEFAULT_VILLAGE_ID];
+  if (defaultMarket) state.marketplace = defaultMarket;
   syncPlayer(state);
   return state;
 }

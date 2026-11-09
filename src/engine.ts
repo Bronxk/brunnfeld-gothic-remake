@@ -27,6 +27,7 @@ import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
 import { applyWarAgenda, tickDiplomacy, resolveWar } from "./war.js";
+import { gateBeforeTick } from "./sim-control.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
 // ─── Vote normalisation ──────────────────────────────────────
@@ -902,6 +903,9 @@ export async function runSimulation(startTick?: number, tickOnce = false): Promi
   console.log(`Starting at tick ${tick} (${tickToTime(tick).timeLabel})\n`);
 
   while (true) {
+    // Pause / single step / tick budget / delay from the viewer (sim-control.ts). Also clears
+    // pending role changes, which the tick below reads from disk.
+    if (!tickOnce) await gateBeforeTick(tick);
     await runTick(tick);
     if (tickOnce) break;
 
