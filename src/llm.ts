@@ -441,7 +441,7 @@ export async function callClaudeWithPrefix(
 
   if (usingAnthropicAPI()) return callAnthropic(staticPrefix, dynamicSuffix, options);
 
-  // Claude Code CLI — use --system for the prefix (gets cached by Claude Code itself)
+  // Claude Code CLI — pass the prefix as --system-prompt (gets cached by Claude Code itself)
   return callCLIWithSystem(staticPrefix, dynamicSuffix, options);
 }
 
@@ -458,7 +458,7 @@ async function callCLIWithSystem(
 
   return new Promise((resolve, reject) => {
     const args = [
-      "--system", systemPrompt,
+      "--system-prompt", systemPrompt,
       "--print", userPrompt,
       "--output-format", "stream-json",
       "--verbose",
