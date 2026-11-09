@@ -1,4 +1,5 @@
 import type { ActiveEvent, AgentName, ItemType, WorldState } from "./types.js";
+import { ITEM_LABELS } from "./types.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
 import { getAgentNames, getDisplayName, getVillageElder, getVillageTownHall, getAgentVillage, getVillageAgents, DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME } from "./world-registry.js";
 import { HUB_LOCATION, MERCHANT_CAMP_LOCATION } from "./village-map.js";
@@ -86,7 +87,7 @@ function applyBanditTheft(state: WorldState, time: { tick: number }): void {
 
       lastBanditTheftTick[agent] = time.tick;
       state.action_feedback[agent] ??= [];
-      state.action_feedback[agent]!.push(`Bandits stole ${stolen} ${target.type} from you!`);
+      state.action_feedback[agent]!.push(`Wegelagerer haben dir ${stolen} ${ITEM_LABELS[target.type] ?? target.type} gestohlen!`);
       break; // only one theft per tick total
     }
   }
@@ -105,25 +106,25 @@ function injectLocationEventFeedback(state: WorldState, time: { tick: number }):
       case "drought":
         for (const farm of FARM_LOCATIONS) {
           for (const a of agentsAt(farm)) {
-            feedbackToAgent(a, state, "The fields are parched — drought has cut yields in half. Consider finding other work until it passes.");
+            feedbackToAgent(a, state, "Die Felder sind ausgedörrt — die Dürre hat die Erträge halbiert. Such dir andere Arbeit, bis sie vorbei ist.");
           }
         }
         break;
       case "double_harvest":
         for (const farm of FARM_LOCATIONS) {
           for (const a of agentsAt(farm)) {
-            feedbackToAgent(a, state, "The fields are bursting with life! A miraculous double harvest — your yields are doubled today.");
+            feedbackToAgent(a, state, "Die Felder strotzen vor Leben! Eine Reiche Ernte — deine Erträge sind heute verdoppelt.");
           }
         }
         break;
       case "mine_collapse":
         for (const a of agentsAt(MINE_LOCATION)) {
-          feedbackToAgent(a, state, "The mine just collapsed around you! Get out immediately and find other work while it is shored up.");
+          feedbackToAgent(a, state, "Der Stollen ist gerade um dich herum eingebrochen! Raus hier, sofort, und such dir andere Arbeit, bis er abgestützt ist.");
         }
         break;
       case "caravan":
         for (const a of agentsAt(HUB_LOCATION)) {
-          feedbackToAgent(a, state, "A merchant caravan has arrived right here in the square! Cheap goods are available — spread the word.");
+          feedbackToAgent(a, state, `Ein Schmugglerzug ist gerade hier auf dem ${HUB_LOCATION} angekommen! Es gibt günstige Waren — sag es weiter.`);
         }
         break;
       // plague_rumor and bandit_threat already broadcast via queueMessage to all agents from trigger functions
@@ -158,7 +159,7 @@ export function tickGodModeEvents(state: WorldState, time: { tick: number }): vo
 export function triggerDrought(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "drought",
-    description: `A severe drought has struck ${DEFAULT_VILLAGE_NAME}. Farm yields are halved.`,
+    description: `Eine schwere Dürre hat das ${DEFAULT_VILLAGE_NAME} getroffen. Die Erträge der Felder sind halbiert.`,
     startTick: tick,
     endTick: tick + 48,
   };
@@ -166,7 +167,7 @@ export function triggerDrought(state: WorldState, tick: number): ActiveEvent {
 
   for (const a of FARMER_AGENTS) {
     const elder = getVillageElder(getAgentVillage(a));
-    if (elder) queueMessage(state, elder, a, "The fields are parched. The drought will halve our harvest for the next three days.", tick);
+    if (elder) queueMessage(state, elder, a, "Die Felder sind ausgedörrt. Die Dürre halbiert unsere Ernte für die nächsten drei Tage.", tick);
   }
   return ev;
 }
@@ -174,7 +175,7 @@ export function triggerDrought(state: WorldState, tick: number): ActiveEvent {
 export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "caravan",
-    description: "A merchant caravan has arrived with cheap goods for one day.",
+    description: "Ein Schmugglerzug ist über den Ziegenpfad ins Tal gekommen und verkauft einen Tag lang günstige Waren.",
     startTick: tick,
     endTick: tick + 16,
   };
@@ -222,7 +223,7 @@ export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
 
   // Notify all village agents about the caravan
   for (const a of getVillageAgents(elderVillageId)) {
-    if (a !== elder) feedbackToAgent(a, state, "A merchant caravan has set up camp near the village square! Cheap goods are available today.");
+    if (a !== elder) feedbackToAgent(a, state, `Ein Schmugglerzug hat am ${MERCHANT_CAMP_LOCATION} sein Lager aufgeschlagen, nahe beim ${HUB_LOCATION}! Heute gibt es günstige Waren.`);
   }
   return ev;
 }
@@ -230,7 +231,7 @@ export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
 export function triggerMineCollapse(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "mine_collapse",
-    description: "The mine has partially collapsed! Ore production is blocked for 2 days.",
+    description: "Stolleneinbruch! Der Erzstollen ist teilweise eingestürzt. Die Erzförderung ist 2 Tage lang blockiert.",
     startTick: tick,
     endTick: tick + 32,
   };
@@ -238,7 +239,7 @@ export function triggerMineCollapse(state: WorldState, tick: number): ActiveEven
 
   for (const miner of MINER_AGENTS) {
     const elder = getVillageElder(getAgentVillage(miner));
-    if (elder) queueMessage(state, elder, miner, "The mine has collapsed! Do not attempt to enter until it is shored up. No ore extraction for two days.", tick);
+    if (elder) queueMessage(state, elder, miner, "Der Stollen ist eingebrochen! Geh nicht hinein, bis er abgestützt ist. Zwei Tage lang wird kein Erz gefördert.", tick);
   }
   return ev;
 }
@@ -246,7 +247,7 @@ export function triggerMineCollapse(state: WorldState, tick: number): ActiveEven
 export function triggerDoubleHarvest(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "double_harvest",
-    description: "A miraculous double harvest — farm yields are doubled today!",
+    description: "Reiche Ernte! Die Erträge der Felder sind heute verdoppelt.",
     startTick: tick,
     endTick: tick + 16,
   };
@@ -254,7 +255,7 @@ export function triggerDoubleHarvest(state: WorldState, tick: number): ActiveEve
 
   for (const a of FARMER_AGENTS) {
     const elder = getVillageElder(getAgentVillage(a));
-    if (elder) queueMessage(state, elder, a, "God has blessed us with a bountiful harvest today! Your yields will be doubled.", tick);
+    if (elder) queueMessage(state, elder, a, "Der Herrgott hat uns heute eine reiche Ernte geschenkt! Deine Erträge werden verdoppelt.", tick);
   }
   return ev;
 }
@@ -262,7 +263,7 @@ export function triggerDoubleHarvest(state: WorldState, tick: number): ActiveEve
 export function triggerPlagueRumor(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "plague_rumor",
-    description: "Plague rumors spread through the colony. Demand for Arznei has surged.",
+    description: "Fiebergerücht in der Kolonie: Es heißt, das Grubenfieber breite sich aus. Die Nachfrage nach Arznei ist stark gestiegen.",
     startTick: tick,
     endTick: tick + 32,
   };
@@ -270,7 +271,7 @@ export function triggerPlagueRumor(state: WorldState, tick: number): ActiveEvent
 
   for (const agent of getAgentNames()) {
     const elder = getVillageElder(getAgentVillage(agent));
-    if (elder) queueMessage(state, elder, agent, "Word has reached the colony: plague spotted in a nearby town. Stock up on Arznei if you can.", tick);
+    if (elder) queueMessage(state, elder, agent, "In der Kolonie geht ein Gerücht um: Das Grubenfieber soll sich ausbreiten. Leg dir Arznei zurück, wenn du kannst.", tick);
   }
   return ev;
 }
@@ -278,7 +279,7 @@ export function triggerPlagueRumor(state: WorldState, tick: number): ActiveEvent
 export function triggerBanditThreat(state: WorldState, tick: number): ActiveEvent {
   const ev: ActiveEvent = {
     type: "bandit_threat",
-    description: "Bandits are reported nearby. There is a risk of theft for 2 days.",
+    description: "Wegelagerer am Ziegenpfad! Es wurden Räuber in der Nähe gemeldet. 2 Tage lang droht Diebstahl.",
     startTick: tick,
     endTick: tick + 32,
   };
@@ -286,7 +287,7 @@ export function triggerBanditThreat(state: WorldState, tick: number): ActiveEven
 
   for (const agent of getAgentNames()) {
     const elder = getVillageElder(getAgentVillage(agent));
-    if (elder) queueMessage(state, elder, agent, "Bandits have been spotted on the roads near ${DEFAULT_VILLAGE_NAME}. Keep your valuables safe.", tick);
+    if (elder) queueMessage(state, elder, agent, `Wegelagerer wurden auf dem Ziegenpfad nahe dem ${DEFAULT_VILLAGE_NAME} gesehen. Pass auf deine Wertsachen auf.`, tick);
   }
   return ev;
 }
@@ -298,10 +299,10 @@ export function isLocationBlockedByEvent(
   activeEvents: ActiveEvent[],
 ): string | null {
   if (loc === MINE_LOCATION && activeEvents.some(e => e.type === "mine_collapse")) {
-    return `[Can't go there] The mine has collapsed and is unsafe to enter. Wait until it is shored up.`;
+    return `[Dort geht's nicht hin] Der Erzstollen ist eingebrochen und zu gefährlich. Warte, bis er abgestützt ist.`;
   }
   if (loc === MERCHANT_CAMP_LOCATION && !activeEvents.some(e => e.type === "caravan")) {
-    return `[Can't go there] There is no merchant caravan at the camp right now.`;
+    return `[Dort geht's nicht hin] Am ${MERCHANT_CAMP_LOCATION} ist gerade kein Schmugglerzug.`;
   }
   return null;
 }
@@ -353,10 +354,10 @@ export function triggerMeeting(
     }
   }
   const elder = getVillageElder(villageId);
-  const elderName = elder ? getDisplayName(elder) : "The elder";
+  const elderName = elder ? getDisplayName(elder) : "Der Bergvogt";
   const noticeText = teleport
-    ? `${elderName} has called an emergency village meeting: "${description}". Everyone to the ${townHall} immediately!`
-    : `${elderName} has called a village meeting: "${description}". It will be held at ${townHall} in ${delay} hours. Attend if you wish to participate.`;
+    ? `${elderName} hat einen Not-Appell einberufen: „${description}". Alle sofort zum Treffpunkt: ${townHall}!`
+    : `${elderName} hat einen Appell einberufen: „${description}". Er findet in ${delay} Stunden statt, Treffpunkt: ${townHall}. Komm hin, wenn du mitreden willst.`;
   for (const a of villageAgents) feedbackToAgent(a, state, noticeText);
   console.log(`  🏛 [God Mode] Meeting scheduled for tick ${scheduledTick} (${delay} ticks from now).${teleport ? ` All ${villageId} agents teleported to ${townHall}.` : " No teleport — agents must walk."}`);
 }
@@ -375,16 +376,17 @@ export async function runInterview(
   const body = state.body[agent];
   const name = getDisplayName(agent);
 
-  const prompt = `You are ${name}, a villager in ${DEFAULT_VILLAGE_NAME}.
+  const SEASON_DE: Record<string, string> = { spring: "Frühling", summer: "Sommer", autumn: "Herbst", winter: "Winter" };
+  const prompt = `Du bist ${name}, ein Kolonist im Schlackental: einem abgelegenen Bergtal, in dem Häftlinge, Wachen und Siedler Eisenerz fördern. Ein Bergsturz hat den Kehlpass verschüttet, seitdem kommen keine Versorgungskarren mehr.
 ${profile}
 ${memory}
 ---
-Current situation: ${state.agent_locations[agent]}, wallet: ${eco.wallet} coin,
-hunger: ${body.hunger}/5, season: ${state.season} day ${state.day_of_season}/7.
-Active village events: ${state.active_events.map(e => e.description).join("; ") || "none"}
+Aktuelle Lage: ${state.agent_locations[agent]}, Geldbeutel: ${eco.wallet} Groschen,
+Hunger: ${body.hunger}/5, Jahreszeit: ${SEASON_DE[state.season] ?? state.season}, Tag ${state.day_of_season}/7.
+Aktuelle Ereignisse in der Kolonie: ${state.active_events.map(e => e.description).join("; ") || "keine"}
 
-A curious visitor asks you: "${question}"
-Answer in character as ${name} (2-4 sentences). Do not break character.`;
+Ein neugieriger Besucher fragt dich: „${question}"
+Antworte auf Deutsch, in der Rolle von ${name} (2–4 Sätze). Falle nicht aus der Rolle.`;
 
   await callClaude(prompt, {
     model: process.env.INTERVIEW_MODEL ?? "haiku",

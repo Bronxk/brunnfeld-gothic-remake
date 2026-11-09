@@ -18,7 +18,7 @@ export function computeVillageConcerns(state: WorldState, currentTick: number): 
   const brokenTools = alive.filter(a => state.economics[a].tool?.durability === 0);
   if (brokenTools.length >= 2) {
     const names = brokenTools.map(a => getDisplayName(a)).join(", ");
-    concerns.push(`[Village concern] ${brokenTools.length} villagers have broken tools and cannot produce: ${names}.`);
+    concerns.push(`[Sorge der Kolonie] ${brokenTools.length} Kolonisten haben kaputtes Werkzeug und können nichts herstellen: ${names}.`);
   }
 
   // ── Critical tools ────────────────────────────────────────
@@ -27,7 +27,7 @@ export function computeVillageConcerns(state: WorldState, currentTick: number): 
     return t && t.durability > 0 && t.durability <= 20;
   });
   if (criticalTools.length >= 3) {
-    concerns.push(`[Village concern] ${criticalTools.length} villagers have tools at ≤20% durability and will stop working soon.`);
+    concerns.push(`[Sorge der Kolonie] ${criticalTools.length} Kolonisten haben Werkzeug mit höchstens 20 % Zustand und müssen bald aufhören zu arbeiten.`);
   }
 
   // ── Hunger ───────────────────────────────────────────────
@@ -35,22 +35,22 @@ export function computeVillageConcerns(state: WorldState, currentTick: number): 
   const hungry = alive.filter(a => state.body[a].hunger >= 3);
   if (veryHungry.length >= 2) {
     const names = veryHungry.map(a => getDisplayName(a)).slice(0, 5).join(", ");
-    concerns.push(`[Village concern] ${veryHungry.length} villagers are dangerously hungry and risk starving: ${names}.`);
+    concerns.push(`[Sorge der Kolonie] ${veryHungry.length} Kolonisten hungern gefährlich und drohen zu verhungern: ${names}.`);
   } else if (hungry.length >= 3) {
-    concerns.push(`[Village concern] ${hungry.length} villagers are going hungry.`);
+    concerns.push(`[Sorge der Kolonie] ${hungry.length} Kolonisten haben Hunger.`);
   }
 
   // ── No food on market ────────────────────────────────────
   const foodOrders = state.marketplace.orders.filter(o => o.type === "sell" && FOOD_ITEMS.has(o.item) && o.quantity > 0);
   if (foodOrders.length === 0 && hungry.length >= 2) {
-    concerns.push(`[Village concern] No food is listed on the marketplace — ${hungry.length} hungry villagers have nowhere to buy.`);
+    concerns.push(`[Sorge der Kolonie] Auf dem Tauschbrett wird kein Essen angeboten — ${hungry.length} hungrige Kolonisten können nirgends kaufen.`);
   }
 
   // ── Poverty ──────────────────────────────────────────────
   const elders = getElderSet();
   const poor = alive.filter(a => !elders.has(a) && state.economics[a].wallet < 3);
   if (poor.length >= 3) {
-    concerns.push(`[Village concern] ${poor.length} villagers have fewer than 3 coin and cannot afford basic necessities.`);
+    concerns.push(`[Sorge der Kolonie] ${poor.length} Kolonisten haben weniger als 3 Groschen und können sich das Nötigste nicht leisten.`);
   }
 
   // ── Wealth concentration ─────────────────────────────────
@@ -61,7 +61,7 @@ export function computeVillageConcerns(state: WorldState, currentTick: number): 
     const richestWallet = state.economics[richest].wallet;
     const pct = Math.round((richestWallet / totalWealth) * 100);
     if (pct >= 30) {
-      concerns.push(`[Village concern] ${getDisplayName(richest)} holds ${pct}% of all village coin (${richestWallet}c of ${totalWealth}c total).`);
+      concerns.push(`[Sorge der Kolonie] ${getDisplayName(richest)} besitzt ${pct} % aller Groschen der Kolonie (${richestWallet} von ${totalWealth} Groschen).`);
     }
   }
 
@@ -72,13 +72,13 @@ export function computeVillageConcerns(state: WorldState, currentTick: number): 
     const theftLines = recentThefts.slice(-3).map(v =>
       `${getDisplayName(v.agent)}: ${v.action}`
     ).join("; ");
-    concerns.push(`[Village concern] Theft reported: ${theftLines}. Consider granting enforcement tools or calling a meeting.`);
+    concerns.push(`[Sorge der Kolonie] Diebstahl gemeldet: ${theftLines}. Erwäge, Befugnisse zum Strafen und Beschlagnahmen zu vergeben oder einen Appell einzuberufen.`);
   }
 
   // ── Recent petitions (past 1 in-game day = 16 ticks) ────
   const recentPetitions = (state.pending_petitions ?? []).filter(p => currentTick - p.tick <= 16);
   for (const p of recentPetitions) {
-    concerns.push(`[Petition] ${getDisplayName(p.agent)}: "${p.topic}"`);
+    concerns.push(`[Gesuch] ${getDisplayName(p.agent)}: „${p.topic}"`);
   }
 
   return concerns;

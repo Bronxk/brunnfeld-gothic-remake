@@ -1,6 +1,7 @@
 import type {
-  AgentName, AgentTurnResult, Law, ResolvedAction, SimTime, TickLog, WorldState,
+  AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WorldState,
 } from "./types.js";
+import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import { getAgentNames, getDisplayName, getCouncilMembers, getDescription, getVillages, getAgentVillage, getVillageAgents, getVillageElder, getVillageTownHall, isRoadLocation } from "./world-registry.js";
 import { emitSSE } from "./events.js";
 import { tickToTime, ticksPerDay, getHourIndex } from "./time.js";
@@ -28,29 +29,43 @@ import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL
 
 function describeAgent(agent: AgentName, observer: AgentName, state: WorldState): string {
   const knows = state.acquaintances[observer]?.includes(agent);
-  if (!knows) return `${getDescription(agent)} (unknown)`;
+  if (!knows) return `${getDescription(agent)} (unbekannt)`;
 
   const skill = state.economics[agent]?.skill;
   let label = (skill && skill !== "none")
-    ? `${getDisplayName(agent)} (${skill})`
+    ? `${getDisplayName(agent)} (${SKILL_LABELS[skill] ?? skill})`
     : getDisplayName(agent);
 
   const theftRecords = state.caughtStealing?.[agent];
   if (theftRecords && theftRecords.length > 0) {
     const latest = theftRecords[theftRecords.length - 1]!;
     const fromName = getDisplayName(latest.from);
-    label += ` (known thief — caught stealing ${latest.item} from ${fromName})`;
+    const itemLabel = ITEM_LABELS[latest.item as ItemType] ?? latest.item;
+    label += ` (bekannter Dieb — beim Stehlen von ${itemLabel} bei ${fromName} erwischt)`;
   }
   return label;
+}
+
+// ─── Vote normalisation ──────────────────────────────────────
+// Agents now answer in German; the vote tool contract stays "agree"|"disagree",
+// but ja/nein/dafür/dagegen must count as well.
+
+const AGREE_ANSWERS = new Set(["agree", "yes", "aye", "ja", "jawohl", "dafuer", "zustimmen", "zustimmung", "stimmezu", "einverstanden", "pro"]);
+
+function normalizeVoteSide(raw: unknown): "agree" | "disagree" {
+  const key = String(raw ?? "").trim().toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z]/g, "");
+  return AGREE_ANSWERS.has(key) ? "agree" : "disagree";
 }
 
 // ─── Weather table (cycles every 14 days) ────────────────────
 
 const WEATHER_TABLE: Record<string, string[]> = {
-  spring: ["Mild, 12°C, sunny", "Overcast, 10°C", "Light rain, 9°C", "Sunny, 14°C", "Windy, 11°C", "Clear, 13°C", "Cloudy, 10°C"],
-  summer: ["Hot, 24°C, sunny", "Warm, 22°C", "Humid, 20°C", "Thunder, 18°C", "Sunny, 25°C", "Hazy, 21°C", "Clear, 23°C"],
-  autumn: ["Cool, 8°C, foggy", "Windy, 7°C", "Rain, 6°C", "Overcast, 9°C", "Clear, 10°C", "Cold, 5°C", "Drizzle, 7°C"],
-  winter: ["Freezing, -2°C", "Snow, -4°C", "Bitter cold, -6°C", "Overcast, 0°C", "Ice, -3°C", "Blizzard, -8°C", "Grey, -1°C"],
+  spring: ["Mild, 12 °C, sonnig", "Bedeckt, 10 °C", "Leichter Regen, 9 °C", "Sonnig, 14 °C", "Windig, 11 °C", "Klar, 13 °C", "Wolkig, 10 °C"],
+  summer: ["Heiß, 24 °C, sonnig", "Warm, 22 °C", "Schwül, 20 °C", "Gewitter, 18 °C", "Sonnig, 25 °C", "Dunstig, 21 °C", "Klar, 23 °C"],
+  autumn: ["Kühl, 8 °C, neblig", "Windig, 7 °C", "Regen, 6 °C", "Bedeckt, 9 °C", "Klar, 10 °C", "Kalt, 5 °C", "Nieselregen, 7 °C"],
+  winter: ["Frost, -2 °C", "Schnee, -4 °C", "Bittere Kälte, -6 °C", "Bedeckt, 0 °C", "Eis, -3 °C", "Schneesturm, -8 °C", "Grau, -1 °C"],
 };
 
 function getWeather(state: WorldState, time: SimTime): string {
@@ -137,7 +152,7 @@ function enforceOpeningHours(state: WorldState, time: SimTime): void {
     if (curfewIdx != null && hourIdx >= curfewIdx) {
       if (loc !== home && !CURFEW_EXEMPT.has(loc) && !isBaseLocation(loc, TAVERN_LOCATION) && !isBaseLocation(loc, TOWNHALL_LOCATION)) {
         state.agent_locations[agent] = home;
-        feedbackToAgent(agent, state, `[Curfew] Village law requires you home by ${String(6 + curfewIdx).padStart(2, "0")}:00.`);
+        feedbackToAgent(agent, state, `[Sperrstunde] Per Ratsbeschluss musst du ab ${String(6 + curfewIdx).padStart(2, "0")}:00 Uhr zu Hause sein.`);
       }
       continue;
     }
@@ -173,7 +188,7 @@ function applyLawEffect(law: Law, state: WorldState, time: SimTime): void {
       if (law.target) {
         state.banned[law.target] = time.tick + 32;
         state.agent_locations[law.target] = PRISON_LOCATION;
-        feedbackToAgent(law.target, state, `You have been banished by village law. You are confined to the ${PRISON_LOCATION} for 2 days.`);
+        feedbackToAgent(law.target, state, `Per Ratsbeschluss wurdest du zur Karzerstrafe verurteilt. Du bist 2 Tage lang im ${PRISON_LOCATION} eingesperrt.`);
         console.log(`  ⚖ ${getDisplayName(law.target ?? "")} banished until tick ${time.tick + 32}`);
       }
       break;
@@ -215,17 +230,17 @@ function ringVillageBell(state: WorldState, time: SimTime, villageId: string): v
     if (state.banned?.[agent] != null && time.tick < state.banned[agent]!) continue;
     if (isRoadLocation(state.agent_locations[agent])) {
       feedbackToAgent(agent, state,
-        `You hear the faint toll of a village bell in the distance. A meeting is underway, but you are too far away to attend.`);
+        `Du hörst von weitem das schwache Läuten der Grubenglocke. Ein Appell findet statt, aber du bist zu weit weg, um teilzunehmen.`);
       continue;
     }
     if (state.agent_locations[agent] === townHall) {
       feedbackToAgent(agent, state,
-        `The village bell rings — the assembly begins.`);
+        `Die Grubenglocke läutet — der Appell beginnt.`);
       continue;
     }
     state.agent_locations[agent] = townHall;
     feedbackToAgent(agent, state,
-      `The village bell rings across the rooftops — the assembly is called to order. You make your way to ${townHall}.`);
+      `Die Grubenglocke läutet über die Dächer — der Appell wird eröffnet. Du gehst zum Treffpunkt: ${townHall}.`);
   }
 
   emitSSE("meeting:bell", { villageId, townHall });
@@ -246,7 +261,7 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
   console.log(`  🏛 [Quorum] [${villageId}] All locations: ${atHall}`);
   const councilPresent = attendees.filter(a => getCouncilMembers(villageId).includes(a));
   if (councilPresent.length < 3) {
-    const msg = `The village council meeting on "${mtg.description}" failed to convene — only ${councilPresent.length} council member(s) attended (need 3 of 5).`;
+    const msg = `[Beschlussfähigkeit] Der Appell zu „${mtg.description}" ist nicht zustande gekommen — nur ${councilPresent.length} Ratsmitglied(er) waren da (nötig: 3 von 5).`;
     for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, msg);
     emitSSE("meeting:quorum_fail", { description: mtg.description, attendeeCount: attendees.length, villageId });
     delete state.pending_meetings[villageId];
@@ -295,7 +310,7 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
 
   // 3. Extract first valid proposal
   const proposal = collectedProposals[0];
-  const proposalText = proposal?.text ?? `${mtg.description} (no specific rule proposed)`;
+  const proposalText = proposal?.text ?? `${mtg.description} (keine konkrete Regel vorgeschlagen)`;
   const proposalValue = proposal?.value;
 
   emitSSE("meeting:phase", { phase: "vote", proposal: proposalText });
@@ -317,9 +332,9 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
         emitSSE("agent:action", { agent: r.agent, actionType: action.type, text: action.text, result: action.result, location: townHall });
       }
       if (action.type === "vote") {
-        const side = action.side === "agree" ? "agree" : "disagree";
+        const side = normalizeVoteSide(action.side);
         emitSSE("meeting:vote", { agent: r.agent, side });
-        if (action.side === "agree") { agreeCount++; agreeVoters.push(r.agent); }
+        if (side === "agree") { agreeCount++; agreeVoters.push(r.agent); }
         else disagreeVoters.push(r.agent);
       }
     }
@@ -352,12 +367,12 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
     state.active_laws.push(law);
     applyLawEffect(law, state, time);
     lawText = proposalText;
-    const passMsg = `Village meeting result: "${proposalText}" PASSED (${agreeCount}/${PASS_THRESHOLD} agreed). New law recorded.`;
+    const passMsg = `Ergebnis des Appells: „${proposalText}" ANGENOMMEN (${agreeCount} dafür, nötig: ${PASS_THRESHOLD}). Neues Gesetz eingetragen.`;
     for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, passMsg);
     emitSSE("meeting:result", { passed: true, agreeCount, law });
     console.log(`  ✅ Law passed: "${proposalText}" (${agreeCount} agreed)`);
   } else {
-    const failMsg = `Village meeting result: "${proposalText}" FAILED (${agreeCount} agreed, needed ${PASS_THRESHOLD} of ${attendees.length}).`;
+    const failMsg = `Ergebnis des Appells: „${proposalText}" ABGELEHNT (${agreeCount} dafür, nötig: ${PASS_THRESHOLD} von ${attendees.length} Anwesenden).`;
     for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, failMsg);
     emitSSE("meeting:result", { passed: false, agreeCount });
     console.log(`  ❌ Vote failed: "${proposalText}" (${agreeCount}/${PASS_THRESHOLD})`);
@@ -416,7 +431,7 @@ export async function runTick(tick: number): Promise<void> {
         if (time.tick >= loan.dueTick && !isAgentDead(state.body[loan.debtor])) {
           const creditorName = getDisplayName(loan.creditor);
           const dueDay = Math.ceil(loan.dueTick / 16);
-          feedbackToAgent(loan.debtor, state, `You owe ${loan.amount} coin to ${creditorName} — it was due on day ${dueDay}.`);
+          feedbackToAgent(loan.debtor, state, `Du schuldest ${creditorName} ${loan.amount} Groschen — fällig war es an Tag ${dueDay}.`);
         }
       }
     }
@@ -425,8 +440,9 @@ export async function runTick(tick: number): Promise<void> {
       console.log(`  🌿 ${getSeasonDescription(time.season)}`);
     }
 
-    // Monday: tax collection by village elder (first council member per village)
-    if (time.dayOfWeek === "Monday") {
+    // Monday (Zehnt): collection by the Bergvogt (first council member per village).
+    // Tick 1 = Monday, so day 1, 8, 15, ... — independent of the localized weekday name.
+    if ((time.dayNumber - 1) % 7 === 0) {
       let taxTotal = 0;
       for (const village of getVillages()) {
         const elder = getCouncilMembers(village.id)[0];
@@ -482,7 +498,7 @@ export async function runTick(tick: number): Promise<void> {
         }
       } else {
         delete state.banned[agent];
-        feedbackToAgent(agent, state, "Your banishment has ended. You are free to return.");
+        feedbackToAgent(agent, state, "Deine Karzerstrafe ist vorbei. Du bist wieder frei.");
       }
     }
   }
@@ -500,10 +516,10 @@ export async function runTick(tick: number): Promise<void> {
       villageId: village.id,
       scheduledTick: nextMeetingTick,
       agendaType: "general_rule",
-      description: `${elderName} holds the village assembly`,
+      description: `${elderName} hält den Appell ab`,
       calledAtTick: time.tick,
     };
-    const noticeText = `${elderName} has called a village assembly. It will be held at ${townHall} in 5 hours.`;
+    const noticeText = `${elderName} hat einen Appell einberufen. Er findet in 5 Stunden statt, Treffpunkt: ${townHall}.`;
     for (const a of getVillageAgents(village.id)) feedbackToAgent(a, state, noticeText);
     console.log(`  🏛 [${village.id}] Assembly auto-scheduled for tick ${nextMeetingTick}`);
   }
@@ -513,7 +529,7 @@ export async function runTick(tick: number): Promise<void> {
     if (time.tick === mtg.scheduledTick - 1) {
       const townHall = getVillageTownHall(vid);
       for (const a of getVillageAgents(vid)) {
-        feedbackToAgent(a, state, `The village assembly begins next hour. The bell will ring at ${townHall}.`);
+        feedbackToAgent(a, state, `Der Appell beginnt in der nächsten Stunde. Die Grubenglocke läutet; Treffpunkt: ${townHall}.`);
       }
     }
   }
@@ -642,7 +658,7 @@ export async function runTick(tick: number): Promise<void> {
               agent, state, time, conversationSoFar, othersPresent, pendingMessages, sounds,
             );
             if (round > 0 && alreadyProducing.has(agent)) {
-              perception += "\n[Engine] You have already queued production this turn. Do not produce again.";
+              perception += "\n[Hinweis] Du hast diese Runde schon eine Herstellung vorgemerkt. Stelle nicht noch einmal her.";
             }
             roundPerceptions[agent] = perception;
           }
@@ -714,14 +730,15 @@ export async function runTick(tick: number): Promise<void> {
   checkStarvation(state, time);
 
   // ── 8b. MARKETPLACE HINT ────────────────────────────────────
-  const TRADE_WORDS = /\b(sell|buy|purchase|marketplace|post.?order|buy.?item|price|coins?)\b/i;
+  // Agents speak German now — match German trade vocabulary as well as the English words.
+  const TRADE_WORDS = /\b(sell|buy|purchase|marketplace|post.?order|buy.?item|price|coins?|\w*kauf\w*|verkauf\w*|tausch\w*|tauschbrett|preis\w*|groschen|angebot\w*|handel\w*)\b/i;
   for (const result of allResults) {
     if (state.agent_locations[result.agent] !== HUB_LOCATION) continue;
     const spokeAboutTrade = result.actions.some(a => a.type === "speak" && TRADE_WORDS.test(a.text ?? ""));
     if (!spokeAboutTrade) continue;
     const usedMarket = result.actions.some(a => a.type === "post_order" || a.type === "buy_item");
     if (usedMarket) continue;
-    feedbackToAgent(result.agent, state, `[Hint] You're at ${HUB_LOCATION}. Use post_order to list items for sale or buy_item to purchase from the board. Speaking about goods does not create a trade.`);
+    feedbackToAgent(result.agent, state, `[Hinweis] Du bist auf dem ${HUB_LOCATION}. Nutze post_order, um Waren am Tauschbrett anzubieten, oder buy_item, um dort zu kaufen. Darüber zu reden, schließt keinen Handel ab.`);
   }
 
 

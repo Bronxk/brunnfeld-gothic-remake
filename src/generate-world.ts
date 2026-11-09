@@ -416,20 +416,22 @@ function emptyMarketplace(): Marketplace {
 // ─── Profile / memory stubs ───────────────────────────────────
 
 function profileStub(displayName: string, skill: Skill, villageName: string, workLocation: string): string {
+  // Work location may carry a "Village:" prefix in multi-settlement worlds — show only the bare place name.
+  const place = workLocation.includes(":") ? workLocation.slice(workLocation.lastIndexOf(":") + 1) : workLocation;
   const SKILL_INTRO: Record<Skill, string> = {
-    bauer: `${displayName} is a bauer in ${villageName}, working the fields at ${workLocation}.\n\nA hardworking soul who knows the rhythm of the seasons, ${displayName} cares above all about a good harvest and fair prices at the market.`,
-    hirte: `${displayName} tends goats in ${villageName} at ${workLocation}.\n\nRaising animals is slow work but steady, and ${displayName} takes pride in the quality of the milch and fleisch the herd produces.`,
-    knappe: `${displayName} works the Erzstollen in ${villageName}.\n\nLife underground is dangerous and dark, but eisenerz and kohle feed the whole colony's tools and hearths, and ${displayName} knows the value of that.`,
-    holzfaeller: `${displayName} chops wood in the Köhlerwald near ${villageName}.\n\nBauholz and brennholz keep homes warm through winter; ${displayName} has a strong back and a steady axe.`,
-    mueller: `${displayName} runs the Mühle in ${villageName}.\n\nGerste into mehl — the Mühle is the hinge on which the whole colony turns, and ${displayName} knows it.`,
-    baecker: `${displayName} keeps the Backstube in ${villageName} running before anyone else is awake.\n\nFresh brot every morning is a simple gift, but ${displayName} takes genuine pride in it.`,
-    schmied: `${displayName} works the Schmiede in ${villageName}.\n\nWerkzeug is the lifeblood of every field hand, knappe, and holzfaeller here; ${displayName} is essential — and occasionally reminds people of it.`,
-    zimmermann: `${displayName} is the zimmermann in ${villageName}, working from ${workLocation}.\n\nHausrat, repairs, pit props — without skilled woodwork a colony falls apart, and ${displayName} keeps it together.`,
-    wirt: `${displayName} runs the Schenke in ${villageName}.\n\nBier and eintopf, gossip and warmth — the Schenke is where ${villageName} comes to breathe, and ${displayName} is at the center of it all.`,
-    bader: `${displayName} is the bader in ${villageName}.\n\nKraeuter and patience, calm hands and hard knowledge — ${displayName} tends the sick and hopes the fever rumors stay rumors.`,
-    naeherin: `${displayName} sews leinen into clothing in ${villageName}.\n\nA steady hand and an eye for fabric — ${displayName} is who the colony turns to when winter is coming and the old coat won't last.`,
-    haendler: `${displayName} is a traveling trader based in ${villageName}.\n\nBuying low, selling high, moving goods between places that need them — ${displayName} has a nose for opportunity.`,
-    none: `${displayName} lives in ${villageName}, doing whatever work comes along.\n\nNot tied to a single trade, ${displayName} gets by on adaptability and a willingness to help.`,
+    bauer: `${displayName} arbeitet als Feldarbeiter in ${villageName}, Arbeitsplatz: ${place}.\n\nHarte Arbeit auf steinigem Boden. ${displayName} kennt den Rhythmus der Jahreszeiten und sorgt sich vor allem um eine gute Ernte und faire Preise auf dem Tauschbrett, seit keine Versorgungskarren mehr durch den Kehlpass kommen.`,
+    hirte: `${displayName} hütet Ziegen in ${villageName}, Arbeitsplatz: ${place}.\n\nTierhaltung ist langsame, aber verlässliche Arbeit. ${displayName} ist stolz auf die Ziegenmilch und das Fleisch, die die Herde liefert.`,
+    knappe: `${displayName} arbeitet als Knappe im Erzstollen von ${villageName}.\n\nDas Leben unter Tage ist gefährlich und dunkel, aber Eisenerz und Kohle halten die Werkzeuge und Herde der ganzen Kolonie am Laufen. ${displayName} weiß, was das wert ist.`,
+    holzfaeller: `${displayName} fällt Holz im Köhlerwald bei ${villageName}.\n\nBauholz und Brennholz halten die Baracken durch den Winter warm; ${displayName} hat einen starken Rücken und eine ruhige Axt.`,
+    mueller: `${displayName} führt die Mühle in ${villageName}.\n\nAus Gerste wird Mehl — die Mühle ist der Angelpunkt der ganzen Kolonie, und ${displayName} weiß das.`,
+    baecker: `${displayName} hält die Backstube in ${villageName} am Laufen, bevor sonst jemand wach ist.\n\nFrisches Brot jeden Morgen ist ein schlichtes Geschenk, aber ${displayName} ist aufrichtig stolz darauf.`,
+    schmied: `${displayName} arbeitet in der Schmiede von ${villageName}.\n\nWerkzeug ist die Lebensader jedes Feldarbeiters, Knappen und Holzfällers hier; ${displayName} ist unverzichtbar — und erinnert gelegentlich daran.`,
+    zimmermann: `${displayName} ist Zimmermann in ${villageName}, Arbeitsplatz: ${place}.\n\nHausrat, Reparaturen, Grubenstempel — ohne gutes Holzhandwerk fällt eine Kolonie auseinander, und ${displayName} hält sie zusammen.`,
+    wirt: `${displayName} führt die Schenke in ${villageName}.\n\nDünnbier und Eintopf, Gerüchte und Wärme — in der Schenke atmet ${villageName} auf, und ${displayName} steht mittendrin.`,
+    bader: `${displayName} ist Bader in ${villageName}.\n\nKräuter und Geduld, ruhige Hände und hartes Wissen — ${displayName} versorgt die Kranken und hofft, dass die Fiebergerüchte Gerüchte bleiben.`,
+    naeherin: `${displayName} flickt und webt Leinen in ${villageName}.\n\nEine ruhige Hand und ein Auge für Stoff — zu ${displayName} geht die Kolonie, wenn der Winter naht und der alte Mantel nicht mehr hält.`,
+    haendler: `${displayName} ist Händler in ${villageName} und handelt mit allem, was das Tal hergibt.\n\nGünstig kaufen, teuer verkaufen, Waren dorthin bringen, wo sie fehlen — ${displayName} hat eine Nase für Gelegenheiten.`,
+    none: `${displayName} lebt in ${villageName} und nimmt jede Arbeit an, die Essen bringt.\n\nOhne festes Handwerk kommt ${displayName} durch Anpassungsfähigkeit und Hilfsbereitschaft über die Runden.`,
   };
   return `# ${displayName}\n\n${SKILL_INTRO[skill]}\n`;
 }
@@ -480,10 +482,10 @@ function buildDefaultWorldState(): WorldState {
 
   return {
     current_tick: 0,
-    current_time: "Simulation not started",
+    current_time: "Simulation nicht gestartet",
     season: "spring",
     day_of_season: 1,
-    weather: "Mild, 12°C, partly cloudy",
+    weather: "Mild, 12 °C, teils bewölkt",
     active_events: [],
 
     agent_locations: {
@@ -729,10 +731,10 @@ function buildGeneratedWorldState(config: WorldConfig, rng: () => number): World
 
   return {
     current_tick: 0,
-    current_time: "Simulation not started",
+    current_time: "Simulation nicht gestartet",
     season: "spring",
     day_of_season: 1,
-    weather: "Mild, 12°C, partly cloudy",
+    weather: "Mild, 12 °C, teils bewölkt",
     active_events: [],
     agent_locations,
     body: body as WorldState["body"],

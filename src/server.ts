@@ -231,7 +231,7 @@ const server = createServer(async (req, res) => {
     if (path === "/api/events/trigger-meeting" && req.method === "POST") {
       const body = await parseBody(req);
       const agendaType = body["agendaType"] as string;
-      const description = (body["description"] as string) ?? "Village assembly";
+      const description = (body["description"] as string) ?? "Appell";
       const target = body["target"] as string | undefined;
       const validTypes = ["tax_change", "marketplace_hours", "banishment", "general_rule"];
       headers["Content-Type"] = "application/json";
@@ -265,7 +265,7 @@ const server = createServer(async (req, res) => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("Interview error:", msg);
-        res.write(`\n[Interview failed: ${msg}]`);
+        res.write(`\n[Interview fehlgeschlagen: ${msg}]`);
       }
       res.end();
       return;
@@ -278,7 +278,7 @@ const server = createServer(async (req, res) => {
       const message = (body["message"] as string) ?? "";
       const state = readWorldState();
       const elder = getVillageElder(getAgentVillage(agentId)) ?? agentId;
-      queueMessage(state, elder as AgentName, agentId, `A villager whispered: "${message}"`, state.current_tick);
+      queueMessage(state, elder as AgentName, agentId, `Ein Kolonist hat dir zugeflüstert: „${message}"`, state.current_tick);
       writeWorldState(state);
       headers["Content-Type"] = "application/json";
       res.writeHead(200, headers);

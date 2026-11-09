@@ -19,10 +19,10 @@ const INITIAL_MEMORIES_DIR = join(DATA_DIR, "memory_initial");
 function initWorldState(): WorldState {
   return {
     current_tick: 0,
-    current_time: "Simulation not started",
+    current_time: "Simulation nicht gestartet",
     season: "spring",
     day_of_season: 1,
-    weather: "Mild, 12°C, partly cloudy",
+    weather: "Mild, 12 °C, teils bewölkt",
     active_events: [],
 
     agent_locations: {

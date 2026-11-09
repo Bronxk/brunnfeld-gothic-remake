@@ -453,7 +453,7 @@ export async function callClaudeJSON<T>(
   try {
     return JSON.parse(jsonStr) as T;
   } catch {
-    const retryPrompt = `The following was supposed to be valid JSON but isn't. Return ONLY the corrected JSON object, no markdown:\n\n${raw}`;
+    const retryPrompt = `Der folgende Text sollte gültiges JSON sein, ist es aber nicht. Gib NUR das korrigierte JSON-Objekt zurück, ohne Markdown:\n\n${raw}`;
     const retryRaw = await callClaude(retryPrompt, { model: options?.model });
 
     let retryStr = stripThinkTags(retryRaw).trim();
