@@ -44,7 +44,7 @@ export default function App() {
     <div className="app">
       {/* World config dialog: shown on fresh start (no ticks yet); can be dismissed and reopened via Ereignisse → Welt */}
       {needsWorldConfig && (
-        <ScaleSelector onWorldGenerated={() => setNeedsWorldConfig(false)} onClose={() => setNeedsWorldConfig(false)} />
+        <ScaleSelector canStartExisting onWorldGenerated={() => setNeedsWorldConfig(false)} onClose={() => setNeedsWorldConfig(false)} />
       )}
       {showCreation && <CharacterCreation />}
       <Toasts />
