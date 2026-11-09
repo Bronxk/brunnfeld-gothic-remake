@@ -169,6 +169,74 @@ Mattis↔Vroni, Grete↔Reinhart, Reinhart↔Bruder Anno.
 | double_harvest | Reiche Ernte |
 | plague_rumor | Fiebergerücht |
 
+## Prompt glossary (Stage 2 translation contract)
+
+Rules:
+- Address agents with **du** ("Du bist Brakel.", "Du hast Hunger."). Neutral, terse, no flowery prose.
+- Keep machine contracts in English: JSON keys (`actions`, `tool`, `args`, `item`, `qty`, `price`, …), action/tool
+  names (`move_to`, `post_order`, `buy_item`, `speak`, …), side values (`sell`/`buy`), ids. Only descriptions and
+  surrounding text become German.
+- Show items to readers with `ITEM_LABELS` (Brot, Rüben, …) and skills with `SKILL_LABELS`; inputs accept both via
+  `resolveItemId`. Example args in tool hints use the ID (`{"item": "brot"}`).
+- Feedback tags keep the square brackets (code checks `startsWith("[")`):
+
+| English tag | German tag |
+|---|---|
+| [Can't do that] | [Geht nicht] |
+| [Can't produce] | [Kann nicht herstellen] |
+| [Can't eat] | [Nicht essbar] |
+| [Can't hire] | [Kann nicht anheuern] |
+| [Can't afford] | [Zu teuer] |
+| [Can't seize] | [Kann nicht beschlagnahmen] |
+| [Can't go there] | [Dort geht's nicht hin] |
+| [Can't fine] | [Kann nicht strafen] |
+| [Can't speak] | [Kann nicht sprechen] |
+| [Can't post] | [Kann nicht anschlagen] |
+| [Can't move] | [Kann nicht gehen] |
+| [Can't negotiate] | [Kann nicht verhandeln] |
+| [Blocked by law] | [Verboten per Ratsbeschluss] |
+| [Barter failed] | [Tausch gescheitert] |
+| [Village concern] | [Sorge der Kolonie] |
+| [Petition] | [Gesuch] |
+| [Quorum] | [Beschlussfähigkeit] |
+| [Thought] | [Gedanke] |
+| [Negotiate] | [Verhandlung] |
+| [Deal] | [Handel] |
+| [Travelling] | [Unterwegs] |
+| [Arrived] | [Angekommen] |
+| [Spoke] | [Gesagt] |
+| [Planned] | [Geplant] |
+| [Hired] | [Angeheuert] |
+| [Not hired] | [Nicht angeheuert] |
+| [No match] | [Kein Angebot] |
+| [Hint] | [Hinweis] |
+| [Curfew] | [Sperrstunde] |
+| [URGENT] | [DRINGEND] |
+| [God Mode] | [Schicksal] |
+
+Perception vocabulary:
+
+| English | German |
+|---|---|
+| Spring / Summer / Autumn / Winter | Frühling / Sommer / Herbst / Winter |
+| Monday … Sunday | Montag … Sonntag |
+| Day 1/7 | Tag 1/7 |
+| Weather: Clear, 12°C | Wetter: Klar, 12 °C |
+| X is here. | X ist hier. |
+| (You're hungry.) | (Du hast Hunger.) |
+| Inventory | Inventar |
+| Wallet: 32 coin | Geldbeutel: 32 Groschen |
+| Tools: … durability | Werkzeug: … Zustand |
+| You can produce here | Hier kannst du herstellen |
+| [ready now] | [jetzt möglich] |
+| Marketplace board | Tauschbrett |
+| SELL / WANT | BIETE / SUCHE |
+| expires in N ticks | läuft ab in N Stunden |
+| Messages / From X | Nachrichten / Von X |
+| village craftspeople | Handwerker der Kolonie |
+| reserved | reserviert |
+| the miller from the Mill (unknown person) | die Müllerin aus der Mühle |
+
 ## Look (viewer, decided by design demo)
 
 Dark, sooty, warm: slate and coal greys, rust, lamp-amber light, parchment UI. No borrowed art from other games.
