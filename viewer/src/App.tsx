@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useSSE } from "./hooks/useSSE";
 import { useVillageStore } from "./store";
 import { useIsMobile } from "./theme";
@@ -16,8 +16,13 @@ import PlayerHUD from "./components/PlayerHUD";
 import CharacterCreation from "./components/CharacterCreation";
 import Toasts from "./components/Toasts";
 
+// The 3D view (three.js) is its own chunk, only fetched when somebody switches to 3D.
+const ThreeView = lazy(() => import("./three/ThreeView"));
+
 export default function App() {
   useSSE();
+  const viewMode = useVillageStore((s) => s.viewMode);
+  const [meetingView, setMeetingView] = useState(false);
   const activeMeeting = useVillageStore((s) => s.activeMeeting);
   const world = useVillageStore((s) => s.world);
   const spectating = useVillageStore((s) => s.spectating);
@@ -27,7 +32,10 @@ export default function App() {
   const [previewTownHall, setPreviewTownHall] = useState(false);
   const isMobile = useIsMobile();
 
-  const showTownHall = !!activeMeeting || previewTownHall;
+  const is3d = viewMode === "3d";
+  useEffect(() => { if (!activeMeeting) setMeetingView(false); }, [activeMeeting]);
+  // In 3D an Appell stays in the 3D scene until the user asks for the Vogtei view.
+  const showTownHall = is3d ? previewTownHall || (!!activeMeeting && meetingView) : !!activeMeeting || previewTownHall;
   // Character creation: until a human created a character, unless they chose "Nur zuschauen"
   // (then only the "Mitspielen" button in the top bar reopens it). The world config dialog goes first.
   const showCreation = !!world && world.player?.created !== true && !needsWorldConfig && (!spectating || creationForced);
@@ -48,19 +56,24 @@ export default function App() {
       <main className="main">
         <section className="mapwrap" aria-label="Karte des Schlackentals">
           <div className="mapfill" style={{ display: "flex", flexDirection: "column" }}>
-            <WorldMapView agentLocations={world?.agent_locations} />
+            {!is3d && <WorldMapView agentLocations={world?.agent_locations} />}
             <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
-              {showTownHall ? <TownHallView preview={!activeMeeting} /> : <VillageMap />}
+              {showTownHall ? <TownHallView preview={!activeMeeting} /> : is3d ? (
+                <Suspense fallback={<div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--ink2)" }}>3D wird geladen …</div>}>
+                  <ThreeView onOpenMeeting={() => setMeetingView(true)} />
+                </Suspense>
+              ) : <VillageMap />}
             </div>
           </div>
 
-          {/* Map tools (top-right): Vogtei preview toggle. */}
-          {!activeMeeting && (
+          {/* Map tools (top-right): Vogtei preview toggle. In 3D only as the way back from the Vogtei view. */}
+          {(is3d ? showTownHall : !activeMeeting) && (
             <div className="map-tools">
-              <button className="btn sm" onClick={() => setPreviewTownHall((v) => !v)} aria-pressed={previewTownHall}
-                title={previewTownHall ? "Zurück zur Karte der Kolonie" : "Blick in die Vogtei"}>
-                <Icon name={previewTownHall ? "back" : "gavel"} />
-                {previewTownHall ? "Zurück zur Kolonie" : "Vogtei"}
+              <button className="btn sm" onClick={() => { setPreviewTownHall((v) => (is3d ? false : !v)); if (is3d) setMeetingView(false); }}
+                aria-pressed={previewTownHall}
+                title={is3d ? "Zurück zur 3D-Ansicht" : previewTownHall ? "Zurück zur Karte der Kolonie" : "Blick in die Vogtei"}>
+                <Icon name={previewTownHall || is3d ? "back" : "gavel"} />
+                {is3d ? "Zurück zu 3D" : previewTownHall ? "Zurück zur Kolonie" : "Vogtei"}
               </button>
             </div>
           )}

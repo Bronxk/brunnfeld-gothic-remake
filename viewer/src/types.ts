@@ -160,7 +160,54 @@ export type SSEEvent =
   | { type: "meeting:quorum_fail"; description: string; attendeeCount: number }
   | { type: "harness:tool"; agent: AgentName; name: string; tool: string; summary: string }
   | { type: "agent:model"; agent: AgentName; model: string }
-  | ({ type: "player:update" } & PlayerView);
+  | ({ type: "player:update" } & PlayerView)
+  | ({ type: "war:update" } & WarUpdatePayload)
+  | ({ type: "war:raid" } & WarRaidPayload)
+  | ({ type: "war:event" } & Partial<WarLogEntry>);
+
+// ─── War between settlements (backend: GET /api/war, SSE war:update / war:raid / war:event) ───
+
+export type WarStance = "frieden" | "spannung" | "krieg";
+
+export interface WarRelation {
+  a: string;
+  b: string;
+  stance: WarStance;
+  tension: number;
+  since: number;
+}
+
+export interface WarLogEntry {
+  tick: number;
+  kind: string;
+  villages: [string, string];
+  text: string;
+  success?: boolean;
+}
+
+export interface WarState {
+  villages: { id: string; name: string }[];
+  relations: WarRelation[];
+  log: WarLogEntry[];
+}
+
+/** `war:update` carries one relation; tolerate it flat or nested (payload shape is not final). */
+export type WarUpdatePayload = Partial<WarRelation> & { relation?: WarRelation; relations?: WarRelation[] };
+
+export interface WarRaidPayload {
+  attacker: string;
+  target: string;
+  success: boolean;
+  loot?: unknown;
+  wounded?: unknown;
+  text?: string;
+}
+
+/** A raid as kept in the store (with a running id so views can tell new ones apart). */
+export interface WarRaidEvent extends WarRaidPayload {
+  id: number;
+  at: number;
+}
 
 // ─── LLM model per colonist (backend: GET /api/agents/models, POST /api/agents/<id>/model, SSE agent:model) ───
 

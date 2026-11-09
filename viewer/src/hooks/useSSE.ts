@@ -31,6 +31,8 @@ export function useSSE(): void {
 
     // Per-colonist LLM model choices (logs its own errors)
     void useVillageStore.getState().loadAgentModels();
+    // War relations between settlements (silently empty when the backend has no war support)
+    void useVillageStore.getState().loadWar();
 
     // 2. Load available tick IDs and seed the feed with recent history
     fetch("/api/ticks")

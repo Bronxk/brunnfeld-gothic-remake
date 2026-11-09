@@ -432,6 +432,14 @@ button.evc:disabled{cursor:default}
 .create-actions .btn.primary{flex:1 1 150px}
 .create-actions .btn{min-height:40px}
 .tb-play{flex:none}
+.tb-time{overflow:hidden}
+.tb-weather,.tb-tick{flex:none}
+.tb-time span{overflow:hidden;text-overflow:ellipsis}
+@media (max-width:1000px){.tb-pop{display:none}}
+.tb-view{display:inline-flex;flex:none;padding:2px;gap:2px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r)}
+.tb-view button{min-width:38px;padding:3px 9px;border-radius:calc(var(--r) - 2px);border:1px solid transparent;background:transparent;color:var(--ink2);font-size:12.5px;letter-spacing:.06em;cursor:pointer;transition:background .15s,color .15s}
+.tb-view button:hover{color:var(--ink)}
+.tb-view button[aria-pressed=true]{color:var(--accent);background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
 
 /* ===== human player: HUD card ===== */
 .hud{position:relative;width:324px;max-width:calc(100vw - 24px);padding:10px 12px 12px;background:linear-gradient(180deg,color-mix(in srgb,var(--panel2) 96%,transparent),color-mix(in srgb,var(--panel) 96%,transparent));border:1px solid var(--line2);border-radius:calc(var(--r) + 3px);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 8%,transparent),0 10px 34px rgba(0,0,0,.6),0 0 44px color-mix(in srgb,var(--accent) 10%,transparent);animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
@@ -567,7 +575,10 @@ button.evc:disabled{cursor:default}
   .logo-text{font-size:25px}
   .tb-tick{grid-column:2;grid-row:1}
   .tb-live{grid-column:3;grid-row:1}
-  .tb-time{grid-column:1/3;grid-row:2;font-size:13px}
+  .tb-time{grid-column:1;grid-row:2;font-size:13px}
+  .tb-time span{overflow:hidden;text-overflow:ellipsis}
+  .tb-view{grid-column:2;grid-row:2}
+  .tb-view button{min-width:34px;padding:2px 7px}
   .tb-weather{grid-column:3/4;grid-row:2;justify-self:end;font-size:13px}
   .tb-pop,.tb-spacer{display:none}
   .tb-events{grid-column:1/-1;grid-row:3;overflow-x:auto;scrollbar-width:none}

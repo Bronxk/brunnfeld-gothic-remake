@@ -6,6 +6,8 @@ export default function TimeHUD() {
   const world = useVillageStore((s) => s.world);
   const connected = useVillageStore((s) => s.connected);
   const openCreation = useVillageStore((s) => s.openCreation);
+  const viewMode = useVillageStore((s) => s.viewMode);
+  const setViewMode = useVillageStore((s) => s.setViewMode);
 
   const tick = world?.current_tick ?? 0;
   const season = world?.season ? SEASON_LABELS[world.season] : "";
@@ -51,6 +53,15 @@ export default function TimeHUD() {
       ) : null}
 
       <div className="tb-spacer" />
+
+      <div className="tb-view" role="group" aria-label="Ansicht">
+        {(["2d", "3d"] as const).map((m) => (
+          <button key={m} type="button" aria-pressed={viewMode === m} onClick={() => setViewMode(m)}
+            title={m === "2d" ? "Klassische 2D-Karte" : "3D-Ansicht der Kolonie"}>
+            {m.toUpperCase()}
+          </button>
+        ))}
+      </div>
 
       {world && world.player?.created !== true && (
         <button type="button" className="btn sm tb-play" onClick={openCreation} title="Eine eigene Figur ins Schlackental schicken">

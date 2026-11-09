@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier, WarRelation, WarLogEntry, WarRaidEvent, WarState } from "./types";
 import { itemLabel, gr } from "./types";
 
 export type { MeetingState } from "./types";
@@ -42,6 +42,40 @@ function saveSpectating(v: boolean): void {
   } catch (err) {
     console.warn("[viewer] localStorage unavailable (write)", err);
   }
+}
+
+export type MapView = "2d" | "3d";
+const VIEW_KEY = "schlackental.view";
+
+/** 2D is the default; the 3D choice is remembered. */
+function loadViewMode(): MapView {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === "3d" ? "3d" : "2d";
+  } catch (err) {
+    console.warn("[viewer] localStorage unavailable (read view mode)", err);
+    return "2d";
+  }
+}
+
+function saveViewMode(v: MapView): void {
+  try {
+    window.localStorage.setItem(VIEW_KEY, v);
+  } catch (err) {
+    console.warn("[viewer] localStorage unavailable (write view mode)", err);
+  }
+}
+
+let raidCounter = 0;
+
+/** Insert or replace one relation (keyed by the unordered village pair). */
+function mergeRelation(list: WarRelation[], r: WarRelation): WarRelation[] {
+  const same = (x: WarRelation) => (x.a === r.a && x.b === r.b) || (x.a === r.b && x.b === r.a);
+  return list.some(same) ? list.map((x) => (same(x) ? r : x)) : [...list, r];
+}
+
+function isRelation(r: unknown): r is WarRelation {
+  const x = r as Partial<WarRelation> | null;
+  return !!x && typeof x.a === "string" && typeof x.b === "string" && typeof x.stance === "string";
 }
 
 let toastCounter = 0;
@@ -304,6 +338,17 @@ interface VillageStore {
   pushToast: (text: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: number) => void;
 
+  // 2D / 3D map toggle
+  viewMode: MapView;
+  setViewMode: (v: MapView) => void;
+
+  // War between settlements (3D visuals; backend may be missing -> stays empty)
+  warRelations: WarRelation[];
+  warLog: WarLogEntry[];
+  /** Recent raids (newest last), for the 3D fire bursts and the auto-tour. */
+  warRaids: WarRaidEvent[];
+  loadWar: () => Promise<void>;
+
   // LLM model per colonist
   agentModels: AgentModelsInfo | null;
   loadAgentModels: () => Promise<void>;
@@ -410,6 +455,27 @@ export const useVillageStore = create<VillageStore>((set, get) => {
     setTimeout(() => get().dismissToast(id), tone === "good" ? 5000 : 7000);
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  viewMode: loadViewMode(),
+  setViewMode: (viewMode) => { saveViewMode(viewMode); set({ viewMode }); },
+
+  warRelations: [],
+  warLog: [],
+  warRaids: [],
+  loadWar: async () => {
+    try {
+      const res = await fetch("/api/war");
+      if (res.status === 404) return; // backend without war support
+      if (!res.ok) { console.warn(`[viewer] GET /api/war -> HTTP ${res.status}`); return; }
+      const data = (await res.json()) as Partial<WarState>;
+      set({
+        warRelations: Array.isArray(data.relations) ? data.relations.filter(isRelation) : [],
+        warLog: Array.isArray(data.log) ? data.log.slice(-40) : [],
+      });
+    } catch (err) {
+      console.warn("[viewer] loading /api/war failed", err);
+    }
+  },
 
   agentModels: null,
 
@@ -980,6 +1046,30 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       set((s) => s.agentModels
         ? { agentModels: { ...s.agentModels, models: { ...s.agentModels.models, [e.agent]: e.model } } }
         : {});
+      return;
+    }
+
+    if (e.type === "war:update") {
+      const cands: unknown[] = [e.relation, ...(Array.isArray(e.relations) ? e.relations : []), e];
+      const rels = cands.filter(isRelation);
+      if (rels.length === 0) { console.warn("[viewer] war:update without a usable relation", e); return; }
+      set((s) => ({ warRelations: rels.reduce((acc, r) => mergeRelation(acc, r), s.warRelations) }));
+      return;
+    }
+
+    if (e.type === "war:raid") {
+      const raid: WarRaidEvent = { ...e, id: raidCounter++, at: Date.now() };
+      set((s) => ({ warRaids: [...s.warRaids, raid].slice(-12) }));
+      return;
+    }
+
+    if (e.type === "war:event") {
+      if (!e.text) return;
+      const entry: WarLogEntry = {
+        tick: e.tick ?? get().currentTick, kind: e.kind ?? "event", villages: e.villages ?? ["", ""], text: e.text,
+        ...(e.success !== undefined ? { success: e.success } : {}),
+      };
+      set((s) => ({ warLog: [...s.warLog, entry].slice(-40) }));
       return;
     }
 
