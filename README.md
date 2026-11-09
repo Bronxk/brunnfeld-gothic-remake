@@ -1015,7 +1015,7 @@ NPCs that starve die for good. You don't: if your hunger sits at 5 for two conse
 
 All endpoints are on the same server as the viewer (`http://localhost:3333`). Errors are German strings.
 
-**`POST /api/player/create`** — body `{ "name": string, "skill": "bauer" | "knappe" | "holzfaeller" | "none", "force"?: boolean }` (`skill` defaults to `none`). If a character already exists you get `409` unless you pass `"force": true`, which replaces it (your orders and loans vanish).
+**`POST /api/player/create`** — body `{ "name": string, "skill": "bauer" | "knappe" | "holzfaeller" | "none", "force"?: boolean }` (`skill` defaults to `none`). If a character already exists you get `409` unless you pass `"force": true`, which replaces it (your orders and loans vanish; actions already used this hour stay used). Not possible while you sit in the Karzer.
 
 ```bash
 curl -X POST localhost:3333/api/player/create \
@@ -1086,7 +1086,7 @@ curl -X POST localhost:3333/api/player/action -H 'Content-Type: application/json
 }
 ```
 
-`text` is the German result string exactly as an NPC would receive it; `ok` is `false` when it starts with a failure tag such as `[Geht nicht]`. `player` is the updated view (without `perception`). Status codes: `200` done (also for in-world failures, see `ok`), `400` unknown/unavailable tool or bad body, `409` no character yet, `429` budget used up. `text` of player speech is clamped to one line of 240 characters because it ends up in NPC prompts.
+`text` is the German result string exactly as an NPC would receive it; `ok` is `false` when it starts with a failure tag such as `[Geht nicht]`. `player` is the updated view (without `perception`). Status codes: `200` done (also for in-world failures, see `ok`), `400` unknown/unavailable tool or bad body, `409` no character yet or you sit in the Karzer (only read-only tools work until released), `429` budget used up. `text` of player speech is clamped to one line of 240 characters because it ends up in NPC prompts.
 
 **SSE `player:update`** — `GET /stream` pushes `{ "type": "player:update", ...view }` (the same view as `GET /api/player`, without `perception`) after creation, after every action, and when the engine changes your state (new hour, soft death). The viewer uses it to keep your panel live.
 
