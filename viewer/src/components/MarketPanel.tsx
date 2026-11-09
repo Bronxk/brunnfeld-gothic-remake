@@ -1,420 +1,239 @@
-import { useState, useEffect, useRef } from "react";
-import { useVillageStore, AGENT_DISPLAY } from "../store";
-import type { ItemType } from "../types";
-import type { OrderFeedEntry } from "../store";
+import { Fragment, useState, useEffect, type KeyboardEvent } from "react";
+import { useVillageStore, AGENT_DISPLAY, type OrderFeedEntry } from "../store";
+import { ALL_ITEM_IDS, gr, itemLabel, type Order } from "../types";
+import Icon, { ItemIcon, type IconName } from "./Icon";
+import { Sparkline } from "./Charts";
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+type View = "preise" | "angebote" | "verlauf";
 
-const ITEM_DISPLAY: Record<string, string> = {
-  gerste: "Gerste", mehl: "Mehl", brot: "Brot", fleisch: "Fleisch", milch: "Ziegenmilch",
-  eier: "Eier", rueben: "Rüben", kraeuter: "Kräuter", arznei: "Arznei",
-  eisenerz: "Eisenerz", kohle: "Kohle", werkzeug: "Werkzeug",
-  bauholz: "Bauholz", brennholz: "Brennholz", hausrat: "Hausrat",
-  bier: "Dünnbier", eintopf: "Eintopf", leinen: "Leinen",
-};
+const VIEWS: { id: View; label: string }[] = [
+  { id: "preise", label: "Preise" },
+  { id: "angebote", label: "Aushang" },
+  { id: "verlauf", label: "Verlauf" },
+];
 
-const ITEM_EMOJI: Record<string, string> = {
-  gerste: "🌾", mehl: "⚪", brot: "🍞", fleisch: "🥩", milch: "🥛",
-  eier: "🥚", rueben: "🥦", kraeuter: "🌿", arznei: "💊",
-  eisenerz: "🪨", kohle: "⬛", werkzeug: "⚒",
-  bauholz: "🪵", brennholz: "🔥", hausrat: "🪑",
-  bier: "🍺", eintopf: "🍲", leinen: "🧵",
-};
+const SIDE_LABEL = { sell: "Biete", buy: "Suche" } as const;
+const SIDE_CLASS = { sell: "ang", buy: "ges" } as const;
 
-const ITEMS = Object.keys(ITEM_DISPLAY) as ItemType[];
-
-// ─── Sparkline ───────────────────────────────────────────────────────────────
-
-function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
-  if (data.length < 2) return <span style={{ color: "#4a3020", fontSize: 9 }}>—</span>;
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * (height - 2) - 1;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  const area = `0,${height} ${pts} ${width},${height}`;
-  return (
-    <svg width={width} height={height} style={{ display: "block", overflow: "visible" }}>
-      <polygon points={area} fill={`${color}28`} />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
-    </svg>
-  );
+function Side({ side }: { side: "sell" | "buy" | undefined }) {
+  if (!side) return <span className="side neutral">—</span>;
+  return <span className={`side ${SIDE_CLASS[side]}`}>{SIDE_LABEL[side]}</span>;
 }
 
-// ─── Trade Ticker Tape ───────────────────────────────────────────────────────
-
-function TradeTape() {
-  const orderFeed = useVillageStore((s) => s.orderFeed);
-  const fills = orderFeed.filter((e) => e.kind === "filled").slice(0, 30);
-
-  if (fills.length === 0) {
-    return (
-      <div style={{ height: 24, background: "#060300", borderBottom: "1px solid #3a2810", display: "flex", alignItems: "center", padding: "0 10px" }}>
-        <span style={{ fontSize: 9, color: "#4a3020", fontFamily: "monospace" }}>Awaiting market activity…</span>
-      </div>
-    );
-  }
-
-  const content = fills
-    .map((e) => `${ITEM_EMOJI[e.item!] ?? "📦"} ${e.quantity}×${e.item}@${e.price}¢`)
-    .join("   ·   ");
-
-  const duration = Math.max(12, content.length * 0.1);
-
-  return (
-    <div style={{ height: 24, background: "#060300", borderBottom: "1px solid #3a2810", overflow: "hidden", position: "relative", flexShrink: 0 }}>
-      <div
-        key={fills[0]?.id}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          height: "100%",
-          animation: `tradeTape ${duration}s linear infinite`,
-          whiteSpace: "nowrap",
-        }}
-      >
-        <span style={{ fontSize: 10, color: "#c89030", fontFamily: "monospace", paddingRight: 80 }}>{content}</span>
-        <span style={{ fontSize: 10, color: "#c89030", fontFamily: "monospace", paddingRight: 80 }}>{content}</span>
-      </div>
-      <style>{`@keyframes tradeTape { to { transform: translateX(-50%); } }`}</style>
-    </div>
-  );
-}
-
-// ─── Order Book (per-item accordion) ─────────────────────────────────────────
+// ─── Order book of one item (expanded price row) ─────────────────────────────
 
 function OrderBook({ item }: { item: string }) {
   const world = useVillageStore((s) => s.world);
   if (!world) return null;
 
-  const asks = world.marketplace.orders
-    .filter((o) => o.type === "sell" && o.item === item)
-    .sort((a, b) => a.price - b.price);
-  const bids = world.marketplace.orders
-    .filter((o) => o.type === "buy" && o.item === item)
-    .sort((a, b) => b.price - a.price);
+  const asks = world.marketplace.orders.filter((o) => o.type === "sell" && o.item === item).sort((a, b) => a.price - b.price);
+  const bids = world.marketplace.orders.filter((o) => o.type === "buy" && o.item === item).sort((a, b) => b.price - a.price);
+  const spread = asks[0] && bids[0] ? asks[0].price - bids[0].price : null;
+  const history = (world.marketplace.priceHistory[item] ?? []).slice(-50).map((h) => h.price);
 
-  const bestAsk = asks[0]?.price ?? null;
-  const bestBid = bids[0]?.price ?? null;
-  const spread = bestAsk != null && bestBid != null ? bestAsk - bestBid : null;
-
-  const maxQty = Math.max(...[...asks, ...bids].map((o) => o.quantity), 1);
-
-  const Row = ({ o, side }: { o: (typeof asks)[0]; side: "ask" | "bid" }) => {
-    const color = side === "ask" ? "#e88040" : "#40a8e0";
-    const pct = (o.quantity / maxQty) * 100;
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 0", fontSize: 10, fontFamily: "monospace", position: "relative" }}>
-        <div style={{
-          position: "absolute", right: 0, top: 0, bottom: 0,
-          width: `${pct}%`, background: `${color}18`, borderRadius: 2,
-          zIndex: 0,
-        }} />
-        <span style={{ color, width: 26, textAlign: "right", fontWeight: "bold", zIndex: 1 }}>{o.price}¢</span>
-        <span style={{ color: "#d0c080", width: 22, textAlign: "right", zIndex: 1 }}>{o.quantity}</span>
-        <span style={{ color: "#7a6040", flex: 1, zIndex: 1 }}>{AGENT_DISPLAY[o.agentId]}</span>
+  const list = (orders: Order[], empty: string) =>
+    orders.length === 0 ? <p>{empty}</p> : orders.slice(0, 5).map((o) => (
+      <div key={o.id} className="ln">
+        <span><b className="pr">{gr(o.price)}</b> · {o.quantity}×</span>
+        <span className="muted">{AGENT_DISPLAY[o.agentId]}</span>
       </div>
-    );
-  };
+    ));
 
   return (
-    <div style={{ padding: "6px 10px 8px", background: "rgba(6,4,0,0.8)", borderBottom: "1px solid #3a2810" }}>
-      <div style={{ display: "flex", gap: 16 }}>
-
-        {/* Asks */}
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 8, color: "#e88040", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Asks</div>
-          {asks.length === 0
-            ? <div style={{ fontSize: 9, color: "#4a3020" }}>no sell orders</div>
-            : asks.slice(0, 5).map((o) => <Row key={o.id} o={o} side="ask" />)
-          }
+    <>
+      <div className="book">
+        <div>
+          <h4>Angebote (Biete)</h4>
+          {list(asks, "Niemand bietet an.")}
         </div>
-
-        {/* Bids */}
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 8, color: "#40a8e0", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Bids</div>
-          {bids.length === 0
-            ? <div style={{ fontSize: 9, color: "#4a3020" }}>no buy orders</div>
-            : bids.slice(0, 5).map((o) => <Row key={o.id} o={o} side="bid" />)
-          }
+        <div>
+          <h4>Gesuche (Suche)</h4>
+          {list(bids, "Niemand sucht.")}
         </div>
       </div>
-
-      {spread != null && (
-        <div style={{ fontSize: 9, color: "#6a5030", marginTop: 4, textAlign: "center", fontFamily: "monospace" }}>
-          spread: {spread}¢
+      <div className="book" style={{ gridTemplateColumns: "1fr", paddingTop: 0 }}>
+        <div className="ln" style={{ color: "var(--ink2)" }}>
+          <span>{history.length > 1 ? `Verlauf (${history.length} Ticks)` : "Noch kein Verlauf"}</span>
+          {spread != null && <span>Spanne: {gr(spread)}</span>}
         </div>
-      )}
-    </div>
+        {history.length > 1 && (
+          <>
+            <Sparkline data={history} width={280} height={40} />
+            <div className="ln" style={{ color: "var(--ink2)" }}>
+              <span>Min <b className="down">{gr(Math.min(...history))}</b></span>
+              <span>Max <b className="up">{gr(Math.max(...history))}</b></span>
+              <span>Jetzt <b className="pr">{gr(history[history.length - 1]!)}</b></span>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
-// ─── Price Board ─────────────────────────────────────────────────────────────
+// ─── Price table ─────────────────────────────────────────────────────────────
 
-function PriceBoard() {
+function PriceTable() {
   const world = useVillageStore((s) => s.world);
   const priceFlashes = useVillageStore((s) => s.priceFlashes);
-  const [expandedItem, setExpandedItem] = useState<string | null>(null);
-  // Force re-render every second to clear stale flashes
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-
+  const [open, setOpen] = useState<string | null>(null);
   if (!world) return null;
 
   const prices = world.marketplace.priceIndex;
-  const now = Date.now();
+  const onKey = (e: KeyboardEvent, item: string) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setOpen((o) => (o === item ? null : item));
+    }
+  };
 
   return (
-    <div>
-      {ITEMS.map((item) => {
-        const price = prices[item] ?? 0;
-        const history = (world.marketplace.priceHistory[item] ?? []).slice(-20);
-        const priceData = history.map((h) => h.price);
-        const prev = priceData.length >= 2 ? priceData[priceData.length - 2] : null;
-        const trend = prev == null ? null : price > prev ? "up" : price < prev ? "down" : null;
-        const trendColor = trend === "up" ? "#e84030" : trend === "down" ? "#40d060" : "#6a5030";
-
-        const flash = priceFlashes[item];
-        const isFlashing = flash && (now - flash.at) < 1200;
-        const flashColor = flash?.dir === "up" ? "rgba(240,60,40,0.2)" : "rgba(60,200,80,0.2)";
-
-        const isOpen = expandedItem === item;
-
-        return (
-          <div key={item} style={{ borderBottom: "1px solid rgba(60,40,10,0.3)" }}>
-            <div
-              onClick={() => setExpandedItem(isOpen ? null : item)}
-              style={{
-                height: 28, display: "flex", alignItems: "center", gap: 5,
-                padding: "0 8px", cursor: "pointer", position: "relative",
-                background: isOpen ? "rgba(50,30,5,0.4)" : "transparent",
-              }}
-            >
-              {/* Flash overlay */}
-              {isFlashing && (
-                <div
-                  key={flash.at}
-                  style={{
-                    position: "absolute", inset: 0,
-                    background: flashColor,
-                    animation: "priceFlash 1.2s ease-out forwards",
-                    pointerEvents: "none",
-                  }}
-                />
+    <table className="ledger">
+      <thead>
+        <tr><th>Ware</th><th className="r">Preis</th><th>Verlauf</th><th className="r">Trend</th></tr>
+      </thead>
+      <tbody>
+        {ALL_ITEM_IDS.map((item) => {
+          const price = prices[item] ?? 0;
+          const data = (world.marketplace.priceHistory[item] ?? []).slice(-20).map((h) => h.price);
+          const prev = data.length >= 2 ? data[data.length - 2]! : null;
+          const dir = prev == null ? "flat" : price > prev ? "up" : price < prev ? "down" : "flat";
+          const flash = priceFlashes[item];
+          const isOpen = open === item;
+          return (
+            <Fragment key={item}>
+              <tr
+                key={flash ? flash.at : 0}
+                className={`prow${isOpen ? " open" : ""}${flash && Date.now() - flash.at < 1400 ? " flash" : ""}`}
+                tabIndex={0}
+                aria-expanded={isOpen}
+                title={isOpen ? "Einklappen" : "Aushänge und Verlauf anzeigen"}
+                onClick={() => setOpen(isOpen ? null : item)}
+                onKeyDown={(e) => onKey(e, item)}
+              >
+                <td><span className="it"><ItemIcon item={item} size={20} />{itemLabel(item)}</span></td>
+                <td className="r pr mono">{price > 0 ? gr(price) : "—"}</td>
+                <td><Sparkline data={data} width={56} height={18} color={dir === "up" ? "var(--bad)" : dir === "down" ? "var(--good)" : undefined} /></td>
+                <td className={`r ${dir}`}>{dir === "up" ? "▲" : dir === "down" ? "▼" : "–"}</td>
+              </tr>
+              {isOpen && (
+                <tr><td colSpan={4} style={{ padding: 0, background: "var(--panel2)" }}><OrderBook item={item} /></td></tr>
               )}
-
-              <span style={{ fontSize: 12, width: 16, flexShrink: 0, zIndex: 1 }}>{ITEM_EMOJI[item]}</span>
-              <span style={{
-                fontSize: 10, color: "#d0c080", width: 56, fontFamily: "monospace",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", zIndex: 1,
-              }}>
-                {ITEM_DISPLAY[item]}
-              </span>
-              <span style={{ fontSize: 11, color: "#f0d840", fontWeight: "bold", fontFamily: "monospace", width: 28, textAlign: "right", flexShrink: 0, zIndex: 1 }}>
-                {price}¢
-              </span>
-              <div style={{ flex: 1, zIndex: 1 }}>
-                <Sparkline data={priceData} width={60} height={18} color={trendColor} />
-              </div>
-              <span style={{ fontSize: 9, color: trendColor, width: 10, textAlign: "center", flexShrink: 0, fontWeight: "bold", zIndex: 1 }}>
-                {trend === "up" ? "↑" : trend === "down" ? "↓" : "—"}
-              </span>
-            </div>
-
-            {isOpen && <OrderBook item={item} />}
-          </div>
-        );
-      })}
-
-      <style>{`
-        @keyframes priceFlash {
-          0%   { opacity: 1; }
-          100% { opacity: 0; }
-        }
-      `}</style>
-    </div>
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
-// ─── Order Activity Feed ──────────────────────────────────────────────────────
+// ─── Open orders ("Aushang") ─────────────────────────────────────────────────
 
-const KIND_ICON: Record<OrderFeedEntry["kind"], string> = {
-  posted: "📋",
-  filled: "✓",
-  cancelled: "✗",
-  expired: "⏱",
-};
-
-const KIND_COLOR: Record<OrderFeedEntry["kind"], string> = {
-  posted: "#c8a060",
-  filled: "#40d060",
-  cancelled: "#a06040",
-  expired: "#705040",
-};
-
-const SIDE_COLOR: Record<string, string> = {
-  sell: "#e88040",
-  buy: "#40a8e0",
-};
-
-function ActivityRow({ entry }: { entry: OrderFeedEntry }) {
-  const color = KIND_COLOR[entry.kind];
-  const ago = Math.round((Date.now() - entry.at) / 1000);
-  const agoStr = ago < 60 ? `${ago}s` : `${Math.round(ago / 60)}m`;
-
-  return (
-    <div style={{
-      padding: "3px 10px",
-      borderBottom: "1px solid rgba(60,40,10,0.2)",
-      display: "flex", alignItems: "center", gap: 5,
-      fontFamily: "monospace", fontSize: 10,
-    }}>
-      <span style={{ color, width: 14, flexShrink: 0, fontWeight: "bold" }}>{KIND_ICON[entry.kind]}</span>
-
-      {entry.kind === "posted" && (
-        <>
-          <span style={{ color: SIDE_COLOR[entry.side ?? "sell"] ?? "#c8a060", width: 26, flexShrink: 0 }}>
-            {(entry.side ?? "—").toUpperCase()}
-          </span>
-          <span style={{ color: "#f0d840", flexShrink: 0 }}>{entry.quantity}×{entry.item}</span>
-          <span style={{ color: "#c8a060", flexShrink: 0 }}>@{entry.price}¢</span>
-          <span style={{ color: "#a09060", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{AGENT_DISPLAY[entry.agent]}</span>
-        </>
-      )}
-
-      {entry.kind === "filled" && (
-        <>
-          <span style={{ color: "#40d060", flexShrink: 0 }}>{entry.quantity}×{entry.item}</span>
-          <span style={{ color: "#c8a060", flexShrink: 0 }}>@{entry.price}¢</span>
-          <span style={{ color: "#a09060", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-            {AGENT_DISPLAY[entry.agent]}←{AGENT_DISPLAY[entry.counterAgent!]}
-          </span>
-        </>
-      )}
-
-      {(entry.kind === "cancelled" || entry.kind === "expired") && (
-        <>
-          <span style={{ color: "#705040", flexShrink: 0 }}>
-            {entry.kind === "expired" ? "XPIR" : "CNCL"}
-          </span>
-          {entry.item && <span style={{ color: "#906040", flexShrink: 0 }}>{entry.quantity}×{entry.item}</span>}
-          <span style={{ color: "#7a6040", flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{AGENT_DISPLAY[entry.agent]}</span>
-        </>
-      )}
-
-      <span style={{ color: "#4a3020", flexShrink: 0, width: 24, textAlign: "right" }}>{agoStr}</span>
-    </div>
-  );
-}
-
-// ─── Header ──────────────────────────────────────────────────────────────────
-
-function MarketHeader() {
-  const latestEconomy = useVillageStore((s) => s.latestEconomy);
+function OpenOrders() {
   const world = useVillageStore((s) => s.world);
-  const orderFeed = useVillageStore((s) => s.orderFeed);
-  const activeOrders = world?.marketplace.orders.length ?? 0;
+  const [side, setSide] = useState<"all" | "sell" | "buy">("all");
+  if (!world) return null;
+
+  const orders = world.marketplace.orders
+    .filter((o) => side === "all" || o.type === side)
+    .slice()
+    .sort((a, b) => itemLabel(a.item).localeCompare(itemLabel(b.item), "de") || a.price - b.price);
 
   return (
-    <div style={{
-      padding: "6px 10px", borderBottom: "1px solid #3a2810",
-      display: "flex", gap: 10, alignItems: "center", flexShrink: 0,
-      background: "rgba(6,4,0,0.6)",
-    }}>
-      <span style={{ fontSize: 11, color: "#c8a060", fontWeight: "bold", letterSpacing: 1, textTransform: "uppercase", fontFamily: "Georgia" }}>
-        Market
-      </span>
-      <span style={{ fontSize: 9, color: "#6a5030" }}>
-        {activeOrders} <span style={{ color: "#a09050" }}>orders</span>
-      </span>
-      {latestEconomy && (
-        <>
-          <span style={{ fontSize: 9, color: "#6a5030" }}>
-            GDP <span style={{ color: "#f0c040" }}>{latestEconomy.gdp}</span>
-          </span>
-          <span style={{ fontSize: 9, color: "#6a5030" }}>
-            Gini <span style={{ color: "#c0d080" }}>{latestEconomy.giniCoefficient.toFixed(2)}</span>
-          </span>
-          {latestEconomy.scarcityAlerts.length > 0 && (
-            <span style={{ fontSize: 9, color: "#ff6040", marginLeft: "auto" }}>
-              ⚠ {latestEconomy.scarcityAlerts.slice(0, 2).join(", ")}
-            </span>
-          )}
-        </>
+    <>
+      <div className="seg" role="group" aria-label="Aushang filtern">
+        {([["all", "Alle"], ["sell", "Biete"], ["buy", "Suche"]] as const).map(([k, l]) => (
+          <button key={k} className="chip" aria-pressed={side === k} onClick={() => setSide(k)}>{l}</button>
+        ))}
+      </div>
+      {orders.length === 0 ? (
+        <div className="empty"><Icon name="list" /><span>Am Tauschbrett hängt nichts.</span><small>Neue Angebote erscheinen hier.</small></div>
+      ) : (
+        <table className="ledger">
+          <thead><tr><th>Art</th><th>Ware</th><th className="r">Menge</th><th className="r">Preis</th></tr></thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.id} title={`${AGENT_DISPLAY[o.agentId]} · läuft ab in ${Math.max(0, o.expiresAtTick - world.current_tick)} Stunden`}>
+                <td><Side side={o.type} /></td>
+                <td><span className="it"><ItemIcon item={o.item} size={20} />{itemLabel(o.item)}</span><div className="muted" style={{ fontSize: 12 }}>{AGENT_DISPLAY[o.agentId]}</div></td>
+                <td className="r mono">{o.quantity}×</td>
+                <td className="r pr mono">{gr(o.price)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
-      <span style={{ fontSize: 9, color: "#4a3020", marginLeft: "auto" }}>
-        {orderFeed.length > 0 ? `${orderFeed.length} events` : ""}
-      </span>
-    </div>
+    </>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Activity ("Verlauf") ────────────────────────────────────────────────────
+
+const KIND_ICON: Record<OrderFeedEntry["kind"], IconName> = {
+  posted: "list", filled: "swap", cancelled: "x", expired: "hourglass",
+};
+
+function ago(at: number, now: number): string {
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  if (s < 60) return `vor ${s} s`;
+  if (s < 3600) return `vor ${Math.round(s / 60)} min`;
+  return `vor ${Math.round(s / 3600)} h`;
+}
+
+function Activity() {
+  const orderFeed = useVillageStore((s) => s.orderFeed);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (orderFeed.length === 0) {
+    return <div className="empty"><Icon name="swap" /><span>Noch keine Geschäfte.</span><small>Sobald am Tauschbrett gehandelt wird, steht es hier.</small></div>;
+  }
+  return (
+    <ul className="fills" aria-live="polite">
+      {orderFeed.slice(0, 60).map((e) => (
+        <li key={e.id} className={`fill ${e.kind}`}>
+          <Icon name={KIND_ICON[e.kind]} />
+          <span className="tx">
+            {e.kind === "posted" && <><Side side={e.side} /> {e.quantity}× {itemLabel(e.item)} für {gr(e.price ?? 0)} · {AGENT_DISPLAY[e.agent]}</>}
+            {e.kind === "filled" && <>{e.quantity}× {itemLabel(e.item)} für {gr(e.price ?? 0)} · {AGENT_DISPLAY[e.agent]} von {AGENT_DISPLAY[e.counterAgent ?? ""]}</>}
+            {e.kind === "cancelled" && <>Zurückgezogen: {e.quantity}× {itemLabel(e.item)} · {AGENT_DISPLAY[e.agent]}</>}
+            {e.kind === "expired" && <>Abgelaufen: {e.quantity}× {itemLabel(e.item)} · {AGENT_DISPLAY[e.agent]}</>}
+          </span>
+          <time>{ago(e.at, now)}</time>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
 
 export default function MarketPanel() {
   const world = useVillageStore((s) => s.world);
-  const orderFeed = useVillageStore((s) => s.orderFeed);
-  const activityRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll activity feed to top on new entry
-  useEffect(() => {
-    if (activityRef.current) activityRef.current.scrollTop = 0;
-  }, [orderFeed[0]?.id]);
+  const [view, setView] = useState<View>("preise");
 
   if (!world) {
-    return (
-      <div style={{
-        background: "rgba(12,8,3,0.95)", border: "1px solid #4a3010",
-        borderRadius: 6, height: "100%", display: "flex", alignItems: "center",
-        justifyContent: "center", color: "#4a3020", fontFamily: "Georgia", fontSize: 12,
-      }}>
-        Loading market…
-      </div>
-    );
+    return <div className="empty"><Icon name="hourglass" /><span>Tauschbrett wird geladen …</span></div>;
   }
+  const orderCount = world.marketplace.orders.length;
 
   return (
-    <div style={{
-      background: "rgba(8,5,0,0.98)", border: "1px solid #4a3010",
-      borderRadius: 6, height: "100%",
-      display: "flex", flexDirection: "column", overflow: "hidden",
-    }}>
-      <MarketHeader />
-      <TradeTape />
-
-      {/* Price board — fixed section with internal scroll */}
-      <div style={{ maxHeight: 260, overflowY: "auto", flexShrink: 0, borderBottom: "1px solid #3a2810" }}>
-        <PriceBoard />
+    <div>
+      <div className="sec-h">
+        <span>Tauschbrett</span>
+        <small>{orderCount} {orderCount === 1 ? "Aushang" : "Aushänge"} · Zechenplatz</small>
       </div>
-
-      {/* Activity feed — fills remaining space */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-        <div style={{
-          padding: "4px 10px", borderBottom: "1px solid rgba(60,40,10,0.25)",
-          fontSize: 9, color: "#6a5030", textTransform: "uppercase", letterSpacing: 1,
-          flexShrink: 0, fontFamily: "monospace",
-          display: "flex", justifyContent: "space-between",
-        }}>
-          <span>Order Activity</span>
-          <span style={{ color: "#4a3020" }}>live</span>
-        </div>
-
-        <div ref={activityRef} style={{ flex: 1, overflowY: "auto" }}>
-          {orderFeed.length === 0 ? (
-            <div style={{ padding: 16, textAlign: "center", color: "#4a3020", fontSize: 11, fontFamily: "Georgia" }}>
-              Awaiting market events…
-            </div>
-          ) : (
-            orderFeed.map((entry) => <ActivityRow key={entry.id} entry={entry} />)
-          )}
-        </div>
+      <div className="seg" role="group" aria-label="Ansicht">
+        {VIEWS.map((v) => (
+          <button key={v.id} className="chip" aria-pressed={view === v.id} onClick={() => setView(v.id)}>{v.label}</button>
+        ))}
       </div>
+      {view === "preise" && <PriceTable />}
+      {view === "angebote" && <OpenOrders />}
+      {view === "verlauf" && <Activity />}
     </div>
   );
 }

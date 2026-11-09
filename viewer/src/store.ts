@@ -1,5 +1,17 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade } from "./types";
+import { itemLabel, gr } from "./types";
+
+export type { MeetingState } from "./types";
+
+/** German feed line for a completed trade (shared by tick-log replay and live SSE). */
+function tradeText(buyer: AgentName, seller: AgentName, item: string, quantity: number, total: number): string {
+  return `${formatAgentName(buyer)} kauft ${quantity}× ${itemLabel(item)} von ${formatAgentName(seller)} für ${gr(total)}`;
+}
+
+function productionText(agent: AgentName, item: string, qty: number): string {
+  return `${formatAgentName(agent)} stellt ${qty}× ${itemLabel(item)} her`;
+}
 
 export interface AgentAnimation {
   agent: AgentName;
@@ -15,10 +27,35 @@ const AGENT_DISPLAY_BASE: Record<string, string> = {
   grete: "Grete", walburga: "Walburga", jost: "Jost",
   reinhart: "Vogt Reinhart", bruder_anno: "Bruder Anno",
   mattis: "Mattis", vroni: "Vroni", wendel: "Wendel",
-  minna: "Minna", gisbert: "Gisbert",
+  minna: "Minna", gisbert: "Gisbert", player: "Der Neue",
 };
 
 /** Format an agent ID as a display name (fallback for dynamically generated agents). */
+/**
+ * Backend speak results look like `Brakel sagt: "Hallo"` (tools.ts); the feed wants only the spoken words.
+ * Keep in sync with tools.ts / TownHallView.
+ */
+export function speechText(raw: string): string {
+  const m = raw.match(/^[^:"]*?\b(?:sagt|says)\b[^:"]*:\s*"([\s\S]*)"\s*$/);
+  return (m ? m[1]! : raw).trim();
+}
+
+/** Backend thoughts are prefixed with `[Gedanke] ` (or `[Thought] ` in older logs). */
+export function thoughtText(raw: string): string {
+  return raw.replace(/^\s*\[(?:Gedanke|Thought)\]\s*/, "").trim();
+}
+
+/** True when the placeholder player agent should be shown: only once a human created the character. */
+export function playerVisible(world: Pick<WorldState, "player"> | null | undefined): boolean {
+  return world?.player?.created === true;
+}
+
+/** Colonist ids (economics keys) without the not-yet-created placeholder player. */
+export function colonistIds(world: WorldState): AgentName[] {
+  const showPlayer = playerVisible(world);
+  return (Object.keys(world.economics) as AgentName[]).filter((a) => a !== "player" || showPlayer);
+}
+
 export function formatAgentName(id: string): string {
   return AGENT_DISPLAY_BASE[id] ?? id.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
@@ -98,7 +135,7 @@ export function tickLogToFeed(log: TickLogRaw): FeedEntry[] {
             tick: log.tick,
             agent: agentTurn.agent,
             type: isSpeak ? "speak" : isMove ? "move" : "do",
-            text: action.result,
+            text: isSpeak ? speechText(action.result) : action.result,
             location,
           });
         }
@@ -112,7 +149,7 @@ export function tickLogToFeed(log: TickLogRaw): FeedEntry[] {
       tick: log.tick,
       agent: trade.buyer,
       type: "trade",
-      text: `${formatAgentName(trade.buyer)} bought ${trade.quantity}× ${trade.item} from ${formatAgentName(trade.seller)} for ${trade.total} coin`,
+      text: tradeText(trade.buyer, trade.seller, trade.item, trade.quantity, trade.total),
     });
   }
 
@@ -122,7 +159,7 @@ export function tickLogToFeed(log: TickLogRaw): FeedEntry[] {
       tick: log.tick,
       agent: prod.agent,
       type: "production",
-      text: `${formatAgentName(prod.agent)} produced ${prod.qty}× ${prod.item}`,
+      text: productionText(prod.agent, prod.item, prod.qty),
     });
   }
 
@@ -133,7 +170,7 @@ export function tickLogToFeed(log: TickLogRaw): FeedEntry[] {
         tick: log.tick,
         agent: mv.agent,
         type: "move",
-        text: `${formatAgentName(mv.agent)} moves to ${mv.to}`,
+        text: `${formatAgentName(mv.agent)} geht nach ${mv.to}`,
         location: mv.to,
       });
     }
@@ -150,17 +187,6 @@ export interface StreamEntry {
   agent: AgentName;
   name: string;
   text: string;
-}
-
-export interface MeetingState {
-  phase: "discussion" | "vote" | "result";
-  agendaType: string;
-  description: string;
-  attendees: AgentName[];
-  votes: Partial<Record<AgentName, "agree" | "disagree">>;
-  proposal: string | null;
-  result: { passed: boolean; agreeCount: number } | null;
-  discussion: { agent: AgentName; name: string; text: string }[];
 }
 
 interface VillageStore {
@@ -254,7 +280,8 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       const log: TickLogRaw = await res.json();
       const entries = tickLogToFeed(log);
       set({ historyFeed: entries, historyLoading: false });
-    } catch {
+    } catch (err) {
+      console.error(`[viewer] failed to load ${tickId}`, err);
       set({ historyLoading: false });
     }
   },
@@ -367,7 +394,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       fetch("/api/ticks")
         .then((r) => r.json())
         .then((ticks: string[]) => get().setAvailableTicks(ticks))
-        .catch(() => {});
+        .catch((err) => console.warn("[viewer] could not refresh tick list", err));
       return;
     }
 
@@ -377,13 +404,15 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
       const isMove = e.actionType === "move_to";
       const isThought = e.actionType === "think";
 
+      const atTownHall = e.location === "Vogtei" || e.location.endsWith(":Vogtei");
       const entry: FeedEntry = {
         id: feedCounter++,
         tick: get().currentTick,
         agent: e.agent,
         type: isThought ? "thought" : isSpeech ? "speak" : isMove ? "move" : "do",
-        text: e.result ?? "",
+        text: isSpeech ? speechText(e.result ?? "") : isThought ? thoughtText(e.result ?? "") : (e.result ?? ""),
         location: e.location,
+        ...(isSpeech && atTownHall && get().activeMeeting ? { council: true } : {}),
       };
       set((s) => {
         const base = { feed: [entry, ...s.feed].slice(0, 300) };
@@ -439,7 +468,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
         tick: get().currentTick,
         agent: e.agent,
         type: "thought",
-        text: e.text ?? "",
+        text: thoughtText(e.text ?? ""),
       };
       set((s) => ({ feed: [entry, ...s.feed].slice(0, 300) }));
       return;
@@ -456,7 +485,18 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
         tick: get().currentTick,
         agent: e.buyer,
         type: "trade",
-        text: `${formatAgentName(e.buyer)} bought ${e.quantity}× ${e.item} from ${formatAgentName(e.seller)} for ${e.total} coin`,
+        text: tradeText(e.buyer, e.seller, e.item, e.quantity, e.total),
+      };
+      const tradeTick = e.tick ?? get().currentTick;
+      const trade: Trade = {
+        id: `live_${orderFeedCounter}`,
+        tick: tradeTick,
+        buyer: e.buyer,
+        seller: e.seller,
+        item: e.item,
+        quantity: e.quantity,
+        pricePerUnit: e.pricePerUnit,
+        total: e.total,
       };
       const orderEntry: OrderFeedEntry = {
         id: orderFeedCounter++,
@@ -472,6 +512,16 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
         feed: [entry, ...s.feed].slice(0, 300),
         orderFeed: [orderEntry, ...s.orderFeed].slice(0, 150),
         priceFlashes: { ...s.priceFlashes, [e.item]: { dir, at: Date.now() } },
+        // keep the trade ledger current so "Handel heute" / BIP follow the live stream
+        world: s.world
+          ? {
+              ...s.world,
+              marketplace: {
+                ...s.world.marketplace,
+                history: [...(s.world.marketplace.history ?? []), trade].slice(-600),
+              },
+            }
+          : s.world,
       }));
       return;
     }
@@ -482,7 +532,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
         tick: get().currentTick,
         agent: e.agent,
         type: "production",
-        text: `${formatAgentName(e.agent)} produced ${e.qty}× ${e.item}`,
+        text: productionText(e.agent, e.item, e.qty),
       };
       set((s) => ({ feed: [entry, ...s.feed].slice(0, 300) }));
       return;
@@ -520,7 +570,7 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
         tick: get().currentTick,
         agent: "reinhart",
         type: "system",
-        text: `⚡ ${e.description}`,
+        text: e.description,
       };
       set((s) => ({
         feed: [entry, ...s.feed].slice(0, 300),
@@ -606,3 +656,28 @@ export const useVillageStore = create<VillageStore>((set, get) => ({
     }
   },
 }));
+
+// ─── Derived economy numbers (live from world state; do not wait for the next snapshot) ──────
+
+export interface LiveEconomy {
+  totalWealth: number;
+  gini: number;
+  /** Sum of trade totals in the last 16 ticks (one in-game day). */
+  gdp: number;
+  /** Number of trades since 06:00 of the current in-game day. */
+  tradesToday: number;
+}
+
+export function computeEconomy(world: WorldState): LiveEconomy {
+  const wallets = colonistIds(world).map((a) => world.economics[a]!.wallet).sort((a, b) => a - b);
+  const n = wallets.length;
+  const totalWealth = wallets.reduce((s, v) => s + v, 0);
+  const gini = totalWealth > 0 && n > 0
+    ? Math.round((wallets.reduce((acc, v, i) => acc + (2 * (i + 1) - n - 1) * v, 0) / (n * totalWealth)) * 100) / 100
+    : 0;
+  const history = world.marketplace.history ?? [];
+  const gdp = history.filter((t) => t.tick >= world.current_tick - 16).reduce((s, t) => s + t.total, 0);
+  const dayStart = Math.floor((Math.max(world.current_tick, 1) - 1) / 16) * 16 + 1;
+  const tradesToday = history.filter((t) => t.tick >= dayStart).length;
+  return { totalWealth, gini, gdp, tradesToday };
+}

@@ -1,109 +1,57 @@
 import { useVillageStore, AGENT_DISPLAY } from "../store";
 import type { FeedEntry } from "../types";
+import Icon, { type IconName } from "./Icon";
 
-const TYPE_COLOR: Record<FeedEntry["type"], string> = {
-  speak: "#f0d870",
-  trade: "#50d870",
-  move: "#60b0e8",
-  production: "#80c8ff",
-  do: "#c0a870",
-  thought: "#9090b0",
-  system: "#ff8040",
+const TICKER_TYPES: FeedEntry["type"][] = ["speak", "trade", "move", "production", "system"];
+
+const TYPE_ICON: Record<string, IconName> = {
+  speak: "speech", trade: "swap", move: "feet", production: "hammer", system: "bell",
 };
 
-function formatEntry(e: FeedEntry): string {
-  const name = AGENT_DISPLAY[e.agent]?.split(" ")[0] ?? e.agent;
-  switch (e.type) {
-    case "speak":     return `💬 ${name}: "${e.text.slice(0, 45)}${e.text.length > 45 ? "…" : ""}"`;
-    case "trade":     return `💰 ${e.text.slice(0, 50)}`;
-    case "move":      return `👣 ${e.text}`;
-    case "production":return `⚒ ${e.text}`;
-    case "system":    return `⚡ ${e.text.slice(0, 50)}`;
-    default:          return "";
-  }
-}
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-interface Segment {
-  text: string;
-  color: string;
-  id: number;
-}
-
-function buildSegments(feed: FeedEntry[]): Segment[] {
-  return feed
-    .filter((e) => ["speak", "trade", "move", "production", "system"].includes(e.type))
-    .slice(0, 30)
-    .map((e) => ({
-      text: formatEntry(e),
-      color: TYPE_COLOR[e.type] ?? "#c8a060",
-      id: e.id,
-    }))
-    .filter((s) => s.text.length > 0);
-}
-
-function TickerContent({ segments }: { segments: Segment[] }) {
+function Items({ entries }: { entries: FeedEntry[] }) {
   return (
     <>
-      {segments.map((seg, i) => (
-        <span key={seg.id}>
-          <span style={{ color: seg.color, fontFamily: "monospace", fontSize: 10 }}>{seg.text}</span>
-          {i < segments.length - 1 && (
-            <span style={{ color: "#3a2810", padding: "0 14px" }}>·</span>
-          )}
-        </span>
-      ))}
+      {entries.map((e) => {
+        const name = AGENT_DISPLAY[e.agent]?.split(" ")[0] ?? e.agent;
+        return (
+          <span key={e.id} className="tk">
+            <Icon name={TYPE_ICON[e.type] ?? "bell"} />
+            {e.type === "speak" ? (
+              <span><b>{name}</b>: „{clip(e.text, 60)}“</span>
+            ) : (
+              <span>{clip(e.text, 80)}</span>
+            )}
+          </span>
+        );
+      })}
     </>
   );
 }
 
 export default function TickerStrip() {
   const feed = useVillageStore((s) => s.feed);
-  const segments = buildSegments(feed);
+  const entries = feed.filter((e) => TICKER_TYPES.includes(e.type)).slice(0, 24);
 
-  if (segments.length === 0) {
-    return (
-      <div style={{
-        height: 22, background: "#050300", borderBottom: "1px solid #2a1c08",
-        display: "flex", alignItems: "center", padding: "0 12px",
-        flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 9, color: "#3a2810", fontFamily: "monospace" }}>
-          Village Chronicle — awaiting events…
-        </span>
-      </div>
-    );
-  }
-
-  // Estimate content length for duration
-  const charCount = segments.reduce((n, s) => n + s.text.length + 16, 0);
-  const duration = Math.max(18, charCount * 0.085);
+  // ~7 chars/second reading-friendly scroll speed
+  const chars = entries.reduce((n, e) => n + Math.min(e.text.length, 80) + 12, 0);
+  const duration = Math.max(30, Math.round(chars / 6.5));
 
   return (
-    <div style={{
-      height: 22, background: "#050300", borderBottom: "1px solid #2a1c08",
-      overflow: "hidden", flexShrink: 0, position: "relative",
-    }}>
-      <div
-        key={segments[0]?.id}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          height: "100%",
-          animation: `villageTickerScroll ${duration}s linear infinite`,
-          whiteSpace: "nowrap",
-        }}
-      >
-        <TickerContent segments={segments} />
-        <span style={{ color: "#3a2810", padding: "0 20px" }}>·</span>
-        <TickerContent segments={segments} />
-      </div>
-
-      <style>{`
-        @keyframes villageTickerScroll {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
+    <div className="ticker" role="marquee" aria-label="Aushang: neueste Ereignisse">
+      <span className="ticker-tag">Aushang</span>
+      {entries.length === 0 ? (
+        <span className="ticker-idle">Noch nichts los im Tal …</span>
+      ) : (
+        <div className="ticker-view">
+          {/* keyed by newest entry so the scroll restarts smoothly when news arrives */}
+          <div key={entries[0]!.id} className="ticker-track" style={{ ["--dur" as string]: `${duration}s` }}>
+            <Items entries={entries} />
+            <Items entries={entries} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

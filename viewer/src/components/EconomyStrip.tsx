@@ -1,102 +1,50 @@
-import { useVillageStore } from "../store";
+import { useVillageStore, computeEconomy } from "../store";
+import { itemLabel } from "../types";
+import { ItemIcon } from "./Icon";
+import { c } from "../theme";
 
 const STRIP_ITEMS = [
   "gerste", "mehl", "brot", "fleisch", "bauholz", "kohle", "werkzeug", "bier", "leinen", "arznei",
 ] as const;
 
-const ITEM_EMOJI: Record<string, string> = {
-  gerste: "🌾", mehl: "⚪", brot: "🍞", fleisch: "🥩", milch: "🥛",
-  eier: "🥚", rueben: "🥦", kraeuter: "🌿", arznei: "💊",
-  eisenerz: "🪨", kohle: "⬛", werkzeug: "⚒",
-  bauholz: "🪵", brennholz: "🔥", hausrat: "🪑",
-  bier: "🍺", eintopf: "🍲", leinen: "🧵",
-};
-
 export default function EconomyStrip() {
   const world = useVillageStore((s) => s.world);
   const latestEconomy = useVillageStore((s) => s.latestEconomy);
-  const orderFeed = useVillageStore((s) => s.orderFeed);
 
   const prices = world?.marketplace.priceIndex ?? {};
   const history = world?.marketplace.priceHistory ?? {};
-
-  const tradeCount = orderFeed.filter((e) => e.kind === "filled").length;
-  const agentCount = world ? Object.keys(world.agent_locations).length : 0;
-  const activeOrders = world?.marketplace.orders.length ?? 0;
+  const live = world ? computeEconomy(world) : null;
 
   return (
-    <div style={{
-      height: 32,
-      background: "linear-gradient(to top, #060300, #0a0600)",
-      borderTop: "1px solid #2a1a06",
-      display: "flex",
-      alignItems: "center",
-      flexShrink: 0,
-      overflow: "hidden",
-      fontFamily: "monospace",
-    }}>
-      {/* Commodity prices */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", overflow: "hidden" }}>
-        {STRIP_ITEMS.map((item) => {
-          const price = prices[item] ?? 0;
-          const hist = (history[item] ?? []).slice(-3);
-          const prev = hist.length >= 2 ? hist[hist.length - 2]?.price : null;
-          const dir = prev == null ? null : price > prev ? "up" : price < prev ? "down" : null;
-          const priceColor = dir === "up" ? "#e84030" : dir === "down" ? "#40d060" : "#d0b050";
+    <footer className="strip" aria-label="Preise und Wirtschaftslage">
+      {STRIP_ITEMS.map((item) => {
+        const price = prices[item] ?? 0;
+        const hist = (history[item] ?? []).slice(-3);
+        const prev = hist.length >= 2 ? hist[hist.length - 2]?.price : null;
+        const dir = prev == null ? null : price > prev ? "up" : price < prev ? "down" : null;
+        return (
+          <div key={item} className="st" title={`${itemLabel(item)}: ${price > 0 ? `${price} Gr.` : "kein Preis"}`}>
+            <ItemIcon item={item} size={18} />
+            <b className="mono" style={{ color: c.ink }}>{price > 0 ? price : "—"}</b>
+            {dir && <span className={`d ${dir}`} aria-label={dir === "up" ? "steigend" : "fallend"}>{dir === "up" ? "▲" : "▼"}</span>}
+          </div>
+        );
+      })}
 
-          return (
-            <div
-              key={item}
-              style={{
-                display: "flex", alignItems: "center", gap: 3,
-                padding: "0 8px", height: "100%",
-                borderRight: "1px solid #1a1006",
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: 11 }}>{ITEM_EMOJI[item]}</span>
-              <span style={{ fontSize: 10, color: priceColor, fontWeight: "bold" }}>
-                {price > 0 ? `${price}¢` : "—"}
-              </span>
-              {dir && (
-                <span style={{ fontSize: 8, color: priceColor, lineHeight: 1 }}>
-                  {dir === "up" ? "↑" : "↓"}
-                </span>
-              )}
-            </div>
-          );
-        })}
+      <div className="st-sum">
+        <div className="st" title="Summe aller Geldbeutel">
+          Vermögen <b className="mono">{live ? `${live.totalWealth} Gr.` : "—"}</b>
+        </div>
+        <div className="st" title="Gini-Koeffizient: 0 = alle gleich reich, 1 = einer hat alles">
+          Gini <b className="mono">{(live?.gini ?? latestEconomy?.giniCoefficient ?? 0).toFixed(2)}</b>
+        </div>
+        <div className="st" title="Geschäfte seit 06:00">
+          Handel heute <b className="mono">{live?.tradesToday ?? 0}</b>
+        </div>
+        <div className="st" title="Handelsvolumen der letzten 16 Stunden">
+          BIP <b className="mono">{latestEconomy?.gdp ?? live?.gdp ?? 0}</b>
+        </div>
       </div>
-
-      {/* Right stats */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 14,
-        padding: "0 12px", flexShrink: 0,
-        borderLeft: "1px solid #1a1006",
-      }}>
-        {latestEconomy && (
-          <>
-            <span style={{ fontSize: 9, color: "#7a6030" }}>
-              GDP <span style={{ color: "#f0c040" }}>{latestEconomy.gdp}</span>
-            </span>
-            <span style={{ fontSize: 9, color: "#7a6030" }}>
-              Gini <span style={{ color: "#c0d080" }}>{latestEconomy.giniCoefficient.toFixed(2)}</span>
-            </span>
-          </>
-        )}
-        <span style={{ fontSize: 9, color: "#7a6030" }}>
-          <span style={{ color: "#50d870" }}>{tradeCount}</span>
-          {" "}trades
-        </span>
-        <span style={{ fontSize: 9, color: "#7a6030" }}>
-          <span style={{ color: "#c8a060" }}>{activeOrders}</span>
-          {" "}orders
-        </span>
-        <span style={{ fontSize: 9, color: "#7a6030" }}>
-          <span style={{ color: "#80b8e0" }}>{agentCount}</span>
-          {" "}agents
-        </span>
-      </div>
-    </div>
+    </footer>
   );
 }

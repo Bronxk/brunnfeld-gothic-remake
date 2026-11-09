@@ -101,6 +101,8 @@ export interface WorldState {
   acquaintances: Record<AgentName, AgentName[]>;
   economy_snapshots: EconomySnapshot[];
   loans?: Loan[];
+  /** Human player character; `created` flips to true once a human creates one (until then the "player" agent is a hidden placeholder). */
+  player?: { created: boolean; name: string; skill: string; createdTick: number };
 }
 
 export interface EconomySnapshot {
@@ -121,10 +123,24 @@ export interface FeedEntry {
   type: "speak" | "do" | "move" | "trade" | "production" | "thought" | "system";
   text: string;
   location?: string;
+  /** True for speech that happened during an active Appell (council meeting). */
+  council?: boolean;
+}
+
+/** Live state of an Appell (council meeting) as built by the server and the store. */
+export interface MeetingState {
+  phase: "discussion" | "vote" | "result";
+  agendaType: string;
+  description: string;
+  attendees: AgentName[];
+  votes: Partial<Record<AgentName, "agree" | "disagree">>;
+  proposal: string | null;
+  result: { passed: boolean; agreeCount: number } | null;
+  discussion: { agent: AgentName; name: string; text: string }[];
 }
 
 export type SSEEvent =
-  | { type: "init"; state: WorldState; activeMeeting?: Record<string, unknown> | null }
+  | { type: "init"; state: WorldState; activeMeeting?: MeetingState | null }
   | { type: "tick"; tick: number; time: string; season: Season; weather: string }
   | { type: "thinking"; agent: AgentName; name: string }
   | { type: "stream"; agent: AgentName; name: string; chunk: string }
@@ -143,3 +159,76 @@ export type SSEEvent =
   | { type: "meeting:end" }
   | { type: "meeting:quorum_fail"; description: string; attendeeCount: number }
   | { type: "harness:tool"; agent: AgentName; name: string; tool: string; summary: string };
+
+// ─── German display labels (copied from backend src/types.ts / src/time.ts; docs/schlackental.md) ───
+
+export const ITEM_LABELS: Record<ItemType, string> = {
+  gerste: "Gerste", mehl: "Mehl", brot: "Brot", fleisch: "Fleisch", milch: "Ziegenmilch",
+  eier: "Eier", rueben: "Rüben", kraeuter: "Kräuter", arznei: "Arznei",
+  eisenerz: "Eisenerz", kohle: "Kohle", werkzeug: "Werkzeug", bauholz: "Bauholz",
+  brennholz: "Brennholz", hausrat: "Hausrat", bier: "Dünnbier", eintopf: "Eintopf",
+  leinen: "Leinen",
+};
+
+/** All item ids in display order. */
+export const ALL_ITEM_IDS: ItemType[] = Object.keys(ITEM_LABELS);
+
+export const SKILL_LABELS: Record<Skill, string> = {
+  bauer: "Feldarbeiter", hirte: "Hirte", knappe: "Knappe", holzfaeller: "Holzfäller",
+  mueller: "Müller", baecker: "Bäcker", schmied: "Schmied", zimmermann: "Zimmermann",
+  wirt: "Wirt", bader: "Bader", haendler: "Händler", naeherin: "Flickerin",
+  none: "ohne Handwerk",
+};
+
+export const SEASON_LABELS: Record<Season, string> = {
+  spring: "Frühling", summer: "Sommer", autumn: "Herbst", winter: "Winter",
+};
+
+/** World event ids → German names (docs/schlackental.md "World events"). */
+export const EVENT_LABELS: Record<string, string> = {
+  drought: "Dürre",
+  plague: "Grubenfieber",
+  caravan: "Schmugglerzug",
+  bandit_threat: "Wegelagerer",
+  mine_collapse: "Stolleneinbruch",
+  tax_day: "Zehnttag",
+  double_harvest: "Reiche Ernte",
+  plague_rumor: "Fiebergerücht",
+};
+
+/** Appell agenda ids → German names. */
+export const AGENDA_LABELS: Record<string, string> = {
+  general_rule: "Allgemeine Regel",
+  tax_change: "Zehnt ändern",
+  marketplace_hours: "Tauschbrett-Zeiten",
+  banishment: "Karzerstrafe",
+};
+
+export const SLEEP_LABELS: Record<string, string> = {
+  good: "gut", fair: "mäßig", poor: "schlecht",
+};
+
+export const TICKS_PER_DAY = 16;   // 06:00–21:00, one tick = one hour
+export const DAYS_PER_SEASON = 7;
+
+export function itemLabel(id: string | undefined | null): string {
+  if (!id) return "—";
+  return ITEM_LABELS[id] ?? id;
+}
+
+export function skillLabel(id: string | undefined | null): string {
+  if (!id) return "—";
+  return SKILL_LABELS[id] ?? id;
+}
+
+/** "15 Gr." — short currency format (Groschen). */
+export function gr(n: number): string {
+  return `${n} Gr.`;
+}
+
+/** Clock label of a tick, e.g. tick 2 → "07:00"; tick 0 → "—". */
+export function tickClock(tick: number): string {
+  if (tick < 1) return "—";
+  const hour = 6 + ((tick - 1) % TICKS_PER_DAY);
+  return `${String(hour).padStart(2, "0")}:00`;
+}

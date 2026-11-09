@@ -1,39 +1,54 @@
 import { useState } from "react";
-import { useVillageStore } from "../store";
-import type { AgentName } from "../types";
+import { useVillageStore, AGENT_DISPLAY, colonistIds } from "../store";
+import { AGENDA_LABELS, EVENT_LABELS } from "../types";
+import Icon, { type IconName } from "./Icon";
 import ScaleSelector from "./ScaleSelector";
 
-const AGENDA_TYPES = [
-  { id: "general_rule",      label: "General Rule" },
-  { id: "tax_change",        label: "Tax Change" },
-  { id: "marketplace_hours", label: "Marketplace Hours" },
-  { id: "banishment",        label: "Banishment" },
+type Tone = "info" | "warn" | "bad" | "good";
+
+interface EventDef {
+  id: string;
+  icon: IconName;
+  tone: Tone;
+  desc: string;
+}
+
+/** Events the "Schicksal" section can fire (ids are the backend EventType ids; names per world bible). */
+const EVENTS: EventDef[] = [
+  { id: "drought", icon: "sun", tone: "warn", desc: "Halbiert die Ernte auf den Feldern für 3 Tage." },
+  { id: "caravan", icon: "cart", tone: "good", desc: "Schmuggler bringen billige Waren aufs Tauschbrett (1 Tag)." },
+  { id: "mine_collapse", icon: "rock", tone: "bad", desc: "Die Erzförderung ist blockiert (2 Tage)." },
+  { id: "double_harvest", icon: "wheat", tone: "good", desc: "Der Ernteertrag ist heute doppelt so hoch." },
+  { id: "plague_rumor", icon: "skull", tone: "warn", desc: "Gerüchte um das Grubenfieber: Panikkäufe bei Arznei." },
+  { id: "bandit_threat", icon: "dagger", tone: "bad", desc: "Erhöhtes Diebstahlrisiko für 2 Tage." },
 ];
 
-const EVENTS = [
-  { id: "drought",        label: "Drought",        icon: "🌵", desc: "Halves farm yields for 3 days" },
-  { id: "caravan",        label: "Caravan",         icon: "🐪", desc: "Cheap goods flood the market (1 day)" },
-  { id: "mine_collapse",  label: "Mine Collapse",   icon: "⛏",  desc: "Ore production blocked (2 days)" },
-  { id: "double_harvest", label: "Double Harvest",  icon: "🌾", desc: "Farm yields ×2 today" },
-  { id: "plague_rumor",   label: "Plague Rumor",    icon: "☠",  desc: "Arznei panic spreads" },
-  { id: "bandit_threat",  label: "Bandit Threat",   icon: "🗡",  desc: "Theft risk for 2 days" },
-];
+const EXTRA_ICONS: Record<string, { icon: IconName; tone: Tone }> = {
+  plague: { icon: "skull", tone: "bad" },
+  tax_day: { icon: "scale", tone: "info" },
+};
+
+const PHASE_LABEL = { discussion: "Beratung", vote: "Abstimmung", result: "Ergebnis" } as const;
 
 export default function GodModePanel() {
   const world = useVillageStore((s) => s.world);
+  const activeMeeting = useVillageStore((s) => s.activeMeeting);
   const [firing, setFiring] = useState<string | null>(null);
+  const [eventError, setEventError] = useState<string | null>(null);
   const [showScaleSelector, setShowScaleSelector] = useState(false);
   const [agendaType, setAgendaType] = useState("general_rule");
   const [agendaDesc, setAgendaDesc] = useState("");
-  const [banishTarget, setBanishTarget] = useState("");
-  const [meetingStatus, setMeetingStatus] = useState<string | null>(null);
+  const [target, setTarget] = useState("");
+  const [meetingStatus, setMeetingStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [callingMeeting, setCallingMeeting] = useState(false);
 
   const activeEvents = world?.active_events ?? [];
   const currentTick = world?.current_tick ?? 0;
+  const colonists = world ? colonistIds(world) : [];
 
   async function callMeeting() {
-    if (!agendaDesc.trim()) { setMeetingStatus("Enter an agenda description."); return; }
+    if (!agendaDesc.trim()) { setMeetingStatus({ ok: false, text: "Bitte eine Tagesordnung eingeben." }); return; }
+    if (agendaType === "banishment" && !target) { setMeetingStatus({ ok: false, text: "Bitte wählen, wer in den Karzer soll." }); return; }
     setCallingMeeting(true);
     setMeetingStatus(null);
     try {
@@ -43,14 +58,17 @@ export default function GodModePanel() {
         body: JSON.stringify({
           agendaType,
           description: agendaDesc.trim(),
-          ...(agendaType === "banishment" && banishTarget ? { target: banishTarget as AgentName } : {}),
+          ...(agendaType === "banishment" && target ? { target } : {}),
         }),
       });
       const data = await res.json() as { ok: boolean; error?: string };
-      setMeetingStatus(data.ok ? "Meeting called! Agents notified." : (data.error ?? "Failed."));
+      setMeetingStatus(data.ok
+        ? { ok: true, text: "Appell einberufen. Die Grubenglocke läutet." }
+        : { ok: false, text: data.error ?? "Das hat nicht geklappt." });
       if (data.ok) setAgendaDesc("");
-    } catch {
-      setMeetingStatus("Request failed.");
+    } catch (err) {
+      console.error("[viewer] trigger-meeting failed", err);
+      setMeetingStatus({ ok: false, text: "Anfrage fehlgeschlagen." });
     } finally {
       setCallingMeeting(false);
     }
@@ -58,219 +76,129 @@ export default function GodModePanel() {
 
   async function fireEvent(id: string) {
     setFiring(id);
+    setEventError(null);
     try {
-      await fetch("/api/events/trigger", {
+      const res = await fetch("/api/events/trigger", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ eventType: id }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      console.error("[viewer] trigger event failed", err);
+      setEventError(`${EVENT_LABELS[id] ?? id} konnte nicht ausgelöst werden.`);
     } finally {
       setFiring(null);
     }
   }
 
+  const canCall = !callingMeeting && !!agendaDesc.trim();
+
   return (
-    <div style={{
-      background: "rgba(12,8,3,0.95)", border: "1px solid #4a3010", borderRadius: 6,
-      height: "100%", display: "flex", flexDirection: "column", overflow: "hidden",
-      fontFamily: "Georgia, serif",
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: "8px 12px", borderBottom: "1px solid #4a3010", flexShrink: 0,
-        background: "linear-gradient(to bottom, #1a1008, #100c04)",
-      }}>
-        <div style={{ fontSize: 13, fontWeight: "bold", color: "#f8e060", letterSpacing: 0.5 }}>
-          God Mode
+    <div>
+      {/* Lage im Tal */}
+      <div className="sec">
+        <div className="sec-h">
+          <span>Lage im Tal</span>
+          <small>{activeEvents.length + (activeMeeting ? 1 : 0)} Meldungen</small>
         </div>
-        <div style={{ fontSize: 9, color: "#5a3820", marginTop: 2 }}>
-          Inject events into the simulation
-        </div>
-      </div>
-      {showScaleSelector && <ScaleSelector onWorldGenerated={() => setShowScaleSelector(false)} />}
-
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
-
-        {/* New World */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 10, color: "#c8a060", fontWeight: "bold", letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>
-            World
-          </div>
-          <button
-            onClick={() => setShowScaleSelector(true)}
-            style={{
-              width: "100%", padding: "7px 0",
-              background: "rgba(30,20,8,0.9)", border: "1px solid #5a3c10",
-              color: "#c09040", fontFamily: "Georgia, serif", fontSize: 12,
-              borderRadius: 4, cursor: "pointer",
-            }}
-          >
-            🌍 New World…
-          </button>
-        </div>
-
-        {/* Active events */}
-        {activeEvents.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 10, color: "#c8a060", fontWeight: "bold", letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" }}>
-              Active Events
+        <div className="evs">
+          {activeMeeting && (
+            <div className="evc" data-tone="info">
+              <span className="eico"><Icon name="bell" /></span>
+              <div>
+                <h3>Appell <span className="st">{PHASE_LABEL[activeMeeting.phase]}</span></h3>
+                <p>{activeMeeting.description}</p>
+                <div className="meta">
+                  <span><Icon name="users" />{activeMeeting.attendees.length} geladen</span>
+                  <span><Icon name="pin" />Vogtei</span>
+                </div>
+              </div>
             </div>
-            {activeEvents.map((ev, i) => {
-              const ticksLeft = ev.endTick - currentTick;
-              const icon = EVENTS.find(e => e.id === ev.type)?.icon ?? "⚡";
-              return (
-                <div key={i} style={{
-                  display: "flex", alignItems: "flex-start", gap: 8,
-                  background: "rgba(80,40,0,0.3)", border: "1px solid #7a4010",
-                  borderRadius: 4, padding: "6px 8px", marginBottom: 4,
-                }}>
-                  <span style={{ fontSize: 14, lineHeight: 1.4 }}>{icon}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: "#f0c040", fontWeight: "bold" }}>
-                      {ev.description}
-                    </div>
-                    <div style={{
-                      display: "inline-block", marginTop: 3,
-                      fontSize: 9, color: "#c87820",
-                      background: "rgba(120,60,0,0.4)", border: "1px solid #8a5010",
-                      borderRadius: 3, padding: "1px 5px",
-                    }}>
-                      Expires in {ticksLeft} tick{ticksLeft !== 1 ? "s" : ""}
-                    </div>
+          )}
+          {activeEvents.map((ev, i) => {
+            const def = EVENTS.find((e) => e.id === ev.type);
+            const extra = EXTRA_ICONS[ev.type];
+            const left = Math.max(0, ev.endTick - currentTick);
+            return (
+              <div key={`${ev.type}-${i}`} className="evc" data-tone={def?.tone ?? extra?.tone ?? "warn"}>
+                <span className="eico"><Icon name={def?.icon ?? extra?.icon ?? "warn"} /></span>
+                <div>
+                  <h3>{EVENT_LABELS[ev.type] ?? ev.type} <span className="st">aktiv</span></h3>
+                  <p>{ev.description}</p>
+                  <div className="meta">
+                    <span><Icon name="hourglass" />noch {left} {left === 1 ? "Stunde" : "Stunden"}</span>
                   </div>
                 </div>
-              );
-            })}
-            <div style={{ height: 1, background: "#3a2810", margin: "10px 0" }} />
-          </div>
-        )}
-
-        {/* Event buttons */}
-        <div style={{ fontSize: 10, color: "#c8a060", fontWeight: "bold", letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>
-          Trigger Event
+              </div>
+            );
+          })}
+          {activeEvents.length === 0 && !activeMeeting && (
+            <div className="empty"><Icon name="check" /><span>Im Tal ist es ruhig.</span><small>Aktive Ereignisse erscheinen hier.</small></div>
+          )}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      </div>
+
+      {/* Schicksal auslösen */}
+      <div className="sec">
+        <div className="sec-h"><span>Schicksal auslösen</span><small>greift sofort ein</small></div>
+        <div className="evs">
           {EVENTS.map((ev) => {
-            const isActive = activeEvents.some(a => a.type === ev.id);
+            const isActive = activeEvents.some((a) => a.type === ev.id);
             const isFiring = firing === ev.id;
             return (
-              <button
-                key={ev.id}
-                onClick={() => fireEvent(ev.id)}
-                disabled={isFiring || isActive}
-                title={ev.desc}
-                style={{
-                  background: isActive ? "rgba(40,80,20,0.3)" : "rgba(40,25,5,0.8)",
-                  border: `1px solid ${isActive ? "#406020" : "#6a4010"}`,
-                  borderRadius: 4, padding: "8px 6px",
-                  cursor: isFiring || isActive ? "default" : "pointer",
-                  opacity: isActive ? 0.6 : 1,
-                  textAlign: "center",
-                  transition: "border-color 0.15s, background 0.15s",
-                }}
-                onMouseEnter={e => {
-                  if (!isFiring && !isActive)
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = "#f0c040";
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = isActive ? "#406020" : "#6a4010";
-                }}
-              >
-                <div style={{ fontSize: 18, marginBottom: 3 }}>
-                  {isFiring ? (
-                    <span style={{ display: "inline-block", animation: "spin 0.8s linear infinite" }}>⟳</span>
-                  ) : ev.icon}
-                </div>
-                <div style={{ fontSize: 10, color: isActive ? "#80c840" : "#e8d080", fontWeight: "bold", lineHeight: 1.2 }}>
-                  {isActive ? "Active" : ev.label}
-                </div>
-                <div style={{ fontSize: 8, color: "#7a5830", marginTop: 2, lineHeight: 1.3 }}>
-                  {ev.desc}
+              <button key={ev.id} className="evc" data-tone={isActive ? "plain" : ev.tone} disabled={isFiring || isActive} onClick={() => void fireEvent(ev.id)}
+                title={isActive ? "Läuft bereits" : `${EVENT_LABELS[ev.id]} auslösen`}>
+                <span className="eico">{isFiring ? <Icon name="hourglass" className="spin" /> : <Icon name={ev.icon} />}</span>
+                <div>
+                  <h3>{EVENT_LABELS[ev.id]} {isActive && <span className="st">läuft</span>}</h3>
+                  <p>{ev.desc}</p>
                 </div>
               </button>
             );
           })}
         </div>
-
-        {/* Divider */}
-        <div style={{ height: 1, background: "#3a2810", margin: "14px 0 10px" }} />
-
-        {/* Call Meeting */}
-        <div style={{ fontSize: 10, color: "#c8a060", fontWeight: "bold", letterSpacing: 1, marginBottom: 8, textTransform: "uppercase" }}>
-          Call Village Meeting
-        </div>
-
-        <div style={{ marginBottom: 6 }}>
-          <select
-            value={agendaType}
-            onChange={e => { setAgendaType(e.target.value); setBanishTarget(""); setMeetingStatus(null); }}
-            style={{
-              width: "100%", background: "#1a1008", border: "1px solid #6a4010",
-              color: "#e8d080", fontFamily: "Georgia, serif", fontSize: 11,
-              borderRadius: 4, padding: "5px 6px", cursor: "pointer",
-            }}
-          >
-            {AGENDA_TYPES.map(a => <option key={a.id} value={a.id}>{a.label}</option>)}
-          </select>
-        </div>
-
-        <textarea
-          value={agendaDesc}
-          onChange={e => { setAgendaDesc(e.target.value); setMeetingStatus(null); }}
-          placeholder="Describe the agenda…"
-          rows={2}
-          style={{
-            width: "100%", background: "#1a1008", border: "1px solid #6a4010",
-            color: "#e8d080", fontFamily: "Georgia, serif", fontSize: 11,
-            borderRadius: 4, padding: "5px 6px", resize: "vertical", boxSizing: "border-box",
-          }}
-        />
-
-        {agendaType === "banishment" && (
-          <input
-            value={banishTarget}
-            onChange={e => setBanishTarget(e.target.value)}
-            placeholder="Agent name (e.g. brakel)"
-            style={{
-              width: "100%", marginTop: 4, background: "#1a1008", border: "1px solid #6a4010",
-              color: "#e8d080", fontFamily: "Georgia, serif", fontSize: 11,
-              borderRadius: 4, padding: "5px 6px", boxSizing: "border-box",
-            }}
-          />
-        )}
-
-        <button
-          onClick={callMeeting}
-          disabled={callingMeeting || !agendaDesc.trim()}
-          style={{
-            width: "100%", marginTop: 6, padding: "8px 0",
-            background: callingMeeting ? "rgba(40,25,5,0.8)" : "rgba(80,50,5,0.9)",
-            border: "1px solid #c89030", borderRadius: 4,
-            color: callingMeeting ? "#7a5830" : "#f0c040",
-            fontFamily: "Georgia, serif", fontSize: 11, fontWeight: "bold",
-            cursor: callingMeeting || !agendaDesc.trim() ? "default" : "pointer",
-            letterSpacing: 0.5,
-          }}
-        >
-          {callingMeeting ? "Calling…" : "🏛 Call Meeting Now"}
-        </button>
-
-        {meetingStatus && (
-          <div style={{
-            marginTop: 6, fontSize: 10, padding: "4px 6px", borderRadius: 3,
-            background: meetingStatus.includes("called") ? "rgba(20,60,20,0.5)" : "rgba(80,20,20,0.4)",
-            color: meetingStatus.includes("called") ? "#80d860" : "#e06060",
-            border: `1px solid ${meetingStatus.includes("called") ? "#406030" : "#803030"}`,
-          }}>
-            {meetingStatus}
-          </div>
-        )}
-
+        {eventError && <div className="note bad" role="alert"><Icon name="warn" />{eventError}</div>}
       </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
+      {/* Appell */}
+      <div className="sec">
+        <div className="sec-h"><span>Appell einberufen</span><small>Grubenglocke</small></div>
+        <div className="talk">
+          <select className="inp" aria-label="Thema des Appells" value={agendaType}
+            onChange={(e) => { setAgendaType(e.target.value); setTarget(""); setMeetingStatus(null); }}>
+            {Object.entries(AGENDA_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+          </select>
+          <textarea className="inp" rows={2} value={agendaDesc} placeholder="Worüber soll beraten werden?" aria-label="Tagesordnung"
+            onChange={(e) => { setAgendaDesc(e.target.value); setMeetingStatus(null); }} />
+          {agendaType === "banishment" && (
+            <select className="inp" aria-label="Wer kommt in den Karzer?" value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="">Wer kommt in den Karzer?</option>
+              {colonists.map((a) => <option key={a} value={a}>{AGENT_DISPLAY[a]}</option>)}
+            </select>
+          )}
+          <button className="btn primary block" onClick={() => void callMeeting()} disabled={!canCall}>
+            <Icon name="bell" />{callingMeeting ? "Läutet …" : "Appell jetzt einberufen"}
+          </button>
+          {meetingStatus && (
+            <div className={`note ${meetingStatus.ok ? "good" : "bad"}`} role="status">
+              <Icon name={meetingStatus.ok ? "check" : "warn"} />{meetingStatus.text}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Welt */}
+      <div className="sec">
+        <div className="sec-h"><span>Welt</span></div>
+        <button className="btn block" onClick={() => setShowScaleSelector(true)}>
+          <Icon name="globe" />Neue Welt erzeugen …
+        </button>
+      </div>
+
+      {showScaleSelector && (
+        <ScaleSelector onWorldGenerated={() => setShowScaleSelector(false)} onClose={() => setShowScaleSelector(false)} />
+      )}
     </div>
   );
 }

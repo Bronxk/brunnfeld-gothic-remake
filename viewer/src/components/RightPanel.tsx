@@ -1,59 +1,92 @@
 import { useState, useEffect } from "react";
 import { useVillageStore } from "../store";
+import { useIsMobile } from "../theme";
 import AgentPanel from "./AgentPanel";
 import MarketPanel from "./MarketPanel";
 import StockMarketPanel from "./StockMarketPanel";
 import GodModePanel from "./GodModePanel";
+import { ChronikPane } from "./ActivityDrawer";
+import Icon, { type IconName } from "./Icon";
 
-type TabId = "Agent" | "Market" | "Economy" | "Events";
+type TabId = "kolonist" | "tausch" | "wirtschaft" | "ereignisse" | "chronik";
+type Sheet = "closed" | "half" | "full";
 
+const TABS: { id: TabId; label: string; icon: IconName; mobileOnly?: boolean }[] = [
+  { id: "kolonist", label: "Kolonist", icon: "user" },
+  { id: "tausch", label: "Tauschbrett", icon: "swap" },
+  { id: "wirtschaft", label: "Wirtschaft", icon: "chart" },
+  { id: "ereignisse", label: "Ereignisse", icon: "bell" },
+  { id: "chronik", label: "Chronik", icon: "book", mobileOnly: true },
+];
+
+const NEXT_SHEET: Record<Sheet, Sheet> = { closed: "half", half: "full", full: "closed" };
+const SHEET_LABEL: Record<Sheet, string> = {
+  closed: "Seitenleiste öffnen", half: "Seitenleiste vergrößern", full: "Seitenleiste schließen",
+};
+
+/**
+ * Right-hand panel. Desktop: fixed 348px column with tabs on top.
+ * Phone (<720px): bottom sheet under the map, tabs at the bottom, drag-handle cycles closed / half / full.
+ */
 export default function RightPanel() {
-  const [tab, setTab] = useState<TabId>("Market");
+  const [tab, setTab] = useState<TabId>("kolonist");
+  const [sheet, setSheet] = useState<Sheet>("half");
+  const isMobile = useIsMobile();
   const selectedAgent = useVillageStore((s) => s.selectedAgent);
   const selectedAgentVersion = useVillageStore((s) => s.selectedAgentVersion);
 
-  // Auto-switch to Agent tab on every selectAgent call (even same agent re-clicked)
+  // Selecting a colonist (map click, chronicle name…) jumps to the Kolonist tab, even for a re-click.
   useEffect(() => {
-    if (selectedAgent !== null) setTab("Agent");
+    if (selectedAgent !== null) {
+      setTab("kolonist");
+      setSheet((s) => (s === "closed" ? "half" : s));
+    }
   }, [selectedAgent, selectedAgentVersion]);
 
+  const activeTab: TabId = !isMobile && tab === "chronik" ? "kolonist" : tab;
+
+  const onTab = (id: TabId) => {
+    if (isMobile && id === activeTab) {
+      setSheet((s) => (s === "closed" ? "half" : "closed"));
+      return;
+    }
+    setTab(id);
+    if (sheet === "closed") setSheet("half");
+  };
+
   return (
-    <div style={{
-      width: 320, flexShrink: 0,
-      display: "flex", flexDirection: "column",
-      background: "#0a0600",
-      borderLeft: "1px solid #3a2810",
-    }}>
-      {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "1px solid #3a2810", flexShrink: 0 }}>
-        {(["Agent", "Market", "Economy", "Events"] as TabId[]).map((t) => (
+    <aside className="panel" data-sheet={sheet} aria-label="Seitenleiste">
+      <div className="tabs" role="tablist" aria-label="Bereiche">
+        {TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              flex: 1, padding: "9px 4px",
-              background: "transparent",
-              border: "none",
-              borderBottom: tab === t ? "2px solid #f0c040" : "2px solid transparent",
-              color: tab === t ? "#f0c040" : "#6a5030",
-              fontSize: 11, fontWeight: "bold", letterSpacing: 1,
-              textTransform: "uppercase", cursor: "pointer",
-              fontFamily: "Georgia, serif",
-              transition: "color 0.15s",
-            }}
+            key={t.id}
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={activeTab === t.id}
+            aria-controls="pane"
+            className={t.mobileOnly ? "only-mobile" : undefined}
+            onClick={() => onTab(t.id)}
           >
-            {t}
+            <Icon name={t.icon} />
+            <span className="tl">{t.label}</span>
           </button>
         ))}
       </div>
 
-      {/* Tab content */}
-      <div style={{ flex: 1, overflow: "hidden", padding: "8px" }}>
-        {tab === "Agent" && <AgentPanel />}
-        {tab === "Market" && <MarketPanel />}
-        {tab === "Economy" && <StockMarketPanel />}
-        {tab === "Events" && <GodModePanel />}
+      <button className="sheet-handle only-mobile" aria-label={SHEET_LABEL[sheet]} onClick={() => setSheet(NEXT_SHEET[sheet])}>
+        <i />
+      </button>
+
+      <div className="panes">
+        {/* keyed so every tab switch replays the enter transition */}
+        <section key={activeTab} id="pane" className="pane" role="tabpanel" aria-labelledby={`tab-${activeTab}`}>
+          {activeTab === "kolonist" && <AgentPanel />}
+          {activeTab === "tausch" && <MarketPanel />}
+          {activeTab === "wirtschaft" && <StockMarketPanel />}
+          {activeTab === "ereignisse" && <GodModePanel />}
+          {activeTab === "chronik" && <ChronikPane />}
+        </section>
       </div>
-    </div>
+    </aside>
   );
 }

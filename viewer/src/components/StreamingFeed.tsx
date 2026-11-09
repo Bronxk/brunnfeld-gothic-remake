@@ -1,14 +1,6 @@
 import { useVillageStore, AGENT_DISPLAY } from "../store";
-import type { AgentName } from "../types";
 
-const AGENT_COLORS: Record<AgentName, string> = {
-  brakel: "#e8c87a", rike: "#f4b8d4", ottmar: "#a8d48a", wenzel: "#c8a84a",
-  kasper: "#d4a870", irmel: "#d4d4a0", bodo: "#f0d890", eckhart: "#c84c4c",
-  lenz: "#a07040", grete: "#d878a8", walburga: "#80c8d8", jost: "#80a850",
-  reinhart: "#a8a0c8", bruder_anno: "#c8c8e8", mattis: "#909090", vroni: "#e8b090",
-  wendel: "#d8c060", minna: "#e878b8", gisbert: "#b0b0b0", player: "#ffd700",
-};
-
+/** Unused live "thinking" stream (the chronicle shows a compact indicator instead); kept restyled for reuse. */
 export default function StreamingFeed() {
   const streaming = useVillageStore((s) => s.streaming);
   const selectAgent = useVillageStore((s) => s.selectAgent);
@@ -17,78 +9,22 @@ export default function StreamingFeed() {
   if (entries.length === 0) return null;
 
   return (
-    <div style={{
-      flexShrink: 0,
-      marginBottom: 6,
-      display: "flex",
-      flexDirection: "column",
-      gap: 4,
-      maxHeight: 200,
-      overflowY: "auto",
-    }}>
+    <div className="stream" aria-live="polite">
       {entries.map((entry) => (
-        <div
-          key={entry.agent}
-          onClick={() => selectAgent(entry.agent)}
-          style={{
-            background: "rgba(20,12,4,0.96)",
-            border: `1px solid ${AGENT_COLORS[entry.agent] ?? "#5a3c10"}44`,
-            borderLeft: `3px solid ${AGENT_COLORS[entry.agent] ?? "#c8a060"}`,
-            borderRadius: 4,
-            padding: "5px 10px",
-            cursor: "pointer",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: "50%",
-              background: AGENT_COLORS[entry.agent] ?? "#c8a060",
-              boxShadow: `0 0 6px ${AGENT_COLORS[entry.agent] ?? "#c8a060"}`,
-              flexShrink: 0,
-              animation: "pulse 1s infinite",
-            }} />
-            <span style={{
-              fontSize: 10, fontWeight: "bold",
-              color: AGENT_COLORS[entry.agent] ?? "#c8a060",
-              fontFamily: "Georgia",
-            }}>
-              {AGENT_DISPLAY[entry.agent]}
-            </span>
-            <span style={{ fontSize: 9, color: "#6a5030" }}>thinking…</span>
-          </div>
+        <button key={entry.agent} type="button" className="stream-i" onClick={() => selectAgent(entry.agent)}>
+          <span className="h">
+            <span className="dot think-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--accent)" }} />
+            {AGENT_DISPLAY[entry.agent]}
+            <small className="muted">denkt nach …</small>
+          </span>
           {entry.text && (
-            <div style={{
-              fontSize: 10, color: "rgba(240,230,180,0.7)",
-              fontFamily: "Georgia, serif", lineHeight: 1.4,
-              paddingLeft: 12,
-              // Show last 200 chars so it feels live
-              wordBreak: "break-word",
-            }}>
-              {entry.text.length > 200
-                ? "…" + entry.text.slice(-200)
-                : entry.text}
-              <span style={{
-                display: "inline-block",
-                width: 6, height: 11,
-                background: "rgba(240,230,180,0.6)",
-                marginLeft: 2,
-                verticalAlign: "text-bottom",
-                animation: "blink 0.8s step-end infinite",
-              }} />
-            </div>
+            <span className="t">
+              {entry.text.length > 200 ? `…${entry.text.slice(-200)}` : entry.text}
+              <i className="caret" />
+            </span>
           )}
-        </div>
+        </button>
       ))}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.3; }
-        }
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

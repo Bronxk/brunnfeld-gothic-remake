@@ -1,34 +1,55 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useVillageStore } from "../store";
+import Icon from "./Icon";
 
 interface Props {
   onWorldGenerated?: () => void;
+  /** When given, the dialog can be dismissed (Escape, backdrop, "Abbrechen"). */
+  onClose?: () => void;
 }
 
-export default function ScaleSelector({ onWorldGenerated }: Props) {
+const VILLAGE_OPTIONS = [1, 2, 3, 5];
+const AGENT_OPTIONS = [19, 30, 50, 100, 200];
+
+function readSaved(key: string, fallback: number): number {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? Number(saved) : fallback;
+  } catch {
+    return fallback; // storage can be blocked (private mode)
+  }
+}
+
+function save(key: string, value: number) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch (err) {
+    console.warn("[viewer] could not persist world settings", err);
+  }
+}
+
+export default function ScaleSelector({ onWorldGenerated, onClose }: Props) {
   const setVillages = useVillageStore((s) => s.setVillages);
   const setActiveVillageId = useVillageStore((s) => s.setActiveVillageId);
   const setWorld = useVillageStore((s) => s.setWorld);
 
-  const [numVillages, setNumVillages] = useState(() => {
-    const saved = localStorage.getItem("schlackental:numVillages");
-    return saved ? Number(saved) : 1;
-  });
-  const [agentsPerVillage, setAgentsPerVillage] = useState(() => {
-    const saved = localStorage.getItem("schlackental:agentsPerVillage");
-    return saved ? Number(saved) : 19;
-  });
+  const [numVillages, setNumVillages] = useState(() => readSaved("schlackental:numVillages", 1));
+  const [agentsPerVillage, setAgentsPerVillage] = useState(() => readSaved("schlackental:agentsPerVillage", 19));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const VILLAGE_OPTIONS = [1, 2, 3, 5];
-  const AGENT_OPTIONS = [19, 30, 50, 100, 200];
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !generating) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, generating]);
 
   const handleGenerate = async () => {
     setGenerating(true);
     setError(null);
-    localStorage.setItem("schlackental:numVillages", String(numVillages));
-    localStorage.setItem("schlackental:agentsPerVillage", String(agentsPerVillage));
+    save("schlackental:numVillages", numVillages);
+    save("schlackental:agentsPerVillage", agentsPerVillage);
     try {
       const res = await fetch("/api/generate-world", {
         method: "POST",
@@ -36,13 +57,10 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
         body: JSON.stringify({ villages: numVillages, agentsPerVillage }),
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error ?? "Unknown error");
+      if (!data.ok) throw new Error(data.error ?? "Unbekannter Fehler");
 
       // Reload world state + village list with the newly generated data
-      const [stateRes, villagesRes] = await Promise.all([
-        fetch("/api/state"),
-        fetch("/api/villages"),
-      ]);
+      const [stateRes, villagesRes] = await Promise.all([fetch("/api/state"), fetch("/api/villages")]);
       const newState = await stateRes.json();
       const villages = await villagesRes.json();
       setWorld(newState);
@@ -53,79 +71,53 @@ export default function ScaleSelector({ onWorldGenerated }: Props) {
       await fetch("/api/start", { method: "POST" });
       onWorldGenerated?.();
     } catch (e) {
+      console.error("[viewer] world generation failed", e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setGenerating(false);
     }
   };
 
-  const btnStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 16px",
-    border: active ? "2px solid #c08020" : "1px solid #5a3d1e",
-    borderRadius: 4,
-    background: active ? "#3d2c12" : "#1e1408",
-    color: active ? "#f0c060" : "#8a7050",
-    cursor: "pointer",
-    fontSize: 14,
-  });
-
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed", inset: 0,
-    background: "rgba(20,14,8,0.85)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    zIndex: 1000,
-  };
-  const cardStyle: React.CSSProperties = {
-    background: "#2a1e10", border: "2px solid #6b4c24", borderRadius: 8,
-    padding: "32px 40px", minWidth: 380, maxWidth: 480,
-    color: "#e8d5a3", fontFamily: "Georgia, serif",
-  };
-  const generateStyle: React.CSSProperties = {
-    width: "100%", padding: "10px 0",
-    background: generating ? "#3d2c12" : "#5a3c10",
-    border: "1px solid #8a5c1a", borderRadius: 5,
-    color: "#f0c060", fontSize: 15,
-    cursor: generating ? "not-allowed" : "pointer",
-    fontFamily: "Georgia, serif", marginTop: 8,
-  };
+  const total = numVillages === 1 ? 19 : numVillages * agentsPerVillage;
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
-        <div style={{ fontSize: 22, fontWeight: "bold", marginBottom: 8, color: "#f0c060" }}>New World</div>
-        <div style={{ fontSize: 13, color: "#8a7050", marginBottom: 24 }}>Configure your simulation before starting.</div>
+    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget && onClose && !generating) onClose(); }}>
+      <div className="modal" role="dialog" aria-modal="true" aria-labelledby="world-title">
+        <h2 id="world-title">Neue Welt</h2>
+        <p className="lead">Lege fest, wie groß das Tal wird, bevor die Simulation startet.</p>
 
-        <label style={{ fontSize: 13, color: "#a08050", marginBottom: 8, display: "block" }}>Villages</label>
-        <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-          {VILLAGE_OPTIONS.map(n => (
-            <button key={n} style={btnStyle(numVillages === n)} onClick={() => setNumVillages(n)}>
-              {n === 1 ? "Schlackental only" : `${n} villages`}
+        <label>Kolonien</label>
+        <div className="opts" role="group" aria-label="Anzahl Kolonien">
+          {VILLAGE_OPTIONS.map((n) => (
+            <button key={n} className="chip" aria-pressed={numVillages === n} onClick={() => setNumVillages(n)} autoFocus={n === numVillages}>
+              {n === 1 ? "Nur Schlackental" : `${n} Kolonien`}
             </button>
           ))}
         </div>
 
         {numVillages > 1 && (
           <>
-            <label style={{ fontSize: 13, color: "#a08050", marginBottom: 8, display: "block" }}>Agents per village</label>
-            <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-              {AGENT_OPTIONS.map(n => (
-                <button key={n} style={btnStyle(agentsPerVillage === n)} onClick={() => setAgentsPerVillage(n)}>
-                  {n}
-                </button>
+            <label>Kolonisten pro Kolonie</label>
+            <div className="opts" role="group" aria-label="Kolonisten pro Kolonie">
+              {AGENT_OPTIONS.map((n) => (
+                <button key={n} className="chip" aria-pressed={agentsPerVillage === n} onClick={() => setAgentsPerVillage(n)}>{n}</button>
               ))}
             </div>
           </>
         )}
 
-        <div style={{ fontSize: 12, color: "#6a5030", marginBottom: 16 }}>
-          Total agents: {numVillages * agentsPerVillage}
+        <div className="muted" style={{ marginBottom: 14 }}>Kolonisten insgesamt: {total}</div>
+
+        <div className="row" style={{ flexWrap: "wrap" }}>
+          <button className="btn primary" style={{ flex: 1, minWidth: 160 }} disabled={generating} onClick={() => void handleGenerate()}>
+            <Icon name="globe" />{generating ? "Erzeuge …" : "Welt erzeugen"}
+          </button>
+          {onClose && (
+            <button className="btn" disabled={generating} onClick={onClose}>Abbrechen</button>
+          )}
         </div>
 
-        <button style={generateStyle} disabled={generating} onClick={handleGenerate}>
-          {generating ? "Generating…" : "Generate World"}
-        </button>
-
-        {error && <div style={{ color: "#c04040", fontSize: 13, marginTop: 12 }}>{error}</div>}
+        {error && <div className="note bad" role="alert"><Icon name="warn" />{error}</div>}
       </div>
     </div>
   );

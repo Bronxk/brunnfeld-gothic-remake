@@ -1,328 +1,117 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVillageStore, AGENT_DISPLAY } from "../store";
-import type { FeedEntry, AgentName } from "../types";
+import { tickClock, type FeedEntry } from "../types";
+import Icon, { type IconName } from "./Icon";
 
-// ─── Agent colors ────────────────────────────────────────────────────────────
+// ─── Categories ──────────────────────────────────────────────────────────────
 
-const AGENT_COLORS: Record<AgentName, string> = {
-  brakel: "#e8c87a", rike: "#f4b8d4", ottmar: "#a8d48a", wenzel: "#c8a84a",
-  kasper: "#d4a870", irmel: "#d4d4a0", bodo: "#f0d890", eckhart: "#c84c4c",
-  lenz: "#a07040", grete: "#d878a8", walburga: "#80c8d8", jost: "#80a850",
-  reinhart: "#a8a0c8", bruder_anno: "#c8c8e8", mattis: "#909090", vroni: "#e8b090",
-  wendel: "#d8c060", minna: "#e878b8", gisbert: "#b0b0b0", player: "#ffd700",
-};
+export type ChronicleFilter = "all" | "trade" | "work" | "talk" | "council";
 
-// ─── Filter types ─────────────────────────────────────────────────────────────
-
-type FilterKey = "speak" | "trade" | "move" | "production" | "do" | "thought";
-
-const FILTERS: { key: FilterKey; label: string; icon: string; defaultOn: boolean }[] = [
-  { key: "speak",      label: "Speech",   icon: "💬", defaultOn: true  },
-  { key: "trade",      label: "Trades",   icon: "💰", defaultOn: true  },
-  { key: "move",       label: "Moves",    icon: "👣", defaultOn: true  },
-  { key: "production", label: "Crafting", icon: "⚒",  defaultOn: true  },
-  { key: "do",         label: "Actions",  icon: "🔧", defaultOn: false },
-  { key: "thought",    label: "Thoughts", icon: "💭", defaultOn: false },
+export const CHRONICLE_FILTERS: { key: ChronicleFilter; label: string; title: string }[] = [
+  { key: "all", label: "Alle", title: "Alles anzeigen" },
+  { key: "trade", label: "Handel", title: "Käufe und Verkäufe" },
+  { key: "work", label: "Arbeit", title: "Arbeit, Herstellung und Wege" },
+  { key: "talk", label: "Reden", title: "Gespräche" },
+  { key: "council", label: "Rat", title: "Appell und Ereignisse im Tal" },
 ];
 
-// ─── Entry rendering ──────────────────────────────────────────────────────────
+type Category = Exclude<ChronicleFilter, "all">;
 
-function EntryRow({ entry, onClick }: { entry: FeedEntry; onClick: () => void }) {
-  const agentColor = AGENT_COLORS[entry.agent] ?? "#c8a060";
-  const agentShort = AGENT_DISPLAY[entry.agent]?.split(" ")[0] ?? entry.agent;
-
-  if (entry.type === "trade") {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          padding: "5px 10px",
-          background: "rgba(50,35,5,0.45)",
-          borderLeft: "3px solid #f0c040",
-          borderBottom: "1px solid rgba(60,40,5,0.3)",
-          cursor: "pointer",
-        }}
-      >
-        <span style={{ fontSize: 11, color: "#f0c040", fontFamily: "Georgia" }}>
-          💰 {entry.text.length > 80 ? entry.text.slice(0, 77) + "…" : entry.text}
-        </span>
-      </div>
-    );
+/** Maps a feed entry onto a chip category. Thoughts are not part of the chronicle (see Kolonist tab). */
+export function categoryOf(entry: FeedEntry): Category | null {
+  switch (entry.type) {
+    case "trade": return "trade";
+    case "production":
+    case "do":
+    case "move": return "work";
+    case "speak": return entry.council ? "council" : "talk";
+    case "system": return "council";
+    default: return null;
   }
+}
 
-  if (entry.type === "speak") {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          padding: "4px 10px",
-          borderLeft: `2px solid ${agentColor}`,
-          borderBottom: "1px solid rgba(60,40,5,0.2)",
-          cursor: "pointer",
-        }}
-      >
-        <span style={{ fontSize: 10, fontWeight: "bold", color: agentColor, fontFamily: "Georgia" }}>
-          {agentShort}:
-        </span>
-        <span style={{ fontSize: 11, color: "#e8d890", fontFamily: "Georgia, serif", lineHeight: 1.4, marginLeft: 5 }}>
-          &ldquo;{entry.text.length > 100 ? entry.text.slice(0, 97) + "…" : entry.text}&rdquo;
-        </span>
-      </div>
-    );
-  }
+const CAT_ICON: Record<Category, IconName> = {
+  trade: "swap", work: "hammer", talk: "speech", council: "gavel",
+};
 
-  if (entry.type === "move") {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          padding: "3px 10px",
-          borderBottom: "1px solid rgba(60,40,5,0.15)",
-          cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 5,
-        }}
-      >
-        <span style={{ fontSize: 9, color: "#60a8d8" }}>👣</span>
-        <span style={{ fontSize: 10, color: "#7090b0", fontFamily: "Georgia", fontStyle: "italic" }}>
-          {entry.text.length > 70 ? entry.text.slice(0, 67) + "…" : entry.text}
-        </span>
-      </div>
-    );
-  }
+// ─── Filter chips ────────────────────────────────────────────────────────────
 
-  if (entry.type === "production") {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          padding: "3px 10px",
-          borderBottom: "1px solid rgba(60,40,5,0.15)",
-          cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 5,
-        }}
-      >
-        <span style={{ fontSize: 9, color: "#80c8ff" }}>⚒</span>
-        <span style={{ fontSize: 10, color: "#70a0c0", fontFamily: "Georgia" }}>
-          {entry.text.length > 70 ? entry.text.slice(0, 67) + "…" : entry.text}
-        </span>
-      </div>
-    );
-  }
-
-  // do / thought / system
+export function ChronicleChips({ filter, onChange }: { filter: ChronicleFilter; onChange: (f: ChronicleFilter) => void }) {
   return (
-    <div
-      onClick={onClick}
-      style={{
-        padding: "3px 10px",
-        borderBottom: "1px solid rgba(60,40,5,0.1)",
-        cursor: "pointer",
-      }}
-    >
-      <span style={{ fontSize: 9, color: "#5a4830", fontFamily: "Georgia, serif", fontStyle: entry.type === "thought" ? "italic" : "normal" }}>
-        {entry.type === "thought" ? "💭 " : entry.type === "do" ? "🔧 " : ""}
-        <span style={{ color: agentColor }}>{agentShort}</span>
-        {" "}
-        {entry.text.length > 80 ? entry.text.slice(0, 77) + "…" : entry.text}
-      </span>
+    <div className="chips" role="group" aria-label="Chronik filtern">
+      {CHRONICLE_FILTERS.map((f) => (
+        <button key={f.key} className="chip" aria-pressed={filter === f.key} title={f.title} onClick={() => onChange(f.key)}>
+          {f.label}
+        </button>
+      ))}
     </div>
   );
 }
 
-// ─── Scene card ───────────────────────────────────────────────────────────────
+// ─── List ────────────────────────────────────────────────────────────────────
 
-function SceneCard({
-  location, entries, defaultOpen, selectAgent,
-}: {
-  location: string;
-  entries: FeedEntry[];
-  defaultOpen: boolean;
-  selectAgent: (a: AgentName) => void;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  // Open automatically when new entries arrive at this location
-  const prevLenRef = useRef(entries.length);
-  useEffect(() => {
-    if (entries.length > prevLenRef.current) setOpen(true);
-    prevLenRef.current = entries.length;
-  }, [entries.length]);
-
-  const tradeCount = entries.filter((e) => e.type === "trade").length;
-  const speakCount = entries.filter((e) => e.type === "speak").length;
-
-  // Unique agents present in this scene
-  const agents = [...new Set(entries.map((e) => e.agent))];
+function Entry({ entry, fresh: freshProp, onSelect }: { entry: FeedEntry; fresh: boolean; onSelect: (a: string) => void }) {
+  const [fresh] = useState(freshProp); // decided once, so re-renders never cancel the enter animation
+  const cat = categoryOf(entry)!;
+  const name = AGENT_DISPLAY[entry.agent]?.split(" ")[0] ?? entry.agent;
+  const nameBtn = (
+    <button className="linkish" onClick={() => onSelect(entry.agent)} title={`${AGENT_DISPLAY[entry.agent]} ansehen`}>{name}</button>
+  );
+  // trade / production / move / system texts already name the actors; speech and actions get the speaker prefixed.
+  let body: React.ReactNode;
+  if (entry.type === "speak") body = <>{nameBtn}: „{entry.text}“</>;
+  else if (entry.type === "do") body = <>{nameBtn} {entry.text}</>;
+  else body = entry.text;
 
   return (
-    <div style={{
-      border: "1px solid #3a2810",
-      borderRadius: 5,
-      marginBottom: 4,
-      overflow: "hidden",
-      background: "rgba(10,6,2,0.6)",
-    }}>
-      {/* Card header */}
-      <div
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          padding: "5px 10px",
-          display: "flex", alignItems: "center", gap: 7,
-          cursor: "pointer",
-          background: open ? "rgba(40,25,5,0.5)" : "rgba(20,12,3,0.5)",
-          borderBottom: open ? "1px solid #3a2810" : "none",
-        }}
-      >
-        <span style={{ fontSize: 11, color: "#c8a060", fontWeight: "bold", fontFamily: "Georgia", flex: 1 }}>
-          {location}
-        </span>
-
-        {/* Agent dots */}
-        <div style={{ display: "flex", gap: 2 }}>
-          {agents.slice(0, 6).map((a) => (
-            <div
-              key={a}
-              title={AGENT_DISPLAY[a]}
-              style={{
-                width: 7, height: 7, borderRadius: "50%",
-                background: AGENT_COLORS[a] ?? "#6a5030",
-              }}
-            />
-          ))}
-          {agents.length > 6 && (
-            <span style={{ fontSize: 8, color: "#6a5030" }}>+{agents.length - 6}</span>
-          )}
-        </div>
-
-        {/* Badges */}
-        {tradeCount > 0 && (
-          <span style={{
-            fontSize: 9, color: "#f0c040", background: "rgba(60,40,5,0.6)",
-            border: "1px solid #6a4010", borderRadius: 3, padding: "1px 4px",
-          }}>
-            💰{tradeCount}
-          </span>
-        )}
-        {speakCount > 0 && (
-          <span style={{ fontSize: 9, color: "#a09060" }}>
-            💬{speakCount}
-          </span>
-        )}
-
-        <span style={{ fontSize: 9, color: open ? "#c8a060" : "#4a3020" }}>
-          {open ? "▲" : "▼"}
-        </span>
-      </div>
-
-      {/* Entries */}
-      {open && (
-        <div>
-          {entries.map((e) => (
-            <EntryRow key={e.id} entry={e} onClick={() => selectAgent(e.agent)} />
-          ))}
-        </div>
-      )}
-    </div>
+    <li className={`ent${fresh ? " enter" : ""}`} data-t={cat} title={entry.location ? `${entry.location}` : undefined}>
+      <time>{tickClock(entry.tick)}</time>
+      <span className="bd"><Icon name={entry.type === "move" ? "feet" : CAT_ICON[cat]} /></span>
+      <span className="tx">{body}</span>
+    </li>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
-export default function SceneChronicle() {
+export default function ChronicleList({ filter, className = "" }: { filter: ChronicleFilter; className?: string }) {
   const liveFeed = useVillageStore((s) => s.feed);
   const historyFeed = useVillageStore((s) => s.historyFeed);
   const historyLoading = useVillageStore((s) => s.historyLoading);
   const mode = useVillageStore((s) => s.mode);
   const selectAgent = useVillageStore((s) => s.selectAgent);
 
-  const [filters, setFilters] = useState<Set<FilterKey>>(
-    () => new Set(FILTERS.filter((f) => f.defaultOn).map((f) => f.key))
-  );
+  // Only genuinely new live entries animate in; bulk loads (history, first paint) don't.
+  const seenMax = useRef(-1);
+  const raw = mode === "history" ? historyFeed : liveFeed;
+  const prevMax = seenMax.current;
+  const newCount = raw.filter((e) => e.id > prevMax).length;
+  useEffect(() => {
+    seenMax.current = raw.reduce((m, e) => Math.max(m, e.id), seenMax.current);
+  });
 
-  const rawFeed = mode === "history" ? historyFeed : liveFeed;
+  const feed = raw
+    .filter((e) => {
+      const cat = categoryOf(e);
+      return cat !== null && (filter === "all" || cat === filter);
+    })
+    .slice(0, 80);
 
-  const toggleFilter = (key: FilterKey) => {
-    setFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const feed = rawFeed.filter((e) => filters.has(e.type as FilterKey));
-
-  // Group by location
-  const byLocation: Record<string, FeedEntry[]> = {};
-  for (const entry of feed) {
-    const loc = entry.location
-      ?? (entry.type === "trade" || entry.type === "production" ? "Market" : "Village");
-    if (!byLocation[loc]) byLocation[loc] = [];
-    byLocation[loc]!.push(entry);
+  if (historyLoading) {
+    return <div className="chron-empty">Lade Tick …</div>;
   }
-
-  // Sort scenes: most entries first
-  const scenes = Object.entries(byLocation)
-    .sort(([, a], [, b]) => b.length - a.length);
-
+  if (feed.length === 0) {
+    return (
+      <div className="chron-empty">
+        {mode === "live"
+          ? filter === "all" ? "Noch nichts passiert. Die Chronik füllt sich, sobald die Kolonisten handeln." : "Dazu gibt es noch keine Einträge."
+          : "Keine Einträge für diesen Tick."}
+      </div>
+    );
+  }
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Filter pills */}
-      <div style={{
-        display: "flex", gap: 4, padding: "5px 8px",
-        flexWrap: "wrap", flexShrink: 0,
-        borderBottom: "1px solid #2a1c08",
-        background: "rgba(6,4,0,0.8)",
-      }}>
-        {FILTERS.map((f) => {
-          const on = filters.has(f.key);
-          return (
-            <button
-              key={f.key}
-              onClick={() => toggleFilter(f.key)}
-              style={{
-                padding: "2px 7px",
-                border: `1px solid ${on ? "#6a4a10" : "#2a1c08"}`,
-                borderRadius: 10,
-                background: on ? "rgba(80,55,10,0.5)" : "rgba(15,10,2,0.5)",
-                color: on ? "#d4a850" : "#4a3020",
-                fontSize: 9, cursor: "pointer",
-                display: "flex", alignItems: "center", gap: 3,
-                fontFamily: "Georgia",
-                transition: "all 0.1s",
-              }}
-            >
-              <span>{f.icon}</span>
-              <span>{f.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Scene cards */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 6px 4px" }}>
-        {historyLoading && (
-          <div style={{ padding: 16, textAlign: "center", color: "#6a5030", fontFamily: "Georgia", fontSize: 11 }}>
-            Loading tick…
-          </div>
-        )}
-
-        {!historyLoading && scenes.length === 0 && (
-          <div style={{ padding: 16, textAlign: "center", color: "#3a2810", fontFamily: "Georgia", fontSize: 11 }}>
-            {mode === "live" ? "Awaiting village activity…" : "No entries match the current filters"}
-          </div>
-        )}
-
-        {!historyLoading && scenes.map(([loc, entries], idx) => (
-          <SceneCard
-            key={loc}
-            location={loc}
-            entries={entries}
-            defaultOpen={idx === 0}
-            selectAgent={selectAgent}
-          />
-        ))}
-      </div>
-    </div>
+    <ol className={`chron-list ${className}`.trim()} aria-live="polite" aria-label="Chronik">
+      {feed.map((e) => (
+        <Entry key={e.id} entry={e} fresh={mode === "live" && newCount <= 3 && e.id > prevMax} onSelect={selectAgent} />
+      ))}
+    </ol>
   );
 }

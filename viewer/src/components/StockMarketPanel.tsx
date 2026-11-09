@@ -1,234 +1,75 @@
-import { useState } from "react";
-import { useVillageStore } from "../store";
-import type { ItemType } from "../types";
+import { useVillageStore, computeEconomy, colonistIds, playerVisible, AGENT_DISPLAY } from "../store";
+import { gr, itemLabel } from "../types";
+import { c } from "../theme";
+import Icon from "./Icon";
+import { LineChart } from "./Charts";
 
-const ITEM_DISPLAY: Record<string, string> = {
-  gerste: "Gerste", mehl: "Mehl", brot: "Brot", fleisch: "Fleisch", milch: "Ziegenmilch",
-  eier: "Eier", rueben: "Rüben", kraeuter: "Kräuter", arznei: "Arznei",
-  eisenerz: "Eisenerz", kohle: "Kohle", werkzeug: "Werkzeug",
-  bauholz: "Bauholz", brennholz: "Brennholz", hausrat: "Hausrat",
-  bier: "Dünnbier", eintopf: "Eintopf", leinen: "Leinen",
-};
-
-const ITEM_EMOJI: Record<string, string> = {
-  gerste: "🌾", mehl: "⚪", brot: "🍞", fleisch: "🥩", milch: "🥛",
-  eier: "🥚", rueben: "🥦", kraeuter: "🌿", arznei: "💊",
-  eisenerz: "🪨", kohle: "⬛", werkzeug: "⚒",
-  bauholz: "🪵", brennholz: "🔥", hausrat: "🪑",
-  bier: "🍺", eintopf: "🍲", leinen: "🧵",
-};
-
-function Sparkline({ data, width, height, color }: { data: number[]; width: number; height: number; color: string }) {
-  if (data.length < 2) return <span style={{ fontSize: 10, color: "#6a5030" }}>—</span>;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * (height - 2) - 1;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const polyLine = pts.join(" ");
-  const areaPoly = `0,${height} ${polyLine} ${width},${height}`;
-
+function Trend({ title, value, data, color, hint }: { title: string; value: string; data: number[]; color: string; hint?: string }) {
   return (
-    <svg width={width} height={height} style={{ overflow: "visible", display: "block" }}>
-      <polygon points={areaPoly} fill={`${color}33`} />
-      <polyline points={polyLine} fill="none" stroke={color} strokeWidth={1.5} strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-type SubView = "prices" | "economy";
-
-function PricesView() {
-  const world = useVillageStore((s) => s.world);
-  const [expanded, setExpanded] = useState<string | null>(null);
-
-  if (!world) return null;
-
-  const items = Object.keys(ITEM_DISPLAY) as ItemType[];
-  const prices = world.marketplace.priceIndex;
-
-  return (
-    <div>
-      {items.map((item) => {
-        const price = prices[item] ?? 0;
-        const history = (world.marketplace.priceHistory[item] ?? []).slice(-50);
-        const priceData = history.map((h) => h.price);
-        const prev = priceData.length >= 2 ? priceData[priceData.length - 2] : null;
-        const firstPrice = priceData.length > 0 ? priceData[0] : null;
-        const trendPct = firstPrice && firstPrice > 0 && price !== firstPrice
-          ? ((price - firstPrice) / firstPrice * 100)
-          : null;
-        const trend = prev == null ? "–" : price > prev ? "↑" : price < prev ? "↓" : "–";
-        const trendColor = trend === "↑" ? "#e84030" : trend === "↓" ? "#40d060" : "#c8a060";
-        const sparkColor = trend === "↑" ? "#e84030" : trend === "↓" ? "#40d060" : "#c8a060";
-        const isExpanded = expanded === item;
-
-        return (
-          <div key={item} style={{ borderBottom: "1px solid rgba(80,50,10,0.2)" }}>
-            <div
-              onClick={() => setExpanded(isExpanded ? null : item)}
-              style={{
-                height: 28, display: "flex", alignItems: "center", gap: 6,
-                padding: "0 8px", cursor: "pointer",
-                background: isExpanded ? "rgba(60,40,10,0.3)" : "transparent",
-              }}
-            >
-              <span style={{ fontSize: 12, width: 16, flexShrink: 0 }}>{ITEM_EMOJI[item]}</span>
-              <span style={{ fontSize: 10, color: "#d0c080", flex: 1, fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {ITEM_DISPLAY[item] ?? item}
-              </span>
-              <span style={{ fontSize: 10, color: "#f0d840", fontFamily: "monospace", width: 26, textAlign: "right", flexShrink: 0 }}>
-                {price}c
-              </span>
-              <div style={{ width: 80, flexShrink: 0 }}>
-                <Sparkline data={priceData} width={80} height={18} color={sparkColor} />
-              </div>
-              <span style={{ fontSize: 9, color: trendColor, width: 38, textAlign: "right", fontFamily: "monospace", flexShrink: 0 }}>
-                {trendPct != null ? `${trendPct > 0 ? "+" : ""}${trendPct.toFixed(0)}%` : trend}
-              </span>
-            </div>
-            {isExpanded && priceData.length > 0 && (
-              <div style={{ padding: "8px 8px 10px", background: "rgba(20,12,4,0.5)" }}>
-                <div style={{ fontSize: 9, color: "#6a5030", marginBottom: 4 }}>
-                  Price history ({priceData.length} ticks)
-                </div>
-                <Sparkline data={priceData} width={268} height={50} color={sparkColor} />
-                <div style={{ fontSize: 9, color: "#6a5030", marginTop: 4, display: "flex", gap: 12 }}>
-                  <span>Min: <span style={{ color: "#40d060" }}>{Math.min(...priceData)}c</span></span>
-                  <span>Max: <span style={{ color: "#e84030" }}>{Math.max(...priceData)}c</span></span>
-                  <span>Now: <span style={{ color: "#f0d840" }}>{price}c</span></span>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div className="sec">
+      <div className="sec-h"><span>{title}</span><b style={{ color, fontSize: 15, letterSpacing: 0, textTransform: "none" }} className="mono">{value}</b></div>
+      <div className="card" style={{ padding: "8px 10px" }}>
+        {data.length >= 2
+          ? <LineChart data={data} color={color} label={`${title}: Verlauf`} />
+          : <span className="muted">Sammle Verlauf … (erste Messung nach dem nächsten Tag)</span>}
+        {hint && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{hint}</div>}
+      </div>
     </div>
   );
 }
 
-function EconomyView() {
+/** "Wirtschaft" tab: wealth, trade volume, inequality and who owns what. */
+export default function StockMarketPanel() {
   const world = useVillageStore((s) => s.world);
   const latestEconomy = useVillageStore((s) => s.latestEconomy);
 
-  if (!world) return null;
-
-  const snapshots = (world.economy_snapshots ?? []).slice(-100);
-  const wealthData = snapshots.map((s) => s.totalWealth);
-  const gdpData = snapshots.map((s) => s.gdp);
-  const giniData = snapshots.map((s) => s.giniCoefficient);
-
-  // Compute live values directly from world state — always available
-  const agents = Object.values(world.economics);
-  const liveWealth = agents.reduce((s, e) => s + e.wallet, 0);
-  const liveWallets = agents.map(e => e.wallet).sort((a, b) => a - b);
-  const n = liveWallets.length;
-  const liveGini = liveWealth > 0
-    ? Math.round(liveWallets.reduce((acc, v, i) => acc + (2 * (i + 1) - n - 1) * v, 0) / (n * liveWealth) * 100) / 100
-    : 0;
-  const liveGdp = world.marketplace.history
-    .filter(t => t.tick >= world.current_tick - 16)
-    .reduce((s, t) => s + t.total, 0);
-
-  // Wealth distribution: prefer latestEconomy, fall back to live wallet data
-  const wealthDist = latestEconomy?.wealthDistribution
-    ?? Object.entries(world.economics).map(([agent, eco]) => ({ agent, wallet: eco.wallet, inventoryValue: 0 }));
-  const sorted = [...wealthDist].sort((a, b) => (b.wallet + b.inventoryValue) - (a.wallet + a.inventoryValue));
-  const maxTotal = sorted.reduce((m, e) => Math.max(m, e.wallet + e.inventoryValue), 1);
-
-  function StatRow({ label, value, color, data, sparkColor }: {
-    label: string; value: string; color: string;
-    data: number[]; sparkColor: string;
-  }) {
-    return (
-      <div style={{ marginBottom: 14, padding: "0 8px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-          <div style={{ fontSize: 9, color: "#c8a060", textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
-          <div style={{ fontSize: 13, color, fontWeight: "bold", fontFamily: "monospace" }}>{value}</div>
-        </div>
-        {data.length >= 2
-          ? <Sparkline data={data} width={268} height={48} color={sparkColor} />
-          : <div style={{ fontSize: 9, color: "#4a3020", fontStyle: "italic" }}>collecting history…</div>
-        }
-      </div>
-    );
+  if (!world) {
+    return <div className="empty"><Icon name="hourglass" /><span>Wirtschaftsdaten werden geladen …</span></div>;
   }
 
-  return (
-    <div style={{ padding: "8px 0" }}>
-      <StatRow label="Total Wealth" value={`${liveWealth}c`} color="#f0c040" data={wealthData} sparkColor="#f0c040" />
-      <StatRow label="GDP (last day)" value={`${liveGdp}c`} color="#80c8ff" data={gdpData} sparkColor="#80c8ff" />
-      <StatRow
-        label="Gini Coefficient (lower = more equal)"
-        value={liveGini.toFixed(2)}
-        color={liveGini > 0.5 ? "#e84030" : liveGini > 0.35 ? "#e8b830" : "#80e080"}
-        data={giniData}
-        sparkColor="#80e080"
-      />
+  const live = computeEconomy(world);
+  const snapshots = (world.economy_snapshots ?? []).slice(-100);
+  const giniColor = live.gini > 0.5 ? c.bad : live.gini > 0.35 ? c.warn : c.good;
 
-      <div style={{ padding: "0 8px" }}>
-        <div style={{ fontSize: 9, color: "#6a5030", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-          Wealth Distribution
+  // Distribution: prefer the latest snapshot (includes inventory value), fall back to live wallets.
+  const dist = (latestEconomy?.wealthDistribution
+    ?? colonistIds(world).map((agent) => ({ agent, wallet: world.economics[agent]!.wallet, inventoryValue: 0 })))
+    .filter((e) => e.agent !== "player" || playerVisible(world))
+    .map((e) => ({ ...e, total: e.wallet + e.inventoryValue }))
+    .sort((a, b) => b.total - a.total);
+  const maxTotal = dist.reduce((m, e) => Math.max(m, e.total), 1);
+  const scarcity = latestEconomy?.scarcityAlerts ?? [];
+
+  return (
+    <div>
+      <div className="kpis">
+        <div className="kpi" title="Summe aller Geldbeutel"><span>Vermögen</span><b className="mono" style={{ color: c.accent }}>{live.totalWealth}</b><small>Groschen</small></div>
+        <div className="kpi" title="Handelsvolumen der letzten 16 Stunden"><span>BIP</span><b className="mono" style={{ color: c.info }}>{latestEconomy?.gdp ?? live.gdp}</b><small>pro Tag</small></div>
+        <div className="kpi" title="0 = alle gleich reich, 1 = einer hat alles"><span>Gini</span><b className="mono" style={{ color: giniColor }}>{live.gini.toFixed(2)}</b><small>{live.gini > 0.5 ? "sehr ungleich" : live.gini > 0.35 ? "ungleich" : "ausgeglichen"}</small></div>
+      </div>
+
+      {scarcity.length > 0 && (
+        <div className="sec">
+          <div className="sec-h"><span>Knappheit</span></div>
+          <div className="chips">
+            {scarcity.map((i) => <span key={i} className="chipx warn"><Icon name="warn" />{itemLabel(i)}</span>)}
+          </div>
         </div>
-        {sorted.map((entry) => {
-          const total = entry.wallet + entry.inventoryValue;
-          const pct = (total / maxTotal) * 100;
-          return (
-            <div key={entry.agent} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-              <span style={{ fontSize: 9, color: "#d0c080", width: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {entry.agent}
-              </span>
-              <div style={{ flex: 1, height: 5, background: "#2a1c08", borderRadius: 2 }}>
-                <div style={{ width: `${pct}%`, height: "100%", background: "#d0a030", borderRadius: 2, transition: "width 0.5s" }} />
-              </div>
-              <span style={{ fontSize: 9, color: "#f0d840", width: 28, textAlign: "right", fontFamily: "monospace" }}>{total}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+      )}
 
-export default function StockMarketPanel() {
-  const [subView, setSubView] = useState<SubView>("prices");
+      <Trend title="Vermögen" value={gr(live.totalWealth)} data={snapshots.map((s) => s.totalWealth)} color={c.accent} />
+      <Trend title="BIP (letzter Tag)" value={gr(latestEconomy?.gdp ?? live.gdp)} data={snapshots.map((s) => s.gdp)} color={c.info} />
+      <Trend title="Gini" value={live.gini.toFixed(2)} data={snapshots.map((s) => s.giniCoefficient)} color={giniColor} hint="Niedriger heißt gleichmäßiger verteilt." />
 
-  return (
-    <div style={{
-      background: "rgba(10,8,0,0.95)", border: "1px solid #4a3010",
-      borderRadius: 6, height: "100%",
-      display: "flex", flexDirection: "column", overflow: "hidden",
-      fontFamily: "monospace",
-    }}>
-      {/* Segmented control */}
-      <div style={{ display: "flex", borderBottom: "1px solid #4a3010", flexShrink: 0 }}>
-        {(["prices", "economy"] as SubView[]).map((v) => (
-          <button
-            key={v}
-            onClick={() => setSubView(v)}
-            style={{
-              flex: 1, padding: "6px",
-              background: subView === v ? "rgba(60,40,10,0.4)" : "transparent",
-              border: "none",
-              borderBottom: subView === v ? "2px solid #f0c040" : "2px solid transparent",
-              color: subView === v ? "#f0c040" : "#6a5030",
-              fontSize: 10, fontWeight: "bold", letterSpacing: 1,
-              textTransform: "uppercase", cursor: "pointer",
-            }}
-          >
-            {v === "prices" ? "Prices" : "Economy"}
-          </button>
+      <div className="sec">
+        <div className="sec-h"><span>Vermögensverteilung</span><small>Geld + Waren</small></div>
+        {dist.map((e) => (
+          <div key={e.agent} className="wb" title={`${AGENT_DISPLAY[e.agent]}: ${gr(e.wallet)} Geld, ${gr(e.inventoryValue)} Waren`}>
+            <span className="n">{AGENT_DISPLAY[e.agent]}</span>
+            <span className="t"><b style={{ ["--p" as string]: `${(e.total / maxTotal) * 100}%` }} /></span>
+            <span className="v mono">{e.total}</span>
+          </div>
         ))}
-      </div>
-
-      <div style={{ flex: 1, overflowY: "auto" }}>
-        {subView === "prices" ? <PricesView /> : <EconomyView />}
       </div>
     </div>
   );

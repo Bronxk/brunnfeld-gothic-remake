@@ -1,87 +1,65 @@
-import { useVillageStore } from "../store";
-
-const SEASON_COLORS: Record<string, string> = {
-  spring: "#80c860",
-  summer: "#e8b830",
-  autumn: "#c86820",
-  winter: "#a0c0e0",
-};
-
-const SEASON_EMOJI: Record<string, string> = {
-  spring: "🌱", summer: "☀️", autumn: "🍂", winter: "❄️",
-};
+import { useVillageStore, colonistIds } from "../store";
+import { SEASON_LABELS, EVENT_LABELS, DAYS_PER_SEASON } from "../types";
+import Icon from "./Icon";
 
 export default function TimeHUD() {
   const world = useVillageStore((s) => s.world);
   const connected = useVillageStore((s) => s.connected);
 
-  const season = world?.season ?? "spring";
-  const color = SEASON_COLORS[season] ?? "#fff";
-  const emoji = SEASON_EMOJI[season] ?? "";
+  const tick = world?.current_tick ?? 0;
+  const season = world?.season ? SEASON_LABELS[world.season] : "";
+  // current_time arrives as "Montag, 09:00" (German, from the backend); tick 0 is a status text.
+  const timeText = world?.current_time?.replace(/,\s*/, " ") ?? "—";
+  const clock = tick > 0 ? `${season}, ${timeText} · Tag ${world?.day_of_season ?? 1}/${DAYS_PER_SEASON}` : timeText;
+  const colonists = world ? colonistIds(world).length : 0;
 
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 16,
-      padding: "6px 16px",
-      background: "linear-gradient(to bottom, #1e1408, #2a1c08)",
-      borderBottom: "2px solid #5a3c10",
-      color: "#f0d890", fontFamily: "Georgia, serif",
-      height: 42,
-    }}>
-      {/* Title */}
-      <span style={{ fontWeight: "bold", fontSize: 18, letterSpacing: 2, color: "#f8e060", marginRight: 8 }}>
-        BRUNNFELD
-      </span>
-
-      {/* Time */}
-      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-        <span style={{ fontSize: 13, fontWeight: "bold" }}>{world?.current_time ?? "—"}</span>
-        <span style={{ fontSize: 10, color: "#b0984a" }}>Tick {world?.current_tick ?? 0}</span>
+    <header className="topbar">
+      <div className="logo" aria-label="Schlackental">
+        <svg className="logo-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M3 27 12 9l5 8 4-6 8 16z" fill="currentColor" opacity=".9" />
+          <circle cx="23" cy="8" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
+        </svg>
+        <span className="logo-text">Schlackental</span>
       </div>
 
-      <div style={{ width: 1, height: 28, background: "#5a3c10" }} />
-
-      {/* Season */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 14 }}>{emoji}</span>
-        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-          <span style={{ fontSize: 12, color, fontWeight: "bold", textTransform: "capitalize" }}>{season}</span>
-          <span style={{ fontSize: 10, color: "#b0984a" }}>Day {world?.day_of_season ?? 1}</span>
-        </div>
+      <div className="tb-item tb-time" title="Spielzeit">
+        <Icon name="clock" />
+        <span>{clock}</span>
       </div>
 
-      <div style={{ width: 1, height: 28, background: "#5a3c10" }} />
+      <div className="tb-item tb-weather" title="Wetter">
+        <Icon name="cloud" />
+        <span>{world?.weather ?? "—"}</span>
+      </div>
 
-      {/* Weather */}
-      <span style={{ fontSize: 11, color: "#d4c080", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {world?.weather ?? "—"}
-      </span>
+      <div className="tb-item tb-tick" title="Simulationsschritt (1 Tick = 1 Stunde)">
+        <span className="tb-lbl">Tick</span>
+        <span key={tick} className="mono tick-flash">{tick}</span>
+      </div>
 
-      {/* Events */}
       {world?.active_events?.length ? (
-        <>
-          <div style={{ width: 1, height: 28, background: "#5a3c10" }} />
+        <div className="tb-events" aria-label="Aktive Ereignisse">
           {world.active_events.map((ev, i) => (
-            <span key={i} style={{ fontSize: 11, color: "#ff8040", padding: "2px 8px", background: "rgba(200,60,0,0.2)", borderRadius: 4, border: "1px solid #c03000" }}>
-              ⚠ {ev.type}
+            <span key={`${ev.type}-${i}`} className="chipx warn" title={ev.description}>
+              <Icon name="warn" />
+              {EVENT_LABELS[ev.type] ?? ev.type}
             </span>
           ))}
-        </>
+        </div>
       ) : null}
 
-      <div style={{ flex: 1 }} />
+      <div className="tb-spacer" />
 
-      {/* Connection */}
-      <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-        <div style={{
-          width: 8, height: 8, borderRadius: "50%",
-          background: connected ? "#60d060" : "#d06060",
-          boxShadow: connected ? "0 0 6px #60d060" : "none",
-        }} />
-        <span style={{ color: connected ? "#80e080" : "#e08080" }}>
-          {connected ? "Live" : "Offline"}
-        </span>
+      <div className="tb-item tb-pop">
+        <Icon name="user" />
+        <span>{colonists} Kolonisten</span>
       </div>
-    </div>
+
+      <div className={`tb-live${connected ? "" : " off"}`} title={connected ? "Verbunden mit der Simulation" : "Keine Verbindung zum Server"}>
+        <i />
+        {connected ? "live" : "offline"}
+      </div>
+    </header>
   );
 }
