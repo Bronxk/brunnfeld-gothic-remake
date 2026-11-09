@@ -471,13 +471,28 @@ export function isValidLocation(loc: string): boolean {
 /**
  * Resolves a potentially bare location name to the fully qualified name for the given agent.
  * e.g. a Rabenstollen agent typing "Köhlerwald" → "Rabenstollen:Köhlerwald"
+ * A bare name means "here": the current (else home) village's own location of that name wins over
+ * the default village's bare one, so a Rabenstollen colonist saying "Zechenplatz" stays in Rabenstollen.
+ * A plain village name ("Rabenstollen") resolves to that village's Zechenplatz.
  * If already valid (or unresolvable), returns the input unchanged.
  */
 export function resolveAgentLocation(agent: string, loc: string, currentVillageId?: string): string {
+  const cfg = getConfig();
+  const vid = currentVillageId ?? getAgentVillage(agent);
+  const vName = cfg.villages.find(v => v.id === vid)?.name ?? "";
+  if (vName && !loc.includes(":")) {
+    const local = `${vName}:${loc}`;
+    if (isValidLocation(local)) return local;
+  }
   if (isValidLocation(loc)) return loc;
 
+  const asVillage = cfg.villages.find(v => v.name && normalizeKey(v.name) === normalizeKey(loc));
+  if (asVillage) {
+    const hub = getVillageLocations(asVillage.id).find(l => l === HUB_LOCATION || l.endsWith(`:${HUB_LOCATION}`));
+    if (hub) return hub;
+  }
+
   // Strip hallucinated village-name prefix (e.g. "Schlackental:Zechenplatz" → "Zechenplatz")
-  const cfg = getConfig();
   for (const v of cfg.villages) {
     if (v.name && loc.startsWith(`${v.name}:`)) {
       const stripped = loc.slice(v.name.length + 1);
@@ -485,13 +500,6 @@ export function resolveAgentLocation(agent: string, loc: string, currentVillageI
       const reprefixed = `${v.name}:${stripped}`;
       if (isValidLocation(reprefixed)) return reprefixed;
     }
-  }
-
-  const vid = currentVillageId ?? getAgentVillage(agent);
-  const vName = cfg.villages.find(v => v.id === vid)?.name ?? "";
-  if (vName) {
-    const prefixed = `${vName}:${loc}`;
-    if (isValidLocation(prefixed)) return prefixed;
   }
 
   // Normalized match ("Muehle", "baderhütte" → "Mühle", "Baderhütte"), on the agent's own village first.

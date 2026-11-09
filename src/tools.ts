@@ -45,6 +45,37 @@ Verfügbare Aktionen:
 
 Nutze nur Aktionen, die zu deiner Lage passen. Beziehe dich nur auf Dinge, die du wahrgenommen hast oder an die du dich erinnerst.`;
 
+const villageNameOf = (vid: string | undefined): string => getVillages().find(v => v.id === vid)?.name ?? vid ?? "?";
+
+/**
+ * Other settlements are only reachable over their road: from a village an agent may walk to its own
+ * places and onto a road that starts there; from a road only into the two villages it connects.
+ * Returns the refusal text, or null when the move is allowed.
+ */
+export function crossVillageMoveBlock(from: string, to: string, fromVid: string | undefined): string | null {
+  if (to === from) return null;
+  const roads = getRoads();
+  const fromRoad = roads.find(r => r.name === from);
+  const toRoad = roads.find(r => r.name === to);
+  if (fromRoad) {
+    const ends = fromRoad.connectsVillages.map(villageNameOf).join(" oder ");
+    if (toRoad) return `[Geht nicht] Du bist schon unterwegs. Geh erst nach ${ends}.`;
+    const toVid = getVillageForLocation(to);
+    if (toVid && !fromRoad.connectsVillages.includes(toVid)) return `[Geht nicht] Diese Straße führt nur nach ${ends}.`;
+    return null;
+  }
+  if (!fromVid) return null; // unknown origin: nothing to check against
+  if (toRoad) {
+    return toRoad.connectsVillages.includes(fromVid) ? null : `[Geht nicht] Die Straße „${to}“ beginnt nicht in ${villageNameOf(fromVid)}.`;
+  }
+  const toVid = getVillageForLocation(to);
+  if (!toVid || toVid === fromVid) return null;
+  const road = roads.find(r => r.connectsVillages.includes(fromVid) && r.connectsVillages.includes(toVid));
+  return road
+    ? `[Geht nicht] ${to} liegt in ${villageNameOf(toVid)}. Dorthin geht es nur über die Straße: move_to "${road.name}", in der nächsten Runde bist du dort.`
+    : `[Geht nicht] ${to} liegt in ${villageNameOf(toVid)}, und von hier führt keine Straße dorthin.`;
+}
+
 export function buildActionSchema(
   agent: AgentName,
   hasConcerns: boolean,
@@ -143,6 +174,10 @@ export function resolveAction(
           vName && l.startsWith(`${vName}:`) ? l.slice(vName.length + 1) : l
         );
         return { ...action, result: `[Geht nicht] "${rawLoc}" ist kein gültiger Ort. Probier: ${localLocs.join(", ")}`, visible: false };
+      }
+      const crossBlock = crossVillageMoveBlock(agentLocation, targetLoc, currentVid);
+      if (crossBlock) {
+        return { ...action, result: crossBlock, visible: false };
       }
       const eventBlock = isLocationBlockedByEvent(targetLoc, state.active_events);
       if (eventBlock) {
