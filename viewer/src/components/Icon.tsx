@@ -46,7 +46,28 @@ const ICONS = {
   prev: '<path d="M15 6l-6 6 6 6"/>',
   next: '<path d="M9 6l6 6-6 6"/>',
   mine: '<path d="M13.5 4.5l6 6M5 20l9-9M4 7c3-3.5 8-4.5 12-2.5-1 .5-2 1.2-2.8 2L9 11.2"/>',
+  // trades
+  axe: '<path d="M6 20.5L16 6"/><path d="M13.5 4.5l5-1.5 2.5 3-1.5 5.5z"/>',
+  anvil: '<path d="M3.5 8h14.5c0 3-2 4.2-5 4.5V16h3v3.5h-9V16h3v-3.5C7 12.5 4 11 3.5 8z"/><path d="M18 8l3-1.5"/>',
+  loaf: '<path d="M5 10c0-3 3-5 7-5s7 2 7 5c0 1.2-.6 1.8-1.5 2V18a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-6C5.600 11.800 5 11.200 5 10z"/><path d="M9.500 9l1 2.500M13 9l1 2.500"/>',
+  mug: '<path d="M5 7h10v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M15 9.500h2a2.500 2.500 0 0 1 0 5h-2"/><path d="M8 4v1.500M12 4v1.500"/>',
+  needle: '<path d="M19 4L6 17.500"/><circle cx="17.500" cy="5.500" r="1.200"/><path d="M6 17.500c-2 .5-2.500 2-2 2.500.5.500 2 0 2.500-2z"/>',
+  staff: '<path d="M8 20.500L15 6.500"/><path d="M15 6.500c-.8-2 1-3.500 2.500-3 2 .7 1.500 3.500-.5 3.500"/>',
+  mill: '<circle cx="12" cy="12" r="1.800"/><path d="M12 10.200V3.500M12 13.800v6.700M10.200 12H3.500M13.800 12h6.700"/><path d="M12 3.500l3 1.500M12 20.500l-3-1.500M3.500 12l1.500-3M20.500 12l-1.500 3"/>',
+  bowl: '<path d="M3.500 11h17c0 4.500-3.500 8-8.500 8s-8.500-3.500-8.500-8z"/><path d="M9 8c0-1.200 1-1.500 1-2.500M13.500 8c0-1.200 1-1.500 1-2.500"/>',
+  flag: '<path d="M6 21V4M6 5h11l-2 3.500L17 12H6"/>',
 } as const;
+
+/** Fitting line icon per skill id (Icon names above). */
+const SKILL_ICONS: Record<string, IconName> = {
+  bauer: "wheat", hirte: "staff", knappe: "mine", holzfaeller: "axe",
+  mueller: "mill", baecker: "loaf", schmied: "anvil", zimmermann: "hammer",
+  wirt: "mug", bader: "bandage", haendler: "cart", naeherin: "needle", none: "user",
+};
+
+export function skillIcon(skill: string | undefined | null): IconName {
+  return SKILL_ICONS[skill ?? "none"] ?? "user";
+}
 
 export type IconName = keyof typeof ICONS;
 

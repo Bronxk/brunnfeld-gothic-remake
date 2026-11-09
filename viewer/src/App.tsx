@@ -12,17 +12,25 @@ import TownHallView from "./components/TownHallView";
 import WorldMapView from "./components/WorldMapView";
 import ScaleSelector from "./components/ScaleSelector";
 import Icon from "./components/Icon";
+import PlayerHUD from "./components/PlayerHUD";
+import CharacterCreation from "./components/CharacterCreation";
+import Toasts from "./components/Toasts";
 
 export default function App() {
   useSSE();
   const activeMeeting = useVillageStore((s) => s.activeMeeting);
   const world = useVillageStore((s) => s.world);
+  const spectating = useVillageStore((s) => s.spectating);
+  const creationForced = useVillageStore((s) => s.creationForced);
   const needsWorldConfig = useVillageStore((s) => s.needsWorldConfig);
   const setNeedsWorldConfig = useVillageStore((s) => s.setNeedsWorldConfig);
   const [previewTownHall, setPreviewTownHall] = useState(false);
   const isMobile = useIsMobile();
 
   const showTownHall = !!activeMeeting || previewTownHall;
+  // Character creation: until a human created a character, unless they chose "Nur zuschauen"
+  // (then only the "Mitspielen" button in the top bar reopens it). The world config dialog goes first.
+  const showCreation = !!world && world.player?.created !== true && !needsWorldConfig && (!spectating || creationForced);
 
   return (
     <div className="app">
@@ -30,6 +38,8 @@ export default function App() {
       {needsWorldConfig && (
         <ScaleSelector onWorldGenerated={() => setNeedsWorldConfig(false)} onClose={() => setNeedsWorldConfig(false)} />
       )}
+      {showCreation && <CharacterCreation />}
+      <Toasts />
 
       <TimeHUD />
       <TickerStrip />
@@ -56,11 +66,12 @@ export default function App() {
           )}
 
           {/*
-            Player HUD slot (bottom-left of the map). Intentionally empty: a future <PlayerHud /> component
-            ("Du spielst: Der Neue", Hunger/Kraft, inventory, actions Reden/Handeln/Arbeiten/Gehen) mounts here.
+            Player HUD slot (bottom-left of the map): the human player's card (desktop) or compact bar (phone).
             .hud-slot-root is absolutely positioned and lets pointer events through except on its children.
           */}
-          <div className="hud-slot-root" id="player-hud-slot" />
+          <div className="hud-slot-root" id="player-hud-slot">
+            <PlayerHUD />
+          </div>
         </section>
 
         <RightPanel />

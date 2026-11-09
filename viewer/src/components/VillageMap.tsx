@@ -168,6 +168,20 @@ export default function VillageMap() {
     cam.y = halfH * 2 >= WORLD_H ? WORLD_H / 2 : Math.max(halfH, Math.min(WORLD_H - halfH, cam.y));
   }, []);
 
+  // Player HUD avatar click: centre the camera on the player's location.
+  const focusNonce = useVillageStore((s) => s.focusNonce);
+  useEffect(() => {
+    if (focusNonce === 0) return;
+    const canvas = canvasRef.current;
+    const loc = useVillageStore.getState().world?.agent_locations.player;
+    if (!canvas || !loc) return;
+    const { x, y } = locationPx(loc);
+    const cam = cameraRef.current;
+    cam.x = x + TILE_SIZE / 2;
+    cam.y = y + TILE_SIZE / 2;
+    clampCamera(cam, canvas.clientWidth, canvas.clientHeight);
+  }, [focusNonce, clampCamera]);
+
   /** Zoom toward a screen point (canvas-relative px): the world point under it stays fixed. */
   const zoomAt = useCallback((mx: number, my: number, newZoomRaw: number) => {
     const canvas = canvasRef.current;

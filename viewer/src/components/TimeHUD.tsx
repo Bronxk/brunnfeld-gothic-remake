@@ -5,6 +5,7 @@ import Icon from "./Icon";
 export default function TimeHUD() {
   const world = useVillageStore((s) => s.world);
   const connected = useVillageStore((s) => s.connected);
+  const openCreation = useVillageStore((s) => s.openCreation);
 
   const tick = world?.current_tick ?? 0;
   const season = world?.season ? SEASON_LABELS[world.season] : "";
@@ -50,6 +51,12 @@ export default function TimeHUD() {
       ) : null}
 
       <div className="tb-spacer" />
+
+      {world && world.player?.created !== true && (
+        <button type="button" className="btn sm tb-play" onClick={openCreation} title="Eine eigene Figur ins Schlackental schicken">
+          <Icon name="flag" />Mitspielen
+        </button>
+      )}
 
       <div className="tb-item tb-pop">
         <Icon name="user" />
