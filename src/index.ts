@@ -205,12 +205,14 @@ function backupInitialMemories(): void {
 
 // ─── Viewer (in-process server so SSE events are shared) ─────
 
-async function startViewer(): Promise<void> {
+/** Starts the viewer server when the viewer is checked out; returns whether it runs. */
+async function startViewer(): Promise<boolean> {
   const viewerPkg = join(process.cwd(), "viewer", "package.json");
-  if (!existsSync(viewerPkg)) return;
+  if (!existsSync(viewerPkg)) return false;
   // Import server so it starts in the same process as the engine,
   // sharing the eventBus for live SSE streaming.
   await import("./server.js");
+  return true;
 }
 
 // ─── Graceful shutdown ────────────────────────────────────────
@@ -255,7 +257,7 @@ async function main(): Promise<void> {
   ensureInitialState();
   backupInitialMemories();
 
-  await startViewer();
+  const viewerRunning = await startViewer();
 
   if (args.includes("--resume")) {
     const state = readWorldState();
@@ -279,11 +281,15 @@ async function main(): Promise<void> {
   const state = readWorldState();
   if (state.current_tick > 0) {
     console.log(`Simulation in progress (tick ${state.current_tick}).`);
-    console.log("Use --resume to continue or --reset to start over.");
-    return;
+    if (!viewerRunning) {
+      console.log("Use --resume to continue or --reset to start over.");
+      return;
+    }
+    // With the viewer, a saved world waits like a fresh one: "Starten" in the Regie tab continues it.
+    console.log("  Press Starten in the viewer to continue (or run with --resume / --reset).");
+  } else {
+    console.log("  Waiting for world configuration… Open http://localhost:3333");
   }
-
-  console.log("  Waiting for world configuration… Open http://localhost:3333");
   setAwaitingStart(true);
   await new Promise<void>(resolve => eventBus.once("sim:start", resolve));
   setAwaitingStart(false);

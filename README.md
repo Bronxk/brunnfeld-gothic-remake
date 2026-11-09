@@ -41,7 +41,7 @@ cp .env.example .env    # set ANTHROPIC_API_KEY (or OPENROUTER_API_KEY); all bla
 npm run dev             # builds the viewer, then serves http://localhost:3333
 ```
 
-Open the page and pick **Diese Welt starten** in the start dialog, or close it, set models and roles in the **Regie** tab first and press **Starten** there.
+Open the page and pick **Diese Welt starten** in the start dialog, or close it, set models and roles in the **Regie** tab first and press **Starten** there. After a restart a saved world waits the same way; **Starten** (or the play button in the top bar) continues it.
 
 Reset to tick 1 at any time:
 
