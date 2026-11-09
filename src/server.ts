@@ -141,7 +141,8 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (path === "/api/player/action" && req.method === "POST") {
-      const body = await parseBody(req);
+      const parsed: unknown = await parseBody(req);
+      const body = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
       const result = performPlayerAction(body["tool"], body["args"]);
       headers["Content-Type"] = "application/json";
       res.writeHead(result.status, headers);

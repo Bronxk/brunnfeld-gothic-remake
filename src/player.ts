@@ -115,6 +115,20 @@ function syncTick(state: WorldState, tick: number): void {
   p.inbox = delivered ? delivered.split("\n") : [];
 }
 
+/**
+ * Why the player cannot act this hour (NPCs in the Karzer or dead are skipped by the engine), or
+ * null. Read-only tools stay available.
+ */
+function blockedReason(state: WorldState, tick: number): string | null {
+  if (isAgentDead(state.body[PLAYER_ID])) return "[Geht nicht] Du bist zu schwach, um irgendetwas zu tun.";
+  const until = state.banned?.[PLAYER_ID];
+  if (until != null && tick < until) {
+    const hours = until - tick;
+    return `[Geht nicht] Du sitzt im Karzer — noch ${hours} ${hours === 1 ? "Stunde" : "Stunden"}.`;
+  }
+  return null;
+}
+
 function timeOf(tick: number): SimTime {
   return tickToTime(Math.max(1, tick));
 }
@@ -240,7 +254,8 @@ export function getPlayerTools(): ApiResult {
     return { status: 409, body: { ok: false, error: "Du bist noch nicht in der Kolonie angekommen." } };
   }
   const { ctx } = contextFor(a.state);
-  const tools = allowedTools(a.state, ctx).map(t => ({
+  const blocked = blockedReason(a.state, a.tick) !== null;
+  const tools = allowedTools(a.state, ctx).filter(t => !blocked || FREE_TOOLS.has(t.name)).map(t => ({
     name: t.name,
     description: t.description,
     argsHint: t.argsHint,
@@ -292,7 +307,16 @@ export function createPlayer(input: unknown): ApiResult {
   if (state.player?.created && !force) {
     return { status: 409, body: { ok: false, error: "Du bist schon in der Kolonie angekommen. Mit force: true legst du eine neue Figur an.", player: viewOf(state, a.tick, true) } };
   }
-  if (state.player?.created) purgePlayer(state);
+  // A new figure is not a way out of the Karzer or a fresh action budget for the same hour.
+  const previous = state.player?.created ? state.player : undefined;
+  if (previous) {
+    const jailed = blockedReason(state, a.tick);
+    if (jailed && !isAgentDead(state.body[PLAYER_ID])) {
+      return { status: 409, body: { ok: false, error: `${jailed.replace(/^\[Geht nicht\] /, "")} Erst danach kannst du neu anfangen.`, player: viewOf(state, a.tick, true) } };
+    }
+    purgePlayer(state);
+  }
+  const carriedBudget = previous && previous.budgetTick === a.tick ? (previous.actionsUsed ?? 0) : 0;
 
   const chosen = skill as PlayerSkillChoice;
   const recipes = Object.values(RECIPES).filter(r => r.skill === chosen);
@@ -304,7 +328,7 @@ export function createPlayer(input: unknown): ApiResult {
     name,
     skill: chosen as Skill,
     createdTick: live ? live.tick : state.current_tick,
-    actionsUsed: 0,
+    actionsUsed: carriedBudget,
     budgetTick: a.tick,
     pendingActions: [],
     pendingSpeech: [],
@@ -371,11 +395,17 @@ export function performPlayerAction(tool: unknown, args: unknown): ApiResult {
   }
 
   const charged = !FREE_TOOLS.has(toolName);
+  const blocked = charged ? blockedReason(state, a.tick) : null;
+  if (blocked) {
+    return { status: 409, body: { ok: false, text: blocked, player: viewOf(state, a.tick, false) } };
+  }
   if (charged && (p.actionsUsed ?? 0) >= ACTION_BUDGET) {
     return { status: 429, body: { ok: false, text: OVER_BUDGET_TEXT, player: viewOf(state, a.tick, false) } };
   }
 
   p.pendingActions ??= [];
+  // movedThisTick lives in memory only; after a server restart the persisted move log still counts.
+  if ((p.moveLog?.length ?? 0) > 0) movedThisTick.add(PLAYER_ID);
   const config: HarnessToolConfig = {
     agentId: PLAYER_ID,
     worldState: state,
