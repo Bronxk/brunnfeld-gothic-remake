@@ -50,6 +50,14 @@ export function ChronicleChips({ filter, onChange }: { filter: ChronicleFilter; 
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
+/** Many backend results already start with the actor ("Ansgar isst …"); the row prefixes the name itself. */
+function withoutLeadingName(text: string, fullName: string, shortName: string): string {
+  for (const n of [fullName, shortName]) {
+    if (n && text.startsWith(`${n} `)) return text.slice(n.length + 1);
+  }
+  return text;
+}
+
 function Entry({ entry, fresh: freshProp, onSelect }: { entry: FeedEntry; fresh: boolean; onSelect: (a: string) => void }) {
   const [fresh] = useState(freshProp); // decided once, so re-renders never cancel the enter animation
   const cat = categoryOf(entry)!;
@@ -60,7 +68,7 @@ function Entry({ entry, fresh: freshProp, onSelect }: { entry: FeedEntry; fresh:
   // trade / production / move / system texts already name the actors; speech and actions get the speaker prefixed.
   let body: React.ReactNode;
   if (entry.type === "speak") body = <>{nameBtn}: „{entry.text}“</>;
-  else if (entry.type === "do") body = <>{nameBtn} {entry.text}</>;
+  else if (entry.type === "do") body = <>{nameBtn} {withoutLeadingName(entry.text, AGENT_DISPLAY[entry.agent] ?? entry.agent, name)}</>;
   else body = entry.text;
 
   return (
