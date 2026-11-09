@@ -2,11 +2,23 @@
 /**
  * World Generator for Schlackental
  *
- * Usage:
- *   node dist/generate-world.js                           # 1 village, 19 hardcoded agents
- *   node dist/generate-world.js --villages=2              # 2 villages × 19 agents each
- *   node dist/generate-world.js --villages=3 --agents=30  # 3 villages × 30 agents
- *   node dist/generate-world.js --seed=42                 # deterministic output
+ * Usage (npx tsx src/generate-world.ts ...):
+ *   (no args)                                  # 1 village: the hand-written Schlackental cast (19 colonists)
+ *   --villages=3                               # Schlackental (hand-written, exactly as above) + 2 neighbours
+ *   --villages=3 --neighbour-agents=10         # neighbours get 10 colonists each (default 8, clamped 4..60)
+ *   --villages=1 --agents=30                   # single village with 30 randomly generated colonists
+ *   --seed=42                                  # deterministic output
+ *
+ * Multi-settlement worlds (--villages>=2):
+ *   - Village 1 is ALWAYS the hand-written Schlackental: same config, ids, profiles, memory_initial
+ *     and world_state as single-village mode. Existing memory_initial/profile files are kept.
+ *   - Neighbours come from VILLAGE_NAMES in order (Rabenstollen, Kehlhof, Moosgrund, Aschenbruch) with
+ *     --neighbour-agents colonists each (German names, descriptions, profiles, memory stubs), a themed
+ *     skill mix that can feed itself, and a 3-member council (the elder + 2).
+ *   - Roads: every neighbour connects to Schlackental; consecutive neighbours are connected too
+ *     (3 villages = triangle). Road names have the form "Road: A→B".
+ *   - --agents is IGNORED for --villages>=2 (it only sizes the random single village); the neighbour
+ *     size is --neighbour-agents.
  */
 
 import { writeFileSync, existsSync, mkdirSync, copyFileSync } from "fs";
@@ -23,7 +35,9 @@ import {
   HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION, MERCHANT_CAMP_LOCATION,
 } from "./village-map.js";
 import type { WorldConfig, VillageConfig, AgentConfig, RoadConfig } from "./world-registry.js";
-import { DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME, DEFAULT_DESCRIPTIONS } from "./world-registry.js";
+import {
+  DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME, DEFAULT_DESCRIPTIONS, VILLAGE_LORE, workLocationForSkill,
+} from "./world-registry.js";
 
 const DATA_DIR = join(process.cwd(), "data");
 const DEFAULT_PRICE_INDEX: Record<ItemType, number> = {
@@ -169,24 +183,7 @@ const SKILL_DEFAULTS: Record<Skill, SkillDefaults> = {
   none:        { wallet: 15, items: [{ type: "brot",     quantity: 2 }], tool: null, workSchedule: { open: 6, close: 21 } },
 };
 
-// ─── Skill → work location ────────────────────────────────────
-
-function workLocationForSkill(skill: Skill, farmIndex: number): string {
-  switch (skill) {
-    case "bauer":       return farmIndex <= 1 ? "Unterfeld" : farmIndex === 2 ? "Ziegenweide" : "Oberfeld";
-    case "hirte":       return "Ziegenweide";
-    case "knappe":      return "Erzstollen";
-    case "holzfaeller": return "Köhlerwald";
-    case "mueller":     return "Mühle";
-    case "baecker":     return "Backstube";
-    case "schmied":     return "Schmiede";
-    case "zimmermann":  return "Zimmerei";
-    case "wirt":        return "Schenke";
-    case "bader":       return "Baderhütte";
-    case "naeherin":    return "Flickstube";
-    default:            return HUB_LOCATION;
-  }
-}
+// Skill → work location lives in world-registry (workLocationForSkill), shared with live role changes.
 
 // Specialist skills that live at their workplace
 const LIVE_AT_WORK: Set<Skill> = new Set(["mueller", "baecker", "schmied", "zimmermann", "wirt", "bader", "naeherin", "haendler"]);
@@ -237,7 +234,9 @@ function buildAgentSkills(count: number, rng: () => number): Skill[] {
 // ─── Agent name generation ────────────────────────────────────
 
 function generateAgentNames(count: number, rng: () => number, globalUsed: Set<string> = new Set()): { id: string; displayName: string }[] {
-  const allFirstNames = [...MALE_NAMES, ...FEMALE_NAMES];
+  // Names whose id is already taken (e.g. the hand-written cast) are not offered at all.
+  const toId = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/__+/g, "_");
+  const allFirstNames = [...MALE_NAMES, ...FEMALE_NAMES].filter(n => !globalUsed.has(toId(n)));
   const result: { id: string; displayName: string }[] = [];
 
   // Shuffle name pool
@@ -470,6 +469,7 @@ function buildDefaultWorldConfig(): WorldConfig {
     adjacency: { ...ADJACENCY },
     openingHours: { ...OPENING_HOURS },
     locationTiles: { ...LOCATION_TILES },
+    description: VILLAGE_LORE[DEFAULT_VILLAGE_ID],
   };
 
   return { villages: [village], roads: [] };
@@ -577,6 +577,194 @@ function buildDefaultWorldState(): WorldState {
   };
 }
 
+// ─── Roads ────────────────────────────────────────────────────
+
+const hubOf = (v: VillageConfig) => v.id === DEFAULT_VILLAGE_ID ? HUB_LOCATION : prefixLoc(HUB_LOCATION, v.name);
+
+/** Adds one road per [fromId, toId] pair: road config, road location, hub <-> road adjacency in both villages. */
+function connectVillages(villages: VillageConfig[], roads: RoadConfig[], pairs: [string, string][]): void {
+  for (const [id1, id2] of pairs) {
+    const v1 = villages.find(v => v.id === id1)!;
+    const v2 = villages.find(v => v.id === id2)!;
+    const roadName = `Road: ${v1.name}→${v2.name}`;
+    roads.push({ id: `road_${v1.id}_${v2.id}`, name: roadName, connectsVillages: [v1.id, v2.id], transitTicks: 2 });
+
+    const hub1 = hubOf(v1);
+    const hub2 = hubOf(v2);
+    for (const v of [v1, v2]) {
+      // Road adjacency entry (bidirectional); copy the hub list so shared constants are never mutated.
+      v.adjacency[roadName] = [hub1, hub2];
+      const hub = hubOf(v);
+      v.adjacency[hub] = [...(v.adjacency[hub] ?? []).filter(l => l !== roadName), roadName];
+      if (!v.locations.includes(roadName)) v.locations.push(roadName);
+    }
+  }
+}
+
+// ─── Neighbour settlements (multi-settlement worlds) ──────────
+
+const FEMALE_FIRST_NAMES = new Set(FEMALE_NAMES);
+
+interface NeighbourTheme {
+  /** Skills in priority order; index 0 is the elder. Truncated / extended (cycling `fill`) to the village size. */
+  skills: Skill[];
+  fill: Skill[];
+  /** Skills of the two council members besides the elder (first match each, else any other colonist). */
+  council: [Skill, Skill];
+}
+
+// Every mix can feed itself: farmers produce rueben/eier/gerste directly; Kehlhof adds
+// farmer -> miller -> baker (bread) and a goatherd (milk, meat).
+const NEIGHBOUR_THEMES: Record<string, NeighbourTheme> = {
+  // Rival mining camp: mostly miners, a smith, a woodcutter, a few farmers.
+  rabenstollen: {
+    skills: ["none", "bauer", "knappe", "schmied", "knappe", "holzfaeller", "bauer", "knappe"],
+    fill: ["knappe", "knappe", "bauer", "knappe", "none"],
+    council: ["schmied", "knappe"],
+  },
+  // Poor farming hamlet: farmers, goatherd, miller, baker.
+  kehlhof: {
+    skills: ["none", "bauer", "mueller", "baecker", "bauer", "hirte", "bauer", "bauer"],
+    fill: ["bauer", "hirte", "bauer"],
+    council: ["mueller", "bauer"],
+  },
+};
+const BALANCED_THEME: NeighbourTheme = {
+  skills: ["none", "bauer", "mueller", "baecker", "hirte", "knappe", "schmied", "holzfaeller",
+    "bauer", "zimmermann", "wirt", "bader", "naeherin"],
+  fill: ["bauer", "knappe", "none", "bauer"],
+  council: ["mueller", "schmied"],
+};
+
+function themedSkills(theme: NeighbourTheme, count: number): Skill[] {
+  const out = theme.skills.slice(0, count);
+  for (let i = 0; out.length < count; i++) out.push(theme.fill[i % theme.fill.length]!);
+  return out;
+}
+
+function neighbourDescription(skill: Skill, female: boolean, elder: boolean, villageName: string): string {
+  if (elder) return female ? `die Älteste von ${villageName}` : `der Älteste von ${villageName}`;
+  const m: Record<Skill, string> = {
+    bauer: "ein Feldarbeiter", hirte: "ein Hirte", knappe: "ein Knappe", holzfaeller: "ein Holzfäller",
+    mueller: "der Müller", baecker: "der Bäcker", schmied: "der Schmied", zimmermann: "der Zimmermann",
+    wirt: "der Wirt", bader: "der Bader", naeherin: "die Flickerin", haendler: "ein Händler",
+    none: "ein Kolonist",
+  };
+  const f: Record<Skill, string> = {
+    bauer: "eine Feldarbeiterin", hirte: "eine Hirtin", knappe: "eine Knappin", holzfaeller: "eine Holzfällerin",
+    mueller: "die Müllerin", baecker: "die Bäckerin", schmied: "die Schmiedin", zimmermann: "die Zimmerin",
+    wirt: "die Wirtin", bader: "die Baderin", naeherin: "die Flickerin", haendler: "eine Händlerin",
+    none: "eine Kolonistin",
+  };
+  return (female ? f : m)[skill];
+}
+
+function buildNeighbourVillages(
+  slots: { id: string; name: string }[],
+  agentsEach: number,
+  rng: () => number,
+): VillageConfig[] {
+  const usedIds = new Set<string>(AGENT_NAMES);
+  const allNames = generateAgentNames(slots.length * agentsEach, rng, usedIds);
+  const villages: VillageConfig[] = [];
+
+  slots.forEach(({ id: villageId, name: villageName }, vi) => {
+    const theme = NEIGHBOUR_THEMES[villageId] ?? BALANCED_THEME;
+    const skills = themedSkills(theme, agentsEach);
+    const names = allNames.slice(vi * agentsEach, (vi + 1) * agentsEach);
+    const farmCounter = { n: 1 };
+    const cottageCounter = { n: 0 };
+
+    const agents: AgentConfig[] = names.map((n, i) => {
+      const elder = i === 0;
+      const female = FEMALE_FIRST_NAMES.has(n.displayName.split(" ")[0]!);
+      const spec = buildAgentSpec(n.id, n.displayName, skills[i]!, villageName, farmCounter, cottageCounter);
+      if (elder) {
+        // The elder lives and works in the elder's house, like Schlackental's Vogt.
+        spec.homeLocation = resolveLocName(ELDER_HOME_LOCATION, villageName);
+        spec.workLocation = spec.homeLocation;
+      }
+      return {
+        id: spec.id, displayName: spec.displayName, skill: spec.skill,
+        homeLocation: spec.homeLocation, workLocation: spec.workLocation,
+        description: neighbourDescription(spec.skill, female, elder, villageName),
+      };
+    });
+
+    // Council: the elder plus 2 (themed skills first, else any other colonist).
+    const council = [agents[0]!.id];
+    for (const skill of theme.council) {
+      const pick = agents.find(a => a.skill === skill && !council.includes(a.id));
+      if (pick) council.push(pick.id);
+    }
+    for (const a of agents) {
+      if (council.length >= 3) break;
+      if (!council.includes(a.id)) council.push(a.id);
+    }
+
+    villages.push({
+      id: villageId,
+      name: villageName,
+      agents,
+      locations: buildVillageLocations(villageName),
+      locationTypes: buildVillageLocationTypes(villageName),
+      councilMembers: council.slice(0, 3),
+      adjacency: buildVillageAdjacency(villageName),
+      openingHours: buildVillageOpeningHours(villageName),
+      locationTiles: Object.fromEntries(
+        Object.entries(LOCATION_TILES).map(([loc, t]) => [prefixLoc(loc, villageName), t]),
+      ),
+      description: VILLAGE_LORE[villageId] ?? "",
+    });
+  });
+
+  return villages;
+}
+
+/** Schlackental (hand-written, unchanged) + themed neighbours + roads (star from Schlackental, chain between neighbours). */
+function buildMultiSettlementConfig(numVillages: number, neighbourAgents: number, rng: () => number): WorldConfig {
+  const base = buildDefaultWorldConfig();
+  const slots = VILLAGE_NAMES.slice(1, numVillages);
+  const neighbours = buildNeighbourVillages(slots, neighbourAgents, rng);
+  const villages = [base.villages[0]!, ...neighbours];
+  const roads: RoadConfig[] = [];
+
+  const pairs: [string, string][] = neighbours.map(n => [DEFAULT_VILLAGE_ID, n.id]);
+  for (let i = 0; i < neighbours.length - 1; i++) pairs.push([neighbours[i]!.id, neighbours[i + 1]!.id]);
+  connectVillages(villages, roads, pairs);
+  return { villages, roads };
+}
+
+/** Hand-written Schlackental state verbatim + generated state for the neighbours. */
+function buildMultiSettlementState(config: WorldConfig, rng: () => number): WorldState {
+  const state = buildDefaultWorldState();
+  const neighbours = config.villages.filter(v => v.id !== DEFAULT_VILLAGE_ID);
+  const gen = buildGeneratedWorldState({ villages: neighbours, roads: [] }, rng);
+
+  for (const v of neighbours) {
+    const council = v.councilMembers;
+    const elder = council[0]!;
+    // The elder is better off than the rest; everyone knows the elder, the council knows each other.
+    if (gen.economics[elder]) gen.economics[elder]!.wallet = 80;
+    for (const a of v.agents) {
+      const known = new Set<string>(a.id === elder ? council : [elder]);
+      if (council.includes(a.id)) for (const c of council) known.add(c);
+      known.delete(a.id);
+      gen.acquaintances[a.id] = [...known];
+    }
+  }
+
+  Object.assign(state.agent_locations, gen.agent_locations);
+  Object.assign(state.body, gen.body);
+  Object.assign(state.economics, gen.economics);
+  Object.assign(state.message_queue, gen.message_queue);
+  Object.assign(state.action_feedback, gen.action_feedback);
+  Object.assign(state.acquaintances, gen.acquaintances);
+  Object.assign(state.doors, gen.doors);
+  state.marketplaces = { [DEFAULT_VILLAGE_ID]: state.marketplace, ...gen.marketplaces };
+  return state;
+}
+
 // ─── Build multi-village world ────────────────────────────────
 
 function buildGeneratedWorldConfig(numVillages: number, agentsPerVillage: number, rng: () => number): WorldConfig {
@@ -639,41 +827,12 @@ function buildGeneratedWorldConfig(numVillages: number, agentsPerVillage: number
       adjacency: buildVillageAdjacency(villageName),
       openingHours: buildVillageOpeningHours(villageName),
       locationTiles,
+      description: VILLAGE_LORE[villageId],
     });
   }
 
-  // Build roads connecting villages in a ring
-  for (let i = 0; i < villageSlots.length - 1; i++) {
-    const v1 = villageSlots[i]!;
-    const v2 = villageSlots[i + 1]!;
-    const roadName = `Road: ${v1.name}→${v2.name}`;
-    roads.push({
-      id: `road_${v1.id}_${v2.id}`,
-      name: roadName,
-      connectsVillages: [v1.id, v2.id],
-      transitTicks: 2,
-    });
-
-    // Add road to both villages' adjacency and location lists
-    const v1cfg = villages.find(v => v.id === v1.id)!;
-    const v2cfg = villages.find(v => v.id === v2.id)!;
-
-    // Road adjacency entry (bidirectional)
-    const v1square = v1.name === DEFAULT_VILLAGE_NAME ? HUB_LOCATION : prefixLoc(HUB_LOCATION, v1.name);
-    const v2square = v2.name === DEFAULT_VILLAGE_NAME ? HUB_LOCATION : prefixLoc(HUB_LOCATION, v2.name);
-    v1cfg.adjacency[roadName] = [v1square, v2square];
-    v2cfg.adjacency[roadName] = [v1square, v2square];
-
-    // Add road to each village's adjacency for the hub (Zechenplatz)
-    if (!v1cfg.adjacency[v1square]) v1cfg.adjacency[v1square] = [];
-    if (!v1cfg.adjacency[v1square]!.includes(roadName)) v1cfg.adjacency[v1square]!.push(roadName);
-    if (!v2cfg.adjacency[v2square]) v2cfg.adjacency[v2square] = [];
-    if (!v2cfg.adjacency[v2square]!.includes(roadName)) v2cfg.adjacency[v2square]!.push(roadName);
-
-    // Add road to each village's locations list
-    if (!v1cfg.locations.includes(roadName)) v1cfg.locations.push(roadName);
-    if (!v2cfg.locations.includes(roadName)) v2cfg.locations.push(roadName);
-  }
+  // Chain of roads between consecutive villages (only reachable for random multi-village generation)
+  connectVillages(villages, roads, villageSlots.slice(0, -1).map((v, i) => [v.id, villageSlots[i + 1]!.id] as [string, string]));
 
   return { villages, roads };
 }
@@ -761,6 +920,39 @@ function buildGeneratedWorldState(config: WorldConfig, rng: () => number): World
 
 // ─── Profile / memory file writing ───────────────────────────
 
+/** Profile for a new colonist: the skill stub; neighbours also get their settlement's lore and elder duties. */
+function profileFor(agent: AgentConfig, village: VillageConfig): string {
+  if (village.id === DEFAULT_VILLAGE_ID) {
+    return profileStub(agent.displayName, agent.skill, village.name, agent.workLocation);
+  }
+  const lore = village.description ?? VILLAGE_LORE[village.id] ?? "";
+  if (village.councilMembers[0] === agent.id) {
+    return `# ${agent.displayName}\n\n${agent.displayName} ist ${agent.description} und führt den Rat von ${village.name}.\n\n` +
+      `Wer in ${village.name} etwas will, kommt am Vogtshaus nicht vorbei. ${agent.displayName} wägt ab, schlichtet Streit, ` +
+      `teilt knappe Vorräte zu und sorgt sich darum, dass der Winter niemanden das Leben kostet.\n\n${lore}\n`;
+  }
+  return profileStub(agent.displayName, agent.skill, village.name, agent.workLocation).trimEnd() + `\n\n${lore}\n`;
+}
+
+/** Memory baseline for a new colonist: blank, but everyone knows their elder and the council knows itself. */
+function memoryFor(agent: AgentConfig, village: VillageConfig): string {
+  if (village.id === DEFAULT_VILLAGE_ID) return memoryStub(agent.displayName);
+  const nameOf = (id: string) => village.agents.find(a => a.id === id)?.displayName ?? id;
+  const elder = village.councilMembers[0]!;
+  const lines: string[] = [];
+  if (agent.id !== elder) lines.push(`- ${nameOf(elder)}: der Älteste von ${village.name}, dem du dich fügst.`);
+  if (village.councilMembers.includes(agent.id)) {
+    // The elder line above already covers the elder for everyone else.
+    for (const c of village.councilMembers) {
+      if (c !== agent.id && (agent.id === elder || c !== elder)) {
+        lines.push(`- ${nameOf(c)}: sitzt mit dir im Rat von ${village.name}.`);
+      }
+    }
+  }
+  const people = lines.length > 0 ? lines.join("\n") : "*(Noch niemand bekannt)*";
+  return `# ${agent.displayName}\n\n## Personen\n${people}\n\n## Erlebnisse\n*(Noch nichts)*\n\n## Wichtig\n*(Nichts)*\n`;
+}
+
 function writeAgentFiles(config: WorldConfig): void {
   const profDir     = join(DATA_DIR, "profiles");
   const memDir      = join(DATA_DIR, "memory");
@@ -774,14 +966,14 @@ function writeAgentFiles(config: WorldConfig): void {
       // Always write profile stub (skip if already exists — profiles accumulate story)
       const profPath = join(profDir, `${agent.id}.md`);
       if (!existsSync(profPath)) {
-        writeFileSync(profPath, profileStub(agent.displayName, agent.skill, village.name, agent.workLocation));
+        writeFileSync(profPath, profileFor(agent, village));
       }
 
       // memory_initial/ is the baseline `npm run reset` restores. Hand-written baselines (the
       // canonical cast ships with first relationships) are kept; new agents get a blank stub.
       // Every generated world starts from the baseline, never from a previous run's memories.
       const initPath = join(memInitDir, `${agent.id}.md`);
-      if (!existsSync(initPath)) writeFileSync(initPath, memoryStub(agent.displayName));
+      if (!existsSync(initPath)) writeFileSync(initPath, memoryFor(agent, village));
       copyFileSync(initPath, join(memDir, `${agent.id}.md`));
     }
   }
@@ -801,6 +993,7 @@ async function main(): Promise<void> {
 
   const numVillages     = Math.min(5, Math.max(1, getArg("villages") ?? 1));
   const agentsPerVillage= Math.min(200, Math.max(7, getArg("agents") ?? 19));
+  const neighbourAgents = Math.min(60, Math.max(4, getArg("neighbour-agents") ?? 8));
   const seed            = getArg("seed") ?? Date.now();
 
   const rng = makeRng(seed);
@@ -819,9 +1012,9 @@ async function main(): Promise<void> {
     worldConfig = buildGeneratedWorldConfig(1, agentsPerVillage, rng);
     worldState  = buildGeneratedWorldState(worldConfig, rng);
   } else {
-    // Multi-village
-    worldConfig = buildGeneratedWorldConfig(numVillages, agentsPerVillage, rng);
-    worldState  = buildGeneratedWorldState(worldConfig, rng);
+    // Multi-settlement: hand-written Schlackental + themed neighbours (--agents is ignored here)
+    worldConfig = buildMultiSettlementConfig(numVillages, neighbourAgents, rng);
+    worldState  = buildMultiSettlementState(worldConfig, rng);
   }
 
   // Write world_config.json

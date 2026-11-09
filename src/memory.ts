@@ -1,7 +1,10 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AgentName, ItemType, ResolvedAction, SimTime, WorldState } from "./types.js";
-import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID, PLAYER_ID, setPlayerIdentity, isPlayerIdentityPinned } from "./world-registry.js";
+import {
+  getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID, PLAYER_ID, setPlayerIdentity, isPlayerIdentityPinned,
+  applyPendingRoleSync, readCharacterNote,
+} from "./world-registry.js";
 import { dayLabel } from "./time.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -14,6 +17,14 @@ export function readAgentMemory(agent: AgentName): string {
 export function readAgentProfile(agent: AgentName): string {
   const path = join(DATA_DIR, "profiles", `${agent}.md`);
   return readFileSync(path, "utf-8");
+}
+
+/**
+ * The observer's character note for a colonist (profile section "## Regie-Notiz"), "" if none.
+ * readAgentProfile already contains it; this is for prompt builders that do not use the profile.
+ */
+export function readAgentDirective(agent: AgentName): string {
+  return readCharacterNote(agent);
 }
 
 /**
@@ -54,6 +65,8 @@ export function readWorldState(): WorldState {
 
 export function writeWorldState(state: WorldState): void {
   const path = join(DATA_DIR, "world_state.json");
+  // Live role changes (setAgentRole) written while this state was in memory must survive the write.
+  applyPendingRoleSync(state);
   // Guard against clobbering meeting state injected mid-tick via God Mode.
   try {
     const onDisk = JSON.parse(readFileSync(path, "utf-8")) as Partial<WorldState>;

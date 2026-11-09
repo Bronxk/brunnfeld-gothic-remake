@@ -6,10 +6,12 @@
  * directly from types.ts or village-map.ts.
  */
 
-import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import { join } from "path";
-import type { Skill } from "./types.js";
+import type { Skill, WorldState } from "./types.js";
+import { readWorldState, writeWorldState } from "./memory.js";
 import {
+  SKILL_LABELS,
   AGENT_NAMES,
   AGENT_DISPLAY_NAMES,
   AGENT_SKILLS,
@@ -59,6 +61,8 @@ export interface VillageConfig {
   adjacency: Record<string, string[]>;
   openingHours: Partial<Record<string, { open: number; close: number }>>;
   locationTiles?: Record<string, { tx: number; ty: number }>;
+  /** One German lore sentence about the settlement (see getVillageDescription). */
+  description?: string;
 }
 
 export interface RoadConfig {
@@ -77,6 +81,40 @@ export interface WorldConfig {
 
 export const DEFAULT_VILLAGE_ID = "schlackental";
 export const DEFAULT_VILLAGE_NAME = "Schlackental";
+
+/** One German lore sentence per known settlement; used by the generator and as a fallback for old configs. */
+export const VILLAGE_LORE: Record<string, string> = {
+  schlackental: "Schlackental ist eine Strafkolonie im Bergtal: Häftlinge brechen hier Erz, und seit der Bergsturz den Kehlpass verschüttet hat, kommt weder Nachschub herein noch jemand hinaus.",
+  rabenstollen: "Rabenstollen ist ein rivalisierendes Bergwerkslager jenseits des Grats, dessen reiche Erzader man in Schlackental mit Neid betrachtet.",
+  kehlhof: "Kehlhof ist ein armes Bauerndorf an der alten Passstraße und baut das Korn des ganzen Tals an.",
+  moosgrund: "Moosgrund ist ein feuchtes Köhlerdorf am Waldrand, das von Holz, Torf und Gelegenheitsarbeit lebt.",
+  aschenbruch: "Aschenbruch ist ein halb verlassener Meiler am Hang, in dem sich nach dem Bergsturz Versprengte eingerichtet haben.",
+};
+
+// ─── Skill → workplace (shared by the generator and live role changes) ────
+
+/** Bare (unprefixed) workplace of a skill. `farmIndex` spreads farmers over the three fields. */
+export function workLocationForSkill(skill: Skill, farmIndex = 1): string {
+  switch (skill) {
+    case "bauer":       return farmIndex <= 1 ? "Unterfeld" : farmIndex === 2 ? "Ziegenweide" : "Oberfeld";
+    case "hirte":       return "Ziegenweide";
+    case "knappe":      return "Erzstollen";
+    case "holzfaeller": return "Köhlerwald";
+    case "mueller":     return "Mühle";
+    case "baecker":     return "Backstube";
+    case "schmied":     return "Schmiede";
+    case "zimmermann":  return "Zimmerei";
+    case "wirt":        return "Schenke";
+    case "bader":       return "Baderhütte";
+    case "naeherin":    return "Flickstube";
+    default:            return HUB_LOCATION;
+  }
+}
+
+/** German skill labels for the UI: [{ id, label }] in a stable order (reuses SKILL_LABELS from types.ts). */
+export function getSkillOptions(): { id: Skill; label: string }[] {
+  return (Object.keys(SKILL_LABELS) as Skill[]).map(id => ({ id, label: SKILL_LABELS[id] }));
+}
 
 // ─── Default location types (for Schlackental's bare location names) ─────
 
@@ -150,6 +188,7 @@ function buildDefaultConfig(): WorldConfig {
     adjacency: { ...ADJACENCY },
     openingHours: { ...OPENING_HOURS },
     locationTiles: { ...LOCATION_TILES },
+    description: VILLAGE_LORE[DEFAULT_VILLAGE_ID],
   };
 
   return { villages: [village], roads: [] };
@@ -410,6 +449,12 @@ export function getVillages(): VillageConfig[] {
   return getConfig().villages;
 }
 
+/** Lore sentence of a settlement (config value, else the built-in lore for known ids, else ""). */
+export function getVillageDescription(villageId: string): string {
+  const v = getConfig().villages.find(v => v.id === villageId);
+  return v?.description ?? VILLAGE_LORE[villageId] ?? "";
+}
+
 export function getRoads(): RoadConfig[] {
   return getConfig().roads ?? [];
 }
@@ -517,18 +562,240 @@ export function setAgentModel(agent: string, model: ModelTier | null): void {
     throw new Error(`Unbekanntes Modell: ${String(model)}. Möglich: ${MODEL_TIERS.join(", ")}.`);
   }
 
+  mutateConfigFile(cfg => {
+    const entry = cfg.villages.flatMap(v => v.agents).find(a => a.id === agent);
+    if (!entry) throw new Error(`Unbekannter Kolonist: ${agent}`);
+    if (model === null) delete entry.model;
+    else entry.model = model;
+  });
+}
+
+/**
+ * Read data/world_config.json (materialising the current effective config if the file does not
+ * exist yet), apply `mutate`, write-then-rename (a crash mid-write cannot leave a truncated
+ * config behind) and reload the registry. If `mutate` throws nothing is written.
+ */
+function mutateConfigFile(mutate: (cfg: WorldConfig) => void): void {
   const path = configPath();
   const cfg: WorldConfig = existsSync(path)
     ? (JSON.parse(readFileSync(path, "utf-8")) as WorldConfig)
     : (JSON.parse(JSON.stringify(getConfig())) as WorldConfig);
-  const entry = cfg.villages.flatMap(v => v.agents).find(a => a.id === agent);
-  if (!entry) throw new Error(`Unbekannter Kolonist: ${agent}`);
-  if (model === null) delete entry.model;
-  else entry.model = model;
-
-  // Write-then-rename so a crash mid-write cannot leave a truncated config behind.
+  mutate(cfg);
+  mkdirSync(join(process.cwd(), "data"), { recursive: true });
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(cfg, null, 2));
   renameSync(tmp, path);
   reloadConfig();
+}
+
+// ─── Live roles (skill, council seat, director's character note) ─────────
+
+export interface AgentRole {
+  agent: string;
+  skill: Skill;
+  council: boolean;
+  /** Text of the profile's "## Regie-Notiz" section ("" = none). */
+  character: string;
+  isElder: boolean;
+}
+
+export interface RolePatch {
+  skill?: Skill;
+  council?: boolean;
+  character?: string;
+}
+
+/** Dative phrase for "Der Rat hat dich <zum Schmied> bestimmt". */
+const SKILL_TO_PHRASE: Record<Skill, string> = {
+  bauer: "zum Feldarbeiter", hirte: "zum Hirten", knappe: "zum Knappen", holzfaeller: "zum Holzfäller",
+  mueller: "zum Müller", baecker: "zum Bäcker", schmied: "zum Schmied", zimmermann: "zum Zimmermann",
+  wirt: "zum Wirt", bader: "zum Bader", haendler: "zum Händler", naeherin: "zur Flickerin",
+  none: "zum Handlanger",
+};
+
+/** "in der Schmiede" style phrase for a bare workplace name. */
+const WORKPLACE_PHRASE: Record<string, string> = {
+  Unterfeld: "auf dem Unterfeld", Oberfeld: "auf dem Oberfeld", Ziegenweide: "auf der Ziegenweide",
+  Erzstollen: "im Erzstollen", "Köhlerwald": "im Köhlerwald", "Mühle": "in der Mühle",
+  Backstube: "in der Backstube", Schmiede: "in der Schmiede", Zimmerei: "in der Zimmerei",
+  Schenke: "in der Schenke", "Baderhütte": "in der Baderhütte", Flickstube: "in der Flickstube",
+  Zechenplatz: "auf dem Zechenplatz",
+};
+
+export const CHARACTER_NOTE_HEADING = "## Regie-Notiz";
+export const CHARACTER_NOTE_MAX = 1000;
+
+const profilePath = (agent: string) => join(process.cwd(), "data", "profiles", `${agent}.md`);
+
+// Matches the whole note section: heading line up to the next "## " heading or end of file.
+const CHARACTER_SECTION_RE = new RegExp(`\\n*${CHARACTER_NOTE_HEADING}[^\\n]*\\n[\\s\\S]*?(?=\\n## |$)`);
+
+/** Body of the profile's "## Regie-Notiz" section, "" if there is none (or no profile file). */
+export function readCharacterNote(agent: string): string {
+  const path = profilePath(agent);
+  if (!existsSync(path)) return "";
+  const m = CHARACTER_SECTION_RE.exec(readFileSync(path, "utf-8"));
+  if (!m) return "";
+  return m[0].trim().slice(CHARACTER_NOTE_HEADING.length).trim();
+}
+
+function writeCharacterNote(agent: string, text: string): void {
+  const path = profilePath(agent);
+  const existing = existsSync(path) ? readFileSync(path, "utf-8") : `# ${getDisplayName(agent)}\n`;
+  const without = existing.replace(CHARACTER_SECTION_RE, "").replace(/\s+$/, "");
+  const next = text ? `${without}\n\n${CHARACTER_NOTE_HEADING}\n${text}\n` : `${without}\n`;
+  mkdirSync(join(process.cwd(), "data", "profiles"), { recursive: true });
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, next);
+  renameSync(tmp, path);
+}
+
+/** Keeps the note a single section: no markdown headings, normalised newlines. */
+function sanitizeCharacter(text: string): string {
+  return text.replace(/\r\n?/g, "\n").split("\n").map(l => l.replace(/^\s*#+\s*/, "")).join("\n").trim();
+}
+
+export function getAgentRole(agent: string): AgentRole {
+  if (agent === PLAYER_ID || !getNpcNames().includes(agent)) {
+    throw new Error(`Unbekannter Kolonist: ${agent}`);
+  }
+  const council = getCouncilMembers(getAgentVillage(agent));
+  return {
+    agent,
+    skill: getSkill(agent),
+    council: council.includes(agent),
+    character: readCharacterNote(agent),
+    isElder: council[0] === agent,
+  };
+}
+
+// Role changes written while a tick runs would be overwritten by the engine's in-memory state at
+// the end of the tick. They are remembered here and re-applied (idempotently) by
+// applyPendingRoleSync, which memory.writeWorldState calls before every write. Entries live until
+// clearPendingRoleSync() — sim-control's gateBeforeTick calls it before each tick, because from
+// then on the tick reads the changes from disk (and re-adding a consumed notice would duplicate it).
+const pendingRoleSync = new Map<string, { skill?: Skill; workLocation?: string; feedback: string[] }>();
+
+export function clearPendingRoleSync(): void {
+  pendingRoleSync.clear();
+}
+
+export function applyPendingRoleSync(state: WorldState): void {
+  for (const [agent, p] of pendingRoleSync) {
+    const eco = state.economics[agent];
+    if (eco) {
+      if (p.skill) eco.skill = p.skill;
+      if (p.workLocation) eco.workLocation = p.workLocation;
+    }
+    if (state.action_feedback[agent]) {
+      for (const msg of p.feedback) {
+        if (!state.action_feedback[agent]!.includes(msg)) state.action_feedback[agent]!.push(msg);
+      }
+    }
+  }
+}
+
+/**
+ * Change a colonist's skill, council seat and/or director's character note, live.
+ * Validates everything first (nothing is written if anything is invalid), then persists the
+ * config (skill, workLocation, council), world_state.json (economics skill/workLocation and a
+ * German notice in action_feedback) and the profile file, and reloads the registry.
+ */
+export function setAgentRole(agent: string, patch: RolePatch): AgentRole {
+  if (agent === PLAYER_ID || !getNpcNames().includes(agent)) {
+    throw new Error(`Unbekannter Kolonist: ${agent}`);
+  }
+  if (!patch || typeof patch !== "object") throw new Error("Ungültige Rollenänderung.");
+  if (patch.skill !== undefined && !(patch.skill in SKILL_LABELS)) {
+    throw new Error(`Unbekanntes Handwerk: ${String(patch.skill)}`);
+  }
+  if (patch.council !== undefined && typeof patch.council !== "boolean") {
+    throw new Error("Ungültiger Ratssitz: erwartet true oder false.");
+  }
+  if (patch.character !== undefined && typeof patch.character !== "string") {
+    throw new Error("Ungültige Charakter-Notiz: erwartet Text.");
+  }
+  const villageId = getAgentVillage(agent);
+  const village = getConfig().villages.find(v => v.id === villageId)!;
+  const isElder = village.councilMembers[0] === agent;
+  if (patch.council === false && isElder) throw new Error("Der Älteste bleibt im Rat.");
+  const character = patch.character === undefined ? undefined : sanitizeCharacter(patch.character);
+  if (character !== undefined && character.length > CHARACTER_NOTE_MAX) {
+    throw new Error(`Die Charakter-Notiz ist zu lang (höchstens ${CHARACTER_NOTE_MAX} Zeichen).`);
+  }
+
+  const notices: string[] = [];
+  let newSkill: Skill | undefined;
+  let newWork: string | undefined;
+
+  const prevSkill = getSkill(agent);
+  const wasCouncil = village.councilMembers.includes(agent);
+  const skillChanged = patch.skill !== undefined && patch.skill !== prevSkill;
+  const councilChanged = patch.council !== undefined && patch.council !== wasCouncil;
+
+  if (skillChanged || councilChanged) {
+    if (skillChanged) {
+      newSkill = patch.skill!;
+      const bare = workLocationForSkill(newSkill);
+      newWork = villageId === DEFAULT_VILLAGE_ID ? bare : `${village.name}:${bare}`;
+      notices.push(
+        newSkill === "none"
+          ? "Der Rat hat dich von deinem Handwerk entbunden. Du hast keine feste Arbeit mehr."
+          : `Der Rat hat dich ${SKILL_TO_PHRASE[newSkill]} bestimmt. Deine Arbeit ist jetzt ${WORKPLACE_PHRASE[bare] ?? `in ${bare}`}.`,
+      );
+    }
+    if (councilChanged) {
+      notices.push(
+        patch.council
+          ? `Der Rat hat dich in seine Reihen aufgenommen. Du sitzt jetzt im Rat von ${village.name}.`
+          : `Der Rat hat dir deinen Sitz entzogen. Du bist nicht mehr im Rat von ${village.name}.`,
+      );
+    }
+    mutateConfigFile(cfg => {
+      const v = cfg.villages.find(x => x.id === villageId);
+      const entry = v?.agents.find(a => a.id === agent);
+      if (!v || !entry) throw new Error(`Unbekannter Kolonist: ${agent}`);
+      if (newSkill && newWork) {
+        entry.skill = newSkill;
+        entry.workLocation = newWork;
+      }
+      if (councilChanged) {
+        if (patch.council) {
+          if (!v.councilMembers.includes(agent)) v.councilMembers.push(agent);
+        } else {
+          v.councilMembers = v.councilMembers.filter(id => id !== agent);
+        }
+      }
+    });
+  }
+
+  const prevCharacter = readCharacterNote(agent);
+  const characterChanged = character !== undefined && character !== prevCharacter;
+  if (characterChanged) {
+    writeCharacterNote(agent, character!);
+    if (character) notices.push(`Etwas in dir hat sich verschoben: ${character}`);
+  }
+
+  if (newSkill || notices.length > 0) {
+    // Register first: writeWorldState re-applies pending entries, so the newest change must win there.
+    const pending = pendingRoleSync.get(agent) ?? { feedback: [] };
+    if (newSkill && newWork) { pending.skill = newSkill; pending.workLocation = newWork; }
+    pending.feedback.push(...notices);
+    pendingRoleSync.set(agent, pending);
+    if (existsSync(join(process.cwd(), "data", "world_state.json"))) {
+      const state = readWorldState();
+      const eco = state.economics[agent];
+      if (eco && newSkill && newWork) {
+        eco.skill = newSkill;
+        eco.workLocation = newWork;
+      }
+      if (!state.action_feedback[agent]) state.action_feedback[agent] = [];
+      state.action_feedback[agent]!.push(...notices);
+      writeWorldState(state);
+    } else {
+      console.warn(`[world-registry] setAgentRole(${agent}): world_state.json fehlt, nur Konfiguration/Profil gespeichert.`);
+    }
+  }
+
+  return getAgentRole(agent);
 }
