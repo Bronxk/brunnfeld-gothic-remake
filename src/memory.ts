@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AgentName, ItemType, ResolvedAction, SimTime, WorldState } from "./types.js";
-import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID, PLAYER_ID, setPlayerIdentity } from "./world-registry.js";
+import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID, PLAYER_ID, setPlayerIdentity, isPlayerIdentityPinned } from "./world-registry.js";
 import { dayLabel } from "./time.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -22,12 +22,14 @@ export function readAgentProfile(agent: AgentName): string {
  * placeholder "player" at the hub that NPC tools would otherwise see).
  */
 function syncPlayer(state: WorldState): void {
+  // Mid-tick reads (God Mode) see the last written state; the running tick owns the identity.
+  const pinned = isPlayerIdentityPinned();
   const p = state.player;
   if (p?.created && state.economics[PLAYER_ID] && state.body[PLAYER_ID] && state.agent_locations[PLAYER_ID]) {
-    setPlayerIdentity({ name: p.name, skill: p.skill });
+    if (!pinned) setPlayerIdentity({ name: p.name, skill: p.skill });
     return;
   }
-  setPlayerIdentity(null);
+  if (!pinned) setPlayerIdentity(null);
   delete state.player;
   delete state.agent_locations[PLAYER_ID];
   delete state.body[PLAYER_ID];

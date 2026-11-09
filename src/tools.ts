@@ -1,7 +1,7 @@
 import type { AgentAction, AgentName, ItemType, Loan, ResolvedAction, WorldState, SimTime, StealRecord } from "./types.js";
 import { resolveItemInput } from "./types.js";
 import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation, normalizeKey } from "./village-map.js";
-import { getAgentNames, getDisplayName, getAgentVillage, getVillageElder, getVillageTownHall, getVillageAgents, isValidLocation, getLocationHours, isLocationOpenByRegistry, getVillageLocations, getVillages, resolveAgentLocation, resolveAgentName, isRoadLocation, getRoads, getVillageForLocation } from "./world-registry.js";
+import { getAgentNames, getDisplayName, getAgentVillage, getVillageElder, getVillageTownHall, getVillageMembers, isValidLocation, getLocationHours, isLocationOpenByRegistry, getVillageLocations, getVillages, resolveAgentLocation, resolveAgentName, isRoadLocation, getRoads, getVillageForLocation } from "./world-registry.js";
 import { getAgentMarketplace } from "./marketplace.js";
 import { getHourIndex } from "./time.js";
 import { lockDoor, unlockDoor, resolveKnock } from "./doors.js";
@@ -530,7 +530,7 @@ export function resolveAction(
       };
       const townHall = getVillageTownHall(villageId);
       const noticeText = `${getDisplayName(agent)} hat einen Appell einberufen: "${agendaDesc}". Treffpunkt: ${townHall}, bei Tagesanbruch an Tag ${Math.ceil(nextDawnTick / 16)}. Komm hin, wenn du mitreden willst.`;
-      for (const a of getVillageAgents(villageId)) {
+      for (const a of getVillageMembers(villageId)) {
         feedbackToAgent(a, state, noticeText);
       }
       return { ...action, result: `${getDisplayName(agent)} ruft einen Appell aus: "${agendaDesc}" — angesetzt für den Morgen von Tag ${Math.ceil(nextDawnTick / 16)}, Treffpunkt: ${townHall}.`, visible: true };

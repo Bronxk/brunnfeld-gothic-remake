@@ -1,7 +1,7 @@
 import type {
   AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WorldState,
 } from "./types.js";
-import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive } from "./world-registry.js";
+import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageMembers, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive, pinPlayerIdentity } from "./world-registry.js";
 import { emitSSE } from "./events.js";
 import { tickToTime, ticksPerDay, getHourIndex } from "./time.js";
 import {
@@ -225,6 +225,12 @@ function ringVillageBell(state: WorldState, time: SimTime, villageId: string): v
       `Die Grubenglocke läutet über die Dächer — der Appell wird eröffnet. Du gehst zum Treffpunkt: ${townHall}.`);
   }
 
+  // The player hears the bell but is not marched to the Vogtei (meetings are NPC-only for now).
+  if (getVillageMembers(villageId).includes(PLAYER_ID) && !isAgentDead(state.body[PLAYER_ID])) {
+    feedbackToAgent(PLAYER_ID, state,
+      `Die Grubenglocke läutet — in der ${townHall} beginnt der Appell. Der Rat berät und stimmt ab.`);
+  }
+
   emitSSE("meeting:bell", { villageId, townHall });
   console.log(`  🔔 [${villageId}] Village bell rang — agents summoned to ${townHall}`);
 }
@@ -244,7 +250,7 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
   const councilPresent = attendees.filter(a => getCouncilMembers(villageId).includes(a));
   if (councilPresent.length < 3) {
     const msg = `[Beschlussfähigkeit] Der Appell zu „${mtg.description}" ist nicht zustande gekommen — nur ${councilPresent.length} Ratsmitglied(er) waren da (nötig: 3 von 5).`;
-    for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, msg);
+    for (const a of getVillageMembers(villageId)) feedbackToAgent(a, state, msg);
     emitSSE("meeting:quorum_fail", { description: mtg.description, attendeeCount: attendees.length, villageId });
     delete state.pending_meetings[villageId];
     return { attendees: new Set<AgentName>(), log: null };
@@ -350,12 +356,12 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
     applyLawEffect(law, state, time);
     lawText = proposalText;
     const passMsg = `Ergebnis des Appells: „${proposalText}" ANGENOMMEN (${agreeCount} dafür, nötig: ${PASS_THRESHOLD}). Neues Gesetz eingetragen.`;
-    for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, passMsg);
+    for (const a of getVillageMembers(villageId)) feedbackToAgent(a, state, passMsg);
     emitSSE("meeting:result", { passed: true, agreeCount, law });
     console.log(`  ✅ Law passed: "${proposalText}" (${agreeCount} agreed)`);
   } else {
     const failMsg = `Ergebnis des Appells: „${proposalText}" ABGELEHNT (${agreeCount} dafür, nötig: ${PASS_THRESHOLD} von ${attendees.length} Anwesenden).`;
-    for (const a of getVillageAgents(villageId)) feedbackToAgent(a, state, failMsg);
+    for (const a of getVillageMembers(villageId)) feedbackToAgent(a, state, failMsg);
     emitSSE("meeting:result", { passed: false, agreeCount });
     console.log(`  ❌ Vote failed: "${proposalText}" (${agreeCount}/${PASS_THRESHOLD})`);
   }
@@ -396,6 +402,7 @@ export async function runTick(tick: number): Promise<void> {
     await runTickCore(tick);
   } finally {
     detachLiveTick(); // player requests go back to world_state.json
+    pinPlayerIdentity(false);
   }
 }
 
@@ -404,6 +411,7 @@ async function runTickCore(tick: number): Promise<void> {
   const time = tickToTime(tick);
   // Share this in-memory state with the player API for the duration of the tick (src/player.ts).
   attachLiveTick(state, tick);
+  pinPlayerIdentity(true);
 
   console.log(`\n─── Tick ${tick} — ${time.timeLabel} (${time.season}) ───`);
 
@@ -445,7 +453,7 @@ async function runTickCore(tick: number): Promise<void> {
       for (const village of getVillages()) {
         const elder = getCouncilMembers(village.id)[0];
         if (!elder || !state.economics[elder]) continue;
-        for (const agent of village.agents.map(a => a.id)) {
+        for (const agent of getVillageMembers(village.id)) {
           if (agent === elder || !state.economics[agent]) continue;
           const tax = Math.floor(state.economics[agent].wallet * (state.tax_rate ?? 0.10));
           if (tax > 0) {
@@ -518,7 +526,7 @@ async function runTickCore(tick: number): Promise<void> {
       calledAtTick: time.tick,
     };
     const noticeText = `${elderName} hat einen Appell einberufen. Er findet in 5 Stunden statt, Treffpunkt: ${townHall}.`;
-    for (const a of getVillageAgents(village.id)) feedbackToAgent(a, state, noticeText);
+    for (const a of getVillageMembers(village.id)) feedbackToAgent(a, state, noticeText);
     console.log(`  🏛 [${village.id}] Assembly auto-scheduled for tick ${nextMeetingTick}`);
   }
 
@@ -526,7 +534,7 @@ async function runTickCore(tick: number): Promise<void> {
   for (const [vid, mtg] of Object.entries(state.pending_meetings)) {
     if (time.tick === mtg.scheduledTick - 1) {
       const townHall = getVillageTownHall(vid);
-      for (const a of getVillageAgents(vid)) {
+      for (const a of getVillageMembers(vid)) {
         feedbackToAgent(a, state, `Der Appell beginnt in der nächsten Stunde. Die Grubenglocke läutet; Treffpunkt: ${townHall}.`);
       }
     }

@@ -1,7 +1,7 @@
 import type { ActiveEvent, AgentName, ItemType, WorldState } from "./types.js";
 import { ITEM_LABELS } from "./types.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
-import { getAgentNames, getDisplayName, getVillageElder, getVillageTownHall, getAgentVillage, getVillageAgents, DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME } from "./world-registry.js";
+import { getAgentNames, getDisplayName, getVillageElder, getVillageTownHall, getAgentVillage, getVillageAgents, getVillageMembers, DEFAULT_VILLAGE_ID, DEFAULT_VILLAGE_NAME } from "./world-registry.js";
 import { HUB_LOCATION, MERCHANT_CAMP_LOCATION } from "./village-map.js";
 import { queueMessage } from "./messages.js";
 import { addToInventory, removeFromInventory, feedbackToAgent } from "./inventory.js";
@@ -222,7 +222,7 @@ export function triggerCaravan(state: WorldState, tick: number): ActiveEvent {
   state.agent_locations[elder] = MERCHANT_CAMP_LOCATION;
 
   // Notify all village agents about the caravan
-  for (const a of getVillageAgents(elderVillageId)) {
+  for (const a of getVillageMembers(elderVillageId)) {
     if (a !== elder) feedbackToAgent(a, state, `Ein Schmugglerzug hat am ${MERCHANT_CAMP_LOCATION} sein Lager aufgeschlagen, nahe beim ${HUB_LOCATION}! Heute gibt es günstige Waren.`);
   }
   return ev;

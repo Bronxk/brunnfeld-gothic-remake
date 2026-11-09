@@ -231,9 +231,23 @@ export const PLAYER_DESCRIPTION = "der Neue aus Baracke 6";
 
 let _player: { name: string; skill: Skill } | null = null;
 
+let _identityPinned = false;
+
 /** Register (or with null: remove) the human player. Called from readWorldState and createPlayer. */
 export function setPlayerIdentity(identity: { name: string; skill: Skill } | null): void {
   _player = identity;
+}
+
+/**
+ * While a tick runs, the engine's in-memory state is authoritative for the player identity:
+ * disk reads (God Mode endpoints read world_state.json mid-tick) must not change it.
+ */
+export function pinPlayerIdentity(pinned: boolean): void {
+  _identityPinned = pinned;
+}
+
+export function isPlayerIdentityPinned(): boolean {
+  return _identityPinned;
 }
 
 export function isPlayerActive(): boolean {
@@ -250,9 +264,16 @@ export function getAgentNames(): string[] {
   return _player ? [...npcs, PLAYER_ID] : npcs;
 }
 
+/** The generated cast of one village (no player) — meeting participants run through the LLM. */
 export function getVillageAgents(villageId: string): string[] {
   const v = getConfig().villages.find(v => v.id === villageId);
   return v ? v.agents.map(a => a.id) : [];
+}
+
+/** Everyone who lives in the village, including the player: use for notices and the Zehnt. */
+export function getVillageMembers(villageId: string): string[] {
+  const npcs = getVillageAgents(villageId);
+  return _player && getAgentVillage(PLAYER_ID) === villageId ? [...npcs, PLAYER_ID] : npcs;
 }
 
 export function getAgentVillage(agent: string): string {
