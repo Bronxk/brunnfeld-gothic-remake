@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useVillageStore, AGENT_DISPLAY, colonistIds } from "../store";
-import { gr, itemLabel, skillLabel, tickClock, SLEEP_LABELS, TICKS_PER_DAY, type AgentName, type BodyState, type FeedEntry, type Loan } from "../types";
+import { gr, itemLabel, skillLabel, tickClock, SLEEP_LABELS, TICKS_PER_DAY, type AgentName, type BodyState, type FeedEntry, type Loan, type AgentModelsInfo } from "../types";
 import { c } from "../theme";
 import Icon, { ItemIcon, skillIcon, type IconName } from "./Icon";
 import Avatar from "./Avatar";
@@ -47,12 +47,25 @@ export function Bar({ label, pct, color, value, title }: { label: string; pct: n
 
 // ─── Kolonisten list (no colonist selected) ───────────────────
 
+/** Small chip next to the name for colonists that run on a non-default model. */
+function modelBadge(info: AgentModelsInfo | null, agent: AgentName) {
+  const model = info?.models[agent];
+  if (!info || !model || model === info.default) return null;
+  const label = info.options.find((o) => o.id === model)?.label ?? model;
+  return (
+    <span className="chipx info" style={{ padding: "0 6px", fontSize: 11 }} title={`Modell: ${label}`}>
+      {label.split(" ")[0]}
+    </span>
+  );
+}
+
 function AgentList() {
   const world = useVillageStore((s) => s.world);
   const selectAgent = useVillageStore((s) => s.selectAgent);
   const activeVillageId = useVillageStore((s) => s.activeVillageId);
   const villages = useVillageStore((s) => s.villages);
   const setActiveVillage = useVillageStore((s) => s.setActiveVillageId);
+  const agentModels = useVillageStore((s) => s.agentModels);
   const [search, setSearch] = useState("");
 
   const agents = useMemo(() => {
@@ -131,6 +144,7 @@ function AgentList() {
                 <span className="nm">
                   {AGENT_DISPLAY[a]}
                   <Icon name={skillIcon(eco.skill)} />
+                  {modelBadge(agentModels, a)}
                 </span>
                 <span className="lc">{skillLabel(eco.skill)} · {loc}</span>
               </span>
@@ -145,6 +159,65 @@ function AgentList() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ─── Model picker (per-colonist LLM) ──────────────────────────
+
+/** Measured per colonist per tick (Claude API, harness mode): ~8.7k input + ~1.2k output tokens. */
+const TOKENS_IN_PER_TICK = 8700;
+const TOKENS_OUT_PER_TICK = 1200;
+
+const deNum = (n: number, digits: number) => n.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const priceLabel = (usd: number) => `${usd.toLocaleString("de-DE", { maximumFractionDigits: 2 })} $`;
+/** Estimated cost in Cent per colonist per tick, rounded like "0,15" / "3" / "6". */
+function centsPerTick(inPerMTok: number, outPerMTok: number): string {
+  const ct = ((TOKENS_IN_PER_TICK * inPerMTok + TOKENS_OUT_PER_TICK * outPerMTok) / 1_000_000) * 100;
+  return ct < 1 ? deNum(ct, 2) : deNum(Math.round(ct), 0);
+}
+
+function ModelPicker({ agent }: { agent: AgentName }) {
+  const info = useVillageStore((s) => s.agentModels);
+  const setAgentModel = useVillageStore((s) => s.setAgentModel);
+  const [busy, setBusy] = useState(false);
+  if (!info) return null;
+
+  const defaultOpt = info.options.find((o) => o.id === info.default);
+  const defaultLabel = defaultOpt?.label ?? info.default;
+  const effective = info.models[agent] ?? info.default;
+  // An explicit tier equal to the default is shown (and stored) as "Standard".
+  const value = effective === info.default ? "" : effective;
+  const shown = info.options.find((o) => o.id === effective);
+
+  async function change(next: string) {
+    setBusy(true);
+    try {
+      const tier = info!.options.find((o) => o.id === next);
+      await setAgentModel(agent, tier && tier.id !== info!.default ? tier.id : null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="sec">
+      <div className="sec-h"><span>Modell</span><small>gilt ab dem nächsten Aufruf</small></div>
+      <select
+        className="inp"
+        aria-label="Sprachmodell dieses Kolonisten"
+        value={value}
+        disabled={busy}
+        onChange={(e) => void change(e.target.value)}
+      >
+        <option value="">Standard ({defaultLabel})</option>
+        {info.options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+      {shown && (
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 12.5, lineHeight: 1.35 }}>
+          {priceLabel(shown.inPerMTok)} ein / {priceLabel(shown.outPerMTok)} aus pro Mio. Token · geschätzt ≈ {centsPerTick(shown.inPerMTok, shown.outPerMTok)} ct pro Tick
+        </p>
+      )}
     </div>
   );
 }
@@ -404,6 +477,8 @@ export default function AgentPanel() {
 
       {/* The human player is not an LLM agent: no interview, no whispering. */}
       {selectedAgent !== "player" && (<>
+      <ModelPicker agent={selectedAgent} />
+
       <div className="sec">
         <div className="sec-h"><span>{first} befragen</span></div>
         <div className="talk">

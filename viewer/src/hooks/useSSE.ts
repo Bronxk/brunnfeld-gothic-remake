@@ -29,6 +29,9 @@ export function useSSE(): void {
       })
       .catch(warn("loading /api/villages"));
 
+    // Per-colonist LLM model choices (logs its own errors)
+    void useVillageStore.getState().loadAgentModels();
+
     // 2. Load available tick IDs and seed the feed with recent history
     fetch("/api/ticks")
       .then((r) => r.json())

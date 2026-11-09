@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier } from "./types";
 import { itemLabel, gr } from "./types";
 
 export type { MeetingState } from "./types";
@@ -303,6 +303,12 @@ interface VillageStore {
   openCreation: () => void;
   pushToast: (text: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: number) => void;
+
+  // LLM model per colonist
+  agentModels: AgentModelsInfo | null;
+  loadAgentModels: () => Promise<void>;
+  /** model = null: back to the global default. Toasts the outcome. */
+  setAgentModel: (agent: AgentName, model: ModelTier | null) => Promise<void>;
   refreshPlayer: () => Promise<void>;
   refreshPlayerTools: () => Promise<void>;
   createPlayer: (name: string, skill: PlayerSkillChoice) => Promise<{ ok: boolean; error?: string }>;
@@ -404,6 +410,47 @@ export const useVillageStore = create<VillageStore>((set, get) => {
     setTimeout(() => get().dismissToast(id), tone === "good" ? 5000 : 7000);
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  agentModels: null,
+
+  loadAgentModels: async () => {
+    try {
+      const res = await fetch("/api/agents/models");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      set({ agentModels: (await res.json()) as AgentModelsInfo });
+    } catch (err) {
+      console.error("[viewer] loading /api/agents/models failed", err);
+    }
+  },
+
+  setAgentModel: async (agent, model) => {
+    const name = AGENT_DISPLAY[agent] ?? agent;
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(agent)}/model`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const body = await readJson(res);
+      if (!res.ok || body.ok === false) {
+        const error = typeof body.error === "string" ? body.error : `HTTP ${res.status}`;
+        get().pushToast(`Modell für ${name} nicht geändert: ${error}`, "bad");
+        return;
+      }
+      const effective = String(body.model);
+      set((s) => s.agentModels
+        ? { agentModels: { ...s.agentModels, models: { ...s.agentModels.models, [agent]: effective } } }
+        : {});
+      const label = get().agentModels?.options.find((o) => o.id === effective)?.label ?? effective;
+      get().pushToast(
+        model === null ? `${name} nutzt wieder das Standardmodell (${label}).` : `${name} läuft jetzt auf ${label}.`,
+        "good",
+      );
+    } catch (err) {
+      console.error(`[viewer] POST /api/agents/${agent}/model failed`, err);
+      get().pushToast(`Modell für ${name} nicht geändert: keine Verbindung zum Server.`, "bad");
+    }
+  },
 
   refreshPlayer: async () => {
     try {
@@ -926,6 +973,13 @@ export const useVillageStore = create<VillageStore>((set, get) => {
     if (e.type === "meeting:quorum_fail") {
       // Brief notification then clear (no meeting happened)
       setTimeout(() => set({ activeMeeting: null }), 3000);
+      return;
+    }
+
+    if (e.type === "agent:model") {
+      set((s) => s.agentModels
+        ? { agentModels: { ...s.agentModels, models: { ...s.agentModels.models, [e.agent]: e.model } } }
+        : {});
       return;
     }
 

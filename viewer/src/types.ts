@@ -159,7 +159,28 @@ export type SSEEvent =
   | { type: "meeting:end" }
   | { type: "meeting:quorum_fail"; description: string; attendeeCount: number }
   | { type: "harness:tool"; agent: AgentName; name: string; tool: string; summary: string }
+  | { type: "agent:model"; agent: AgentName; model: string }
   | ({ type: "player:update" } & PlayerView);
+
+// ─── LLM model per colonist (backend: GET /api/agents/models, POST /api/agents/<id>/model, SSE agent:model) ───
+
+export type ModelTier = "haiku" | "sonnet" | "opus";
+
+export interface ModelOption {
+  id: ModelTier;
+  label: string;
+  /** USD per million tokens. */
+  inPerMTok: number;
+  outPerMTok: number;
+}
+
+export interface AgentModelsInfo {
+  /** Effective global default (CHARACTER_MODEL): a tier name, or a raw model ID in OpenRouter/local mode. */
+  default: string;
+  /** Effective model for every colonist (not the player). */
+  models: Record<AgentName, string>;
+  options: ModelOption[];
+}
 
 // ─── Human player (backend src/player.ts: GET /api/player, SSE player:update) ───
 
