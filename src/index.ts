@@ -8,7 +8,7 @@ import { readWorldState } from "./memory.js";
 import { runSimulation } from "./engine.js";
 import type { WorldState } from "./types.js";
 import { ALL_ITEMS } from "./types.js";
-import { HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION } from "./village-map.js";
+import { PRISON_LOCATION, TOWNHALL_LOCATION, ELDER_HOME_LOCATION } from "./village-map.js";
 import { eventBus } from "./events.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -32,7 +32,6 @@ function initWorldState(): WorldState {
       grete: "Schenke", walburga: "Baderhütte", jost: "Baracke 7",
       reinhart: "Vogtshaus", bruder_anno: "Vogtei",
       mattis: "Baracke 8", vroni: "Baracke 8", wendel: "Baracke 1", minna: "Flickstube", gisbert: "Baracke 3",
-      player: HUB_LOCATION,
     },
 
     body: {
@@ -55,7 +54,6 @@ function initWorldState(): WorldState {
       wendel:      { hunger: 1, energy: 9, sleep_quality: "good" },
       minna:       { hunger: 1, energy: 8, sleep_quality: "fair" },
       gisbert:     { hunger: 2, energy: 9, sleep_quality: "good" },
-      player:      { hunger: 0, energy: 8, sleep_quality: "good" },
     },
 
     economics: {
@@ -78,7 +76,6 @@ function initWorldState(): WorldState {
       wendel:      { wallet: 25, inventory: { items: [{ type: "gerste", quantity: 6 }, { type: "eier", quantity: 3 }] }, tool: { type: "werkzeug", durability: 55 }, skill: "bauer", homeLocation: "Baracke 1", workLocation: "Unterfeld", workSchedule: { open: 6, close: 16 } },
       minna:       { wallet: 30, inventory: { items: [{ type: "leinen", quantity: 3 }] }, tool: null, skill: "naeherin", homeLocation: "Flickstube", workLocation: "Flickstube", workSchedule: { open: 7, close: 16 } },
       gisbert:     { wallet: 20, inventory: { items: [{ type: "eisenerz", quantity: 3 }, { type: "kohle", quantity: 2 }] }, tool: { type: "werkzeug", durability: 80 }, skill: "knappe", homeLocation: "Baracke 3", workLocation: "Erzstollen", workSchedule: { open: 7, close: 17 } },
-      player:      { wallet: 0, inventory: { items: [] }, tool: null, skill: "none", homeLocation: HUB_LOCATION, workLocation: HUB_LOCATION, workSchedule: { open: 6, close: 21 } },
     },
 
     marketplace: {

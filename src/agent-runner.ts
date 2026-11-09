@@ -14,6 +14,28 @@ import { RECIPES, MULTI_FARM_ITEMS } from "./production.js";
 import { computeVillageConcerns } from "./village-concerns.js";
 import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation } from "./world-registry.js";
 
+// ─── Agent descriptions for unknown acquaintances ────────────
+
+/** How `observer` sees `agent`: full name + skill when known, otherwise the registry description. */
+export function describeAgent(agent: AgentName, observer: AgentName, state: WorldState): string {
+  const knows = state.acquaintances[observer]?.includes(agent);
+  if (!knows) return `${getDescription(agent)} (unbekannt)`;
+
+  const skill = state.economics[agent]?.skill;
+  let label = (skill && skill !== "none")
+    ? `${getDisplayName(agent)} (${SKILL_LABELS[skill] ?? skill})`
+    : getDisplayName(agent);
+
+  const theftRecords = state.caughtStealing?.[agent];
+  if (theftRecords && theftRecords.length > 0) {
+    const latest = theftRecords[theftRecords.length - 1]!;
+    const fromName = getDisplayName(latest.from);
+    const itemLabelText = ITEM_LABELS[latest.item as ItemType] ?? latest.item;
+    label += ` (bekannter Dieb — beim Stehlen von ${itemLabelText} bei ${fromName} erwischt)`;
+  }
+  return label;
+}
+
 // ─── Hunger food hint ─────────────────────────────────────────
 
 const EDIBLE_ITEMS = new Set<string>(["brot", "eintopf", "fleisch", "rueben", "eier", "milch"]);

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AgentName, ItemType, ResolvedAction, SimTime, WorldState } from "./types.js";
-import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID } from "./world-registry.js";
+import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID, PLAYER_ID, setPlayerIdentity } from "./world-registry.js";
 import { dayLabel } from "./time.js";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -16,6 +16,27 @@ export function readAgentProfile(agent: AgentName): string {
   return readFileSync(path, "utf-8");
 }
 
+/**
+ * Keeps the world-registry's player identity in sync with the loaded state and makes sure a
+ * player who has not been created yet is not in the world at all (old saves carried a
+ * placeholder "player" at the hub that NPC tools would otherwise see).
+ */
+function syncPlayer(state: WorldState): void {
+  const p = state.player;
+  if (p?.created && state.economics[PLAYER_ID] && state.body[PLAYER_ID] && state.agent_locations[PLAYER_ID]) {
+    setPlayerIdentity({ name: p.name, skill: p.skill });
+    return;
+  }
+  setPlayerIdentity(null);
+  delete state.player;
+  delete state.agent_locations[PLAYER_ID];
+  delete state.body[PLAYER_ID];
+  delete state.economics[PLAYER_ID];
+  delete state.action_feedback[PLAYER_ID];
+  delete state.message_queue[PLAYER_ID];
+  delete state.acquaintances[PLAYER_ID];
+}
+
 export function readWorldState(): WorldState {
   const state = JSON.parse(readFileSync(join(DATA_DIR, "world_state.json"), "utf-8")) as WorldState;
   state.loans ??= [];
@@ -25,6 +46,7 @@ export function readWorldState(): WorldState {
   state.banned ??= {};
   state.tax_rate ??= 0.10;
   state.pending_petitions ??= [];
+  syncPlayer(state);
   return state;
 }
 
@@ -48,6 +70,7 @@ export function writeWorldState(state: WorldState): void {
         state.pending_meetings[vid] = diskMtg;
         // Restore agent locations — God Mode teleported everyone to the Vogtei
         for (const key of Object.keys(onDisk.agent_locations ?? {})) {
+          if (key === PLAYER_ID) continue; // the live in-memory player position is newer than the disk copy
           state.agent_locations[key as AgentName] = onDisk.agent_locations![key as AgentName]!;
         }
       }

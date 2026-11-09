@@ -6,6 +6,7 @@ import { eventBus, emitSSE } from "./events.js";
 import { readWorldState, writeWorldState } from "./memory.js";
 import { triggerEvent, triggerMeeting, runInterview } from "./god-mode.js";
 import { queueMessage } from "./messages.js";
+import { getPlayerView, getPlayerTools, createPlayer, performPlayerAction } from "./player.js";
 import type { AgentName } from "./types.js";
 import { reloadConfig, getVillages, getVillageElder, getAgentVillage, DEFAULT_VILLAGE_ID } from "./world-registry.js";
 
@@ -97,6 +98,7 @@ const server = createServer(async (req, res) => {
         "meeting:end":        (e) => send({ type: "meeting:end",        ...(e as object) }),
         "meeting:quorum_fail":(e) => send({ type: "meeting:quorum_fail",...(e as object) }),
         "harness:tool":       (e) => send({ type: "harness:tool",       ...(e as object) }),
+        "player:update":      (e) => send({ type: "player:update",      ...(e as object) }),
       };
 
       for (const [evt, handler] of Object.entries(handlers)) {
@@ -114,6 +116,36 @@ const server = createServer(async (req, res) => {
           eventBus.off(evt, handler);
         }
       });
+      return;
+    }
+
+    // ─── Human player (src/player.ts) ──────────────
+    if (path === "/api/player" && req.method === "GET") {
+      headers["Content-Type"] = "application/json";
+      res.writeHead(200, headers);
+      res.end(JSON.stringify(getPlayerView(true)));
+      return;
+    }
+    if (path === "/api/player/tools" && req.method === "GET") {
+      const result = getPlayerTools();
+      headers["Content-Type"] = "application/json";
+      res.writeHead(result.status, headers);
+      res.end(JSON.stringify(result.body));
+      return;
+    }
+    if (path === "/api/player/create" && req.method === "POST") {
+      const result = createPlayer(await parseBody(req));
+      headers["Content-Type"] = "application/json";
+      res.writeHead(result.status, headers);
+      res.end(JSON.stringify(result.body));
+      return;
+    }
+    if (path === "/api/player/action" && req.method === "POST") {
+      const body = await parseBody(req);
+      const result = performPlayerAction(body["tool"], body["args"]);
+      headers["Content-Type"] = "application/json";
+      res.writeHead(result.status, headers);
+      res.end(JSON.stringify(result.body));
       return;
     }
 

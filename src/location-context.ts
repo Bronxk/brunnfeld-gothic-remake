@@ -37,3 +37,19 @@ export function createLocationContext(location: string): LocationContext {
     negotiationOffers: [],
   };
 }
+
+// Contexts of the harness runs that are in flight right now (one per location), so the
+// human player can talk into the same speech log the NPCs at that location are reading.
+const liveContexts = new Map<string, LocationContext>();
+
+export function registerLiveContext(ctx: LocationContext): void {
+  liveContexts.set(ctx.location, ctx);
+}
+
+export function unregisterLiveContext(ctx: LocationContext): void {
+  if (liveContexts.get(ctx.location) === ctx) liveContexts.delete(ctx.location);
+}
+
+export function getLiveContext(location: string): LocationContext | undefined {
+  return liveContexts.get(location);
+}

@@ -383,6 +383,54 @@ export interface SimTime {
   timeLabel: string;
 }
 
+// ─── Player (human colonist, id "player") ──────────────────
+
+/** Speech or offer the player produced that co-located NPCs still have to hear (see player.ts). */
+export interface PlayerPendingSpeech {
+  name: string;
+  text: string;
+  location: string;
+  /** Tick whose decision phase hears it; dropped at the end of that tick. */
+  tick: number;
+}
+
+export interface PlayerPendingOffer {
+  from: AgentName;
+  fromName: string;
+  to: AgentName;
+  item: string;
+  price: number;
+  qty: number;
+  location: string;
+  tick: number;
+}
+
+export interface PlayerState {
+  created: boolean;
+  name: string;
+  skill: Skill;
+  createdTick: number;
+  // ── runtime bookkeeping (managed by player.ts) ──
+  /** Budgeted actions used in the tick named by `budgetTick`. */
+  actionsUsed?: number;
+  /** Tick the budget counter belongs to; a different tick resets the counter. */
+  budgetTick?: number;
+  /** Actions executed but not yet resolved by the engine (produce is resolved at tick end). */
+  pendingActions?: ResolvedAction[];
+  /** Player speech NPCs at the same location hear in their next decision phase. */
+  pendingSpeech?: PlayerPendingSpeech[];
+  /** Offers the player made via negotiate that NPCs at the same location can answer. */
+  pendingOffers?: PlayerPendingOffer[];
+  /** Offers NPCs made to the player (the player answers with negotiate). */
+  incomingOffers?: { from: AgentName; fromName: string; to: AgentName; item: string; price: number; qty: number }[];
+  /** Last lines of conversation the player heard (formatted like NPC conversationSoFar). */
+  heard?: string[];
+  /** Messages (send_message) delivered to the player at the start of the current tick. */
+  inbox?: string[];
+  /** Moves of the current tick, for the tick log. */
+  moveLog?: { from: string; to: string }[];
+}
+
 // ─── World State ───────────────────────────────────────────
 
 export interface WorldState {
@@ -426,6 +474,10 @@ export interface WorldState {
 
   // Multi-village: per-village marketplaces (absent = single-village mode using `marketplace`)
   marketplaces?: Record<string, Marketplace>;
+
+  // Human player ("der Neue"). Absent until POST /api/player/create; while absent there are
+  // no `player` entries in agent_locations/body/economics either (the player is not in the world).
+  player?: PlayerState;
 }
 
 // ─── Tick Log ──────────────────────────────────────────────

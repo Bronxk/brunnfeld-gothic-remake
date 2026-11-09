@@ -10,6 +10,18 @@ const LOUD_KEYWORDS = [
   "explosion", "feuer", "brand", "brenn", "fire", "burning",
 ];
 
+// Last tick's resolved actions, shared so the player's perception (built outside the tick loop)
+// hears the same adjacent-location sounds NPCs hear in harness mode.
+let _lastTickActions: Record<AgentName, ResolvedAction[]> = {};
+
+export function setLastTickActions(actions: Record<AgentName, ResolvedAction[]>): void {
+  _lastTickActions = actions;
+}
+
+export function getLastTickActions(): Record<AgentName, ResolvedAction[]> {
+  return _lastTickActions;
+}
+
 function isLoudAction(text: string): boolean {
   const lower = text.toLowerCase();
   return LOUD_KEYWORDS.some(k => lower.includes(k));

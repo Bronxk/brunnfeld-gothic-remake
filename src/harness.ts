@@ -1,7 +1,8 @@
 import type { AgentName, AgentTurnResult, ItemType, ResolvedAction, Skill, WorldState, SimTime } from "./types.js";
 import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import type { LocationContext } from "./location-context.js";
-import { createLocationContext } from "./location-context.js";
+import { createLocationContext, registerLiveContext, unregisterLiveContext } from "./location-context.js";
+import { seedLocationContext, captureOffersForPlayer, playerSeedLines } from "./player.js";
 import { callClaudeWithPrefix } from "./llm.js";
 import { emitSSE } from "./events.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
@@ -95,6 +96,9 @@ export function buildSeedContext(config: HarnessConfig, displayName: string): st
     lines.push("--- Hinweise ---");
     for (const f of feedback.slice(-5)) lines.push(f);
   }
+
+  // The human player, if standing here (and anything they said)
+  lines.push(...playerSeedLines(worldState, agentId, displayName, time.tick));
 
   // Pending messages (from send_message)
   const pendingMessages = deliverMessages(worldState, agentId, time.tick);
@@ -320,6 +324,10 @@ export async function runHarnessLocation(
 ): Promise<AgentTurnResult[]> {
   const location = state.agent_locations[agents[0]!] ?? "unknown";
   const locationCtx = createLocationContext(location);
+  // The human player's pending speech/offers are heard like any NPC's, and the player can talk
+  // into this same context while the NPCs here are mid-decision (see player.ts).
+  seedLocationContext(locationCtx, state, time.tick);
+  registerLiveContext(locationCtx);
 
   type HarnessState = {
     gen: AsyncGenerator<void, AgentTurnResult, unknown>;
@@ -334,19 +342,25 @@ export async function runHarnessLocation(
   }));
 
   // Round-robin: advance each harness one yield at a time
-  let anyActive = true;
-  while (anyActive) {
-    anyActive = false;
-    for (const h of harnesses) {
-      if (h.done) continue;
-      const step = await h.gen.next();
-      if (step.done) {
-        h.result = step.value;
-        h.done = true;
-      } else {
-        anyActive = true; // this harness yielded — will need another pass
+  try {
+    let anyActive = true;
+    while (anyActive) {
+      anyActive = false;
+      for (const h of harnesses) {
+        if (h.done) continue;
+        const step = await h.gen.next();
+        if (step.done) {
+          h.result = step.value;
+          h.done = true;
+        } else {
+          anyActive = true; // this harness yielded — will need another pass
+        }
       }
     }
+  } finally {
+    // Offers NPCs made to the player stay answerable between ticks.
+    captureOffersForPlayer(locationCtx, state);
+    unregisterLiveContext(locationCtx);
   }
 
   return harnesses.map(h => h.result ?? { agent: "unknown" as AgentName, actions: [], pendingMove: undefined });

@@ -1,18 +1,21 @@
 import type {
   AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WorldState,
 } from "./types.js";
-import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
-import { getAgentNames, getDisplayName, getCouncilMembers, getDescription, getVillages, getAgentVillage, getVillageAgents, getVillageElder, getVillageTownHall, isRoadLocation } from "./world-registry.js";
+import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive } from "./world-registry.js";
 import { emitSSE } from "./events.js";
 import { tickToTime, ticksPerDay, getHourIndex } from "./time.js";
 import {
   readWorldState, writeWorldState, writeTickLog,
   updateAgentMemoryFromActions, updateRelationships,
 } from "./memory.js";
-import { buildPerception, buildMeetingPerception, runBatchedAgents } from "./agent-runner.js";
+import { buildPerception, buildMeetingPerception, runBatchedAgents, describeAgent } from "./agent-runner.js";
 import { runHarnessLocation } from "./harness.js";
 import { getLLMStats } from "./llm.js";
-import { getSounds } from "./sounds.js";
+import { getSounds, setLastTickActions, getLastTickActions } from "./sounds.js";
+import {
+  attachLiveTick, detachLiveTick, drainPlayerTurn, recordHeardSpeech, playerSpeechText,
+  applyPlayerSoftDeath, emitPlayerUpdate,
+} from "./player.js";
 import { deliverMessages } from "./messages.js";
 import { updateBodyState, applyDawnAutoEat, checkStarvation, isAgentDead } from "./body.js";
 import { checkSpoilage, feedbackToAgent, clampReservations } from "./inventory.js";
@@ -24,27 +27,6 @@ import { resolveBarter } from "./trade-scanner.js";
 import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
-
-// ─── Agent descriptions for unknown acquaintances ────────────
-
-function describeAgent(agent: AgentName, observer: AgentName, state: WorldState): string {
-  const knows = state.acquaintances[observer]?.includes(agent);
-  if (!knows) return `${getDescription(agent)} (unbekannt)`;
-
-  const skill = state.economics[agent]?.skill;
-  let label = (skill && skill !== "none")
-    ? `${getDisplayName(agent)} (${SKILL_LABELS[skill] ?? skill})`
-    : getDisplayName(agent);
-
-  const theftRecords = state.caughtStealing?.[agent];
-  if (theftRecords && theftRecords.length > 0) {
-    const latest = theftRecords[theftRecords.length - 1]!;
-    const fromName = getDisplayName(latest.from);
-    const itemLabel = ITEM_LABELS[latest.item as ItemType] ?? latest.item;
-    label += ` (bekannter Dieb — beim Stehlen von ${itemLabel} bei ${fromName} erwischt)`;
-  }
-  return label;
-}
 
 // ─── Vote normalisation ──────────────────────────────────────
 // Agents now answer in German; the vote tool contract stays "agree"|"disagree",
@@ -397,15 +379,31 @@ async function runMeetingPhase(state: WorldState, time: SimTime, villageId: stri
 }
 
 // ─── Persisted across ticks for harness sounds ────────────────
-// Stores last tick's resolved actions so look_around() can report
-// sounds from adjacent locations via getSounds().
-let prevTickActions: Record<AgentName, ResolvedAction[]> = {};
+// Last tick's resolved actions live in sounds.ts (setLastTickActions) so look_around() and the
+// human player's perception can report sounds from adjacent locations via getSounds().
+
+/** The human player, if they stand at `location` and are alive (NPCs see them like any colonist). */
+function playerAt(state: WorldState, location: string): AgentName[] {
+  if (!isPlayerActive()) return [];
+  if (state.agent_locations[PLAYER_ID] !== location || isAgentDead(state.body[PLAYER_ID])) return [];
+  return [PLAYER_ID];
+}
 
 // ─── Core tick ────────────────────────────────────────────────
 
 export async function runTick(tick: number): Promise<void> {
+  try {
+    await runTickCore(tick);
+  } finally {
+    detachLiveTick(); // player requests go back to world_state.json
+  }
+}
+
+async function runTickCore(tick: number): Promise<void> {
   const state = readWorldState();
   const time = tickToTime(tick);
+  // Share this in-memory state with the player API for the duration of the tick (src/player.ts).
+  attachLiveTick(state, tick);
 
   console.log(`\n─── Tick ${tick} — ${time.timeLabel} (${time.season}) ───`);
 
@@ -561,7 +559,8 @@ export async function runTick(tick: number): Promise<void> {
   }
 
   // ── 5. BUILD PERCEPTIONS ─────────────────────────────────────
-  const activeAgents = getAgentNames().filter(a =>
+  // NPCs only: the human player never goes through an LLM call (they act via /api/player/action).
+  const activeAgents = getNpcNames().filter(a =>
     !isAgentDead(state.body[a]) &&
     !(state.banned?.[a] != null && time.tick < state.banned[a]!) &&
     !meetingAttendees.has(a)   // meeting attendees already acted this tick
@@ -576,9 +575,10 @@ export async function runTick(tick: number): Promise<void> {
   for (const agent of activeAgents) {
     const location = state.agent_locations[agent];
 
-    const othersPresent = activeAgents
-      .filter(a => a !== agent && state.agent_locations[a] === location)
-      .map(a => describeAgent(a, agent, state));
+    const othersPresent = [
+      ...activeAgents.filter(a => a !== agent && state.agent_locations[a] === location),
+      ...playerAt(state, location),
+    ].map(a => describeAgent(a, agent, state));
 
     // In harness mode, messages are delivered in buildSeedContext — don't consume them here
     const pendingMessages = process.env.USE_HARNESS === "true" ? "" : deliverMessages(state, agent, tick);
@@ -586,7 +586,7 @@ export async function runTick(tick: number): Promise<void> {
 
     perceptions[agent] = buildPerception(
       agent, state, time,
-      "", // conversationSoFar — populated during multi-agent rounds
+      playerSpeechText(state, location, tick), // conversationSoFar — player speech due now; NPC speech joins during multi-agent rounds
       othersPresent,
       pendingMessages,
       sounds,
@@ -615,7 +615,7 @@ export async function runTick(tick: number): Promise<void> {
 
       if (process.env.USE_HARNESS === "true") {
         // ── Harness path: each agent gets its own tool-calling loop ──
-        const results = await runHarnessLocation(group, state, time, movedThisTick, prevTickActions);
+        const results = await runHarnessLocation(group, state, time, movedThisTick, getLastTickActions());
         locResults.push(...results);
         // Populate rounds with real per-agent action data (mirrors non-harness format)
         locationRounds = results.map(r => ({
@@ -638,7 +638,7 @@ export async function runTick(tick: number): Promise<void> {
         // Multi-agent conversation: up to 4 rounds, max 4 participants
         const participants = group.slice(0, 4);
         const observers = group.slice(4);
-        let conversationSoFar = "";
+        let conversationSoFar = playerSpeechText(state, location, tick);
 
         for (let round = 0; round < 4; round++) {
           const alreadyProducing = new Set(
@@ -649,8 +649,7 @@ export async function runTick(tick: number): Promise<void> {
 
           const roundPerceptions: Record<AgentName, string> = {} as Record<AgentName, string>;
           for (const agent of participants) {
-            const othersPresent = participants
-              .filter(a => a !== agent)
+            const othersPresent = [...participants.filter(a => a !== agent), ...playerAt(state, location)]
               .map(a => describeAgent(a, agent, state));
             const pendingMessages = round === 0 ? deliverMessages(state, agent, tick) : "";
             const sounds = getSounds(agent, location, lastTickActions, state.agent_locations);
@@ -687,7 +686,8 @@ export async function runTick(tick: number): Promise<void> {
         if (observers.length > 0) {
           const obsPerceptions: Record<AgentName, string> = {} as Record<AgentName, string>;
           for (const agent of observers) {
-            const othersPresent = group.filter(a => a !== agent).map(a => describeAgent(a, agent, state));
+            const othersPresent = [...group.filter(a => a !== agent), ...playerAt(state, location)]
+              .map(a => describeAgent(a, agent, state));
             const pendingMessages = deliverMessages(state, agent, tick);
             obsPerceptions[agent] = buildPerception(agent, state, time, conversationSoFar, othersPresent, pendingMessages, []);
           }
@@ -706,8 +706,32 @@ export async function runTick(tick: number): Promise<void> {
     allResults.push(...locResults);
     tickLocations[location] = { agents: group, rounds: locationRounds };
   }
+
+  // What NPCs said at the player's spot becomes part of the player's perception.
+  recordHeardSpeech(state, allResults);
+
+  // The player's queued actions (produce etc.) flow through the same resolution below as NPC results.
+  // They were already emitted to SSE live and the player has no memory file, so the memory/SSE
+  // loops further down skip PLAYER_ID.
+  const { turn: playerTurn, moves: playerMoves } = drainPlayerTurn(state, tick);
+  if (playerTurn) {
+    allResults.push(playerTurn);
+    const here = state.agent_locations[PLAYER_ID];
+    const entry = (tickLocations[here] ??= { agents: [], rounds: [] });
+    if (!entry.agents.includes(PLAYER_ID)) entry.agents.push(PLAYER_ID);
+    entry.rounds.push([{
+      agent: PLAYER_ID,
+      actions: playerTurn.actions.map(a => ({
+        type: a.type,
+        ...(a.text ? { text: a.text.slice(0, 120) } : {}),
+        ...(a.result ? { result: a.result.slice(0, 120) } : {}),
+        ...(a.location ? { location: a.location } : {}),
+      })),
+    }]);
+  }
+
   // Persist resolved actions for next tick's harness look_around() sounds
-  prevTickActions = Object.fromEntries(allResults.map(r => [r.agent, r.actions]));
+  setLastTickActions(Object.fromEntries(allResults.map(r => [r.agent, r.actions])));
 
   // ── 7. SOCIAL RESOLUTION ────────────────────────────────────
   // Capture from-locations before applying moves (for accurate tick log)
@@ -727,6 +751,7 @@ export async function runTick(tick: number): Promise<void> {
   clampReservations(state);
   resolveBarter(allResults, state, time);
   resolveHiredWages(state, time);
+  applyPlayerSoftDeath(state); // before checkStarvation: the player is revived instead of dying
   checkStarvation(state, time);
 
   // ── 8b. MARKETPLACE HINT ────────────────────────────────────
@@ -746,10 +771,14 @@ export async function runTick(tick: number): Promise<void> {
   const byLocationForMemory: Record<AgentName, AgentName[]> = {} as Record<AgentName, AgentName[]>;
   for (const agent of activeAgents) {
     const loc = state.agent_locations[agent];
-    byLocationForMemory[agent] = activeAgents.filter(a => a !== agent && state.agent_locations[a] === loc);
+    byLocationForMemory[agent] = [
+      ...activeAgents.filter(a => a !== agent && state.agent_locations[a] === loc),
+      ...playerAt(state, loc),
+    ];
   }
 
   for (const result of allResults) {
+    if (result.agent === PLAYER_ID) continue; // no memory file for the human player
     const others = byLocationForMemory[result.agent]?.map(a => getDisplayName(a)) ?? [];
     updateAgentMemoryFromActions(result.agent, time, state.agent_locations[result.agent], others, result.actions, result.historyLines);
     updateRelationships(result.agent, result.actions, others);
@@ -773,7 +802,8 @@ export async function runTick(tick: number): Promise<void> {
     locations: tickLocations,
     movements: allResults
       .filter(r => r.pendingMove && r.pendingMove !== (moveFromLocations[r.agent] ?? r.pendingMove))
-      .map(r => ({ agent: r.agent, from: moveFromLocations[r.agent] ?? "", to: r.pendingMove! })),
+      .map(r => ({ agent: r.agent, from: moveFromLocations[r.agent] ?? "", to: r.pendingMove! }))
+      .concat(playerMoves.map(m => ({ agent: PLAYER_ID, from: m.from, to: m.to }))),
     trades: (state.marketplaces
       ? Object.values(state.marketplaces).flatMap(m => m.history)
       : state.marketplace.history
@@ -785,6 +815,7 @@ export async function runTick(tick: number): Promise<void> {
 
   // ── 13. SSE EMIT RESULTS ─────────────────────────────────────
   for (const result of allResults) {
+    if (result.agent === PLAYER_ID) continue; // player actions were emitted live in player.ts
     const loc = state.agent_locations[result.agent];
     for (const action of result.actions) {
       if (!action.visible || !action.result) continue;
@@ -798,6 +829,7 @@ export async function runTick(tick: number): Promise<void> {
       });
     }
   }
+  emitPlayerUpdate(state, tick);
   for (const trade of tickLog.trades) {
     emitSSE("trade:completed", trade);
   }
@@ -832,7 +864,7 @@ export async function runSimulation(startTick?: number, tickOnce = false): Promi
 
     // Stop if everyone is dead
     const state2 = readWorldState();
-    const anyAlive = getAgentNames().some(a => !isAgentDead(state2.body[a]));
+    const anyAlive = getNpcNames().some(a => !isAgentDead(state2.body[a]));
     if (!anyAlive) {
       console.log("\n  ⚰  All agents have died. Simulation halted.");
       break;

@@ -220,8 +220,34 @@ function ensureMaps(): void {
 
 // ─── Public API ───────────────────────────────────────────────
 
-export function getAgentNames(): string[] {
+// ─── Human player ────────────────────────────────────────────
+// The player is not part of the generated cast. While a player exists, the registry
+// exposes it as one more agent (so every per-agent loop, name resolution and display
+// lookup treats it like a colonist); LLM paths filter PLAYER_ID out explicitly.
+
+export const PLAYER_ID = "player";
+/** What NPCs call the player while they don't know the name. */
+export const PLAYER_DESCRIPTION = "der Neue aus Baracke 6";
+
+let _player: { name: string; skill: Skill } | null = null;
+
+/** Register (or with null: remove) the human player. Called from readWorldState and createPlayer. */
+export function setPlayerIdentity(identity: { name: string; skill: Skill } | null): void {
+  _player = identity;
+}
+
+export function isPlayerActive(): boolean {
+  return _player !== null;
+}
+
+/** The generated cast only (no player) — use for everything that calls an LLM. */
+export function getNpcNames(): string[] {
   return getConfig().villages.flatMap(v => v.agents.map(a => a.id));
+}
+
+export function getAgentNames(): string[] {
+  const npcs = getNpcNames();
+  return _player ? [...npcs, PLAYER_ID] : npcs;
 }
 
 export function getVillageAgents(villageId: string): string[] {
@@ -235,6 +261,7 @@ export function getAgentVillage(agent: string): string {
 }
 
 export function getDisplayName(agent: string): string {
+  if (agent === PLAYER_ID && _player) return _player.name;
   ensureMaps();
   return _agentMap!.get(agent)?.displayName ?? AGENT_DISPLAY_NAMES[agent] ?? agent;
 }
@@ -262,6 +289,7 @@ export function resolveAgentName(input: string, candidates: readonly string[]): 
 }
 
 export function getSkill(agent: string): Skill {
+  if (agent === PLAYER_ID && _player) return _player.skill;
   ensureMaps();
   const skill = _agentMap!.get(agent)?.skill;
   if (skill) return skill;
@@ -269,6 +297,7 @@ export function getSkill(agent: string): Skill {
 }
 
 export function getDescription(agent: string): string {
+  if (agent === PLAYER_ID && _player) return PLAYER_DESCRIPTION;
   ensureMaps();
   return _agentMap!.get(agent)?.description ?? DEFAULT_DESCRIPTIONS[agent] ?? "ein Kolonist";
 }
