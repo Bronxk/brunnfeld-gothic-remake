@@ -1,10 +1,10 @@
 # Minna
 
-## People
-*(Nobody known yet)*
+## Personen
+*(Noch niemand bekannt)*
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

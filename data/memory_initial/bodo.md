@@ -1,10 +1,10 @@
 # Bodo
 
-## People
+## Personen
 - Irmel: Müllerin, sie liefert dir das Mehl für die Backstube.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

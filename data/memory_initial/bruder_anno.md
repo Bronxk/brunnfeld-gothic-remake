@@ -1,10 +1,10 @@
 # Bruder Anno
 
-## People
+## Personen
 - Vogt Reinhart: Bergvogt der Kolonie, redet offen mit dir.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

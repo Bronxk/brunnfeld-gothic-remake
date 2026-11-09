@@ -74,5 +74,5 @@ export function getWorkLocation(agent: AgentName): string {
 
 export function workMemorySummary(agent: AgentName): string {
   const loc = AGENT_WORK_LOCATIONS[agent];
-  return `Work at ${loc}. Normal day, nothing unusual.`;
+  return `Arbeit in ${loc}. Ein normaler Tag, nichts Besonderes.`;
 }

@@ -1,5 +1,6 @@
 import type { AgentName, BodyState, ItemType, SimTime, WorldState } from "./types.js";
-import { getAgentNames } from "./world-registry.js";
+import { ITEM_LABELS } from "./types.js";
+import { getAgentNames, getDisplayName } from "./world-registry.js";
 import { getInventoryQty, removeFromInventory, feedbackToAgent } from "./inventory.js";
 
 // How much each food item reduces hunger
@@ -62,37 +63,39 @@ export function resolveEat(
   const total = eco.inventory.items.find(i => i.type === item)?.quantity ?? 0;
   const reserved = total - available;
 
+  const label = ITEM_LABELS[item] ?? item;
+
   if (available < quantity) {
     if (reserved > 0 && total >= quantity) {
-      return `[Can't eat] Your ${item} is reserved in a sell order (${reserved} reserved, ${available} free). Cancel the order first with cancel_order, then eat.`;
+      return `[Nicht essbar] Dein ${label} ist in einem Verkaufsangebot reserviert (${reserved} reserviert, ${available} frei). Zieh das Angebot erst mit cancel_order zurück, dann iss.`;
     }
-    return `[Can't eat] You only have ${available} ${item}.`;
+    return `[Nicht essbar] Du hast nur ${available} ${label}.`;
   }
 
   const satiation = SATIATION[item];
   if (satiation === undefined) {
     const PROCESSING_HINTS: Partial<Record<ItemType, string>> = {
-      gerste: "Gerste must be milled into mehl (at the Mühle) then baked into brot (at the Backstube). Buy brot instead.",
-      mehl: "Mehl must be baked into brot (at the Backstube) before it can be eaten. Buy brot instead.",
-      eisenerz: "Eisenerz is not food.",
-      kohle: "Kohle is not food.",
-      bauholz: "Bauholz is not food.",
-      brennholz: "Brennholz is not food.",
-      werkzeug: "Werkzeug is not food.",
-      leinen: "Leinen is not food.",
-      hausrat: "Hausrat is not food.",
-      kraeuter: "Kräuter are not directly edible — they must be processed into arznei.",
+      gerste: "Gerste muss in der Mühle zu Mehl gemahlen und in der Backstube zu Brot gebacken werden. Kauf lieber Brot.",
+      mehl: "Mehl muss in der Backstube zu Brot gebacken werden, bevor man es essen kann. Kauf lieber Brot.",
+      eisenerz: "Eisenerz ist kein Essen.",
+      kohle: "Kohle ist kein Essen.",
+      bauholz: "Bauholz ist kein Essen.",
+      brennholz: "Brennholz ist kein Essen.",
+      werkzeug: "Werkzeug ist kein Essen.",
+      leinen: "Leinen ist kein Essen.",
+      hausrat: "Hausrat ist kein Essen.",
+      kraeuter: "Kräuter sind nicht direkt essbar — sie müssen zu Arznei verarbeitet werden.",
     };
     const hint = PROCESSING_HINTS[item];
-    return hint ? `[Can't eat] ${hint}` : `[Can't eat] ${item} is not edible.`;
+    return hint ? `[Nicht essbar] ${hint}` : `[Nicht essbar] ${label} ist nicht essbar.`;
   }
 
   removeFromInventory(eco.inventory, item, quantity);
   state.body[agent].hunger = Math.max(0, state.body[agent].hunger - satiation * quantity);
 
   const h = state.body[agent].hunger;
-  const hungerDesc = h === 0 ? "full" : h <= 1 ? "satisfied" : h <= 2 ? "peckish" : h <= 3 ? "hungry" : "very hungry";
-  return `You ate ${quantity} ${item}. Hunger: ${h}/5 — ${hungerDesc}.`;
+  const hungerDesc = h === 0 ? "satt" : h <= 1 ? "zufrieden" : h <= 2 ? "leicht hungrig" : h <= 3 ? "hungrig" : "sehr hungrig";
+  return `Du hast ${quantity} ${label} gegessen. Hunger: ${h}/5 — ${hungerDesc}.`;
 }
 
 // Dawn auto-eat: if starving and has food, consume cheapest item
@@ -128,7 +131,7 @@ export function checkStarvation(state: WorldState, time: SimTime): void {
     }
     body.starvation_ticks = (body.starvation_ticks ?? 0) + 1;
     if (body.starvation_ticks >= 3) {
-      feedbackToAgent(agent, state, `${agent} has starved to death.`);
+      feedbackToAgent(agent, state, `${getDisplayName(agent)} ist verhungert.`);
       console.log(`  ☠  ${agent} starved to death at tick ${time.tick}.`);
       // Move to a "dead" state by pinning hunger and removing from active logic
       // (Engine will skip agents with hunger >= 5 for 3+ ticks from LLM calls)
@@ -144,21 +147,21 @@ export function isAgentDead(body: BodyState): boolean {
 export function bodyPerception(body: BodyState): string {
   const parts: string[] = [];
 
-  if (body.hunger >= 4) parts.push("You're very hungry.");
-  else if (body.hunger >= 2) parts.push("You're hungry.");
+  if (body.hunger >= 4) parts.push("Du hast großen Hunger.");
+  else if (body.hunger >= 2) parts.push("Du hast Hunger.");
 
-  if (body.energy <= 3) parts.push("You're exhausted.");
-  else if (body.energy <= 5) parts.push("You're tired.");
+  if (body.energy <= 3) parts.push("Du bist erschöpft.");
+  else if (body.energy <= 5) parts.push("Du bist müde.");
 
-  if (body.sleep_quality === "poor") parts.push("You slept poorly.");
+  if (body.sleep_quality === "poor") parts.push("Du hast schlecht geschlafen.");
 
   const sickness = body.sickness ?? 0;
-  if (sickness >= 2) parts.push("You're seriously ill.");
-  else if (sickness === 1) parts.push("You're feeling unwell.");
+  if (sickness >= 2) parts.push("Du bist schwer krank.");
+  else if (sickness === 1) parts.push("Dir ist nicht wohl.");
 
   const injury = body.injury ?? 0;
-  if (injury >= 2) parts.push("You're badly injured.");
-  else if (injury === 1) parts.push("You're slightly injured.");
+  if (injury >= 2) parts.push("Du bist schwer verletzt.");
+  else if (injury === 1) parts.push("Du bist leicht verletzt.");
 
   return parts.length > 0 ? `(${parts.join(" ")})` : "";
 }

@@ -1,7 +1,23 @@
 import type { Season, SimTime } from "./types.js";
 
+// `SimTime.dayOfWeek` stays an English id because game logic compares against it
+// (engine.ts "Monday" tax day, away.ts "Sunday" rest day). Only display text is German.
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAY_NAMES_DE: Record<string, string> = {
+  Monday: "Montag", Tuesday: "Dienstag", Wednesday: "Mittwoch", Thursday: "Donnerstag",
+  Friday: "Freitag", Saturday: "Samstag", Sunday: "Sonntag",
+};
 const SEASONS: Season[] = ["spring", "summer", "autumn", "winter"];
+
+/** German display names for the season ids ("spring" → "Frühling"). */
+export const SEASON_LABELS: Record<Season, string> = {
+  spring: "Frühling", summer: "Sommer", autumn: "Herbst", winter: "Winter",
+};
+
+/** German display name for a `SimTime.dayOfWeek` id ("Monday" → "Montag"). */
+export function dayLabel(dayOfWeek: string): string {
+  return DAY_NAMES_DE[dayOfWeek] ?? dayOfWeek;
+}
 
 export const TICKS_PER_DAY = 16;     // 06:00–21:00
 export const DAYS_PER_SEASON = 7;
@@ -40,7 +56,7 @@ export function tickToTime(tick: number): SimTime {
     season,
     yearNumber,
     isFirstTickOfDay: hourIndex === 0,
-    timeLabel: `${DAY_NAMES[dayOfWeekIdx]}, ${hour.toString().padStart(2, "0")}:00`,
+    timeLabel: `${dayLabel(DAY_NAMES[dayOfWeekIdx]!)}, ${hour.toString().padStart(2, "0")}:00`,
   };
 }
 

@@ -1,10 +1,10 @@
 # Mattis
 
-## People
+## Personen
 - Gisbert: alter Knappe im Erzstollen, gibt dir ungefragt Ratschläge.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

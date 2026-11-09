@@ -1,10 +1,10 @@
 # Eckhart
 
-## People
+## Personen
 - Lenz: Zimmermann, arbeitet gleich neben deiner Schmiede.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

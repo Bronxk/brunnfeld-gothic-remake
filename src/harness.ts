@@ -1,4 +1,5 @@
-import type { AgentName, AgentTurnResult, ResolvedAction, WorldState, SimTime } from "./types.js";
+import type { AgentName, AgentTurnResult, ItemType, ResolvedAction, Skill, WorldState, SimTime } from "./types.js";
+import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import type { LocationContext } from "./location-context.js";
 import { createLocationContext } from "./location-context.js";
 import { callClaudeWithPrefix } from "./llm.js";
@@ -7,7 +8,7 @@ import { readAgentProfile, readAgentMemory } from "./memory.js";
 import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall } from "./world-registry.js";
 import { deliverMessages } from "./messages.js";
 import { HUB_LOCATION, isBaseLocation } from "./village-map.js";
-import { tickToTime } from "./time.js";
+import { tickToTime, SEASON_LABELS } from "./time.js";
 import {
   getToolsForAgent, executeToolCall, formatToolsForPrompt, getToolSummary,
   type HarnessToolConfig,
@@ -37,67 +38,68 @@ function budgetForAgent(agentId: AgentName, worldState: WorldState): number {
 
 // ─── Seed context ─────────────────────────────────────────────
 
-function buildSeedContext(config: HarnessConfig, displayName: string): string {
+export function buildSeedContext(config: HarnessConfig, displayName: string): string {
   const { agentId, worldState, time } = config;
   const eco = worldState.economics[agentId];
   const body = worldState.body[agentId];
   const loc = worldState.agent_locations[agentId] ?? "unknown";
   const ownSkill = eco?.skill;
   const employer = eco?.hiredBy ? worldState.economics[eco.hiredBy] : null;
+  const skillLabel = (s: string): string => SKILL_LABELS[s as Skill] ?? s;
   const skill = (!ownSkill || ownSkill === "none")
-    ? (employer ? `laborer (hired by ${getDisplayName(eco.hiredBy!)} — ${employer.skill})` : "villager")
-    : ownSkill;
+    ? (employer ? `Tagelöhner, angeheuert von ${getDisplayName(eco.hiredBy!)} — ${skillLabel(employer.skill)}` : "Kolonist")
+    : skillLabel(ownSkill);
   const workLoc = eco?.hiredBy
     ? (worldState.economics[eco.hiredBy]?.workLocation ?? "")
     : (eco?.workLocation ?? "");
 
   const villageId = getAgentVillage(agentId);
-  const villageName = getVillages().find(v => v.id === villageId)?.name ?? "the village";
+  const villageName = getVillages().find(v => v.id === villageId)?.name ?? "der Kolonie";
 
   const lines = [
-    `You are ${displayName}, a ${skill} in ${villageName}.`,
-    `Location: ${loc} | Time: ${time.timeLabel} | ${time.dayOfWeek}, ${time.season}`,
-    `Hunger: ${body?.hunger ?? 0}/5 | Energy: ${body?.energy ?? 5}/10`,
+    `Du bist ${displayName} (Beruf: ${skill}) in ${villageName}.`,
+    `Ort: ${loc} | Zeit: ${time.timeLabel} | ${SEASON_LABELS[time.season]}`,
+    `Hunger: ${body?.hunger ?? 0}/5 | Energie: ${body?.energy ?? 5}/10`,
   ];
 
   // Weather + events
-  if (worldState.weather) lines.push(`Weather: ${worldState.weather}`);
-  for (const ev of worldState.active_events) lines.push(`Event: ${ev.description}`);
+  if (worldState.weather) lines.push(`Wetter: ${worldState.weather}`);
+  for (const ev of worldState.active_events) lines.push(`Ereignis: ${ev.description}`);
 
   // Anchor skilled agents to their work location during work hours
   if (workLoc) {
     if (workLoc === loc) {
-      lines.push(`You are at your work location.`);
+      lines.push(`Du bist an deinem Arbeitsplatz.`);
     } else {
-      lines.push(`Your work location is ${workLoc}.`);
+      lines.push(`Dein Arbeitsplatz ist ${workLoc}.`);
       if (time.hour >= 6 && time.hour <= 15) {
-        lines.push(`It is work hours.`);
+        lines.push(`Es ist Arbeitszeit.`);
       }
     }
   }
 
-  if ((body?.hunger ?? 0) >= 3) lines.push(`⚠ HUNGRY — find food before you starve.`);
-  if ((body?.energy ?? 5) <= 2) lines.push(`⚠ EXHAUSTED — low energy limits your tool calls.`);
+  if ((body?.hunger ?? 0) >= 3) lines.push(`⚠ HUNGRIG — such dir Essen, bevor du verhungerst.`);
+  if ((body?.energy ?? 5) <= 2) lines.push(`⚠ ERSCHÖPFT — wenig Energie begrenzt deine Tool-Aufrufe.`);
 
   // Pending meeting for this village
   const mtg = worldState.pending_meetings[villageId];
   if (mtg && time.tick < mtg.scheduledTick) {
     const townHall = getVillageTownHall(villageId);
     const meetingTime = tickToTime(mtg.scheduledTick);
-    lines.push(`Village meeting: "${mtg.description}" at ${townHall} on ${meetingTime.timeLabel}. Be there.`);
+    lines.push(`Appell: "${mtg.description}" in ${townHall} am ${meetingTime.timeLabel}. Sei dabei.`);
   }
 
   // Action feedback (meeting notices, production results, trade confirmations, etc.)
   const feedback = worldState.action_feedback[agentId] ?? [];
   if (feedback.length > 0) {
-    lines.push("--- Notices ---");
+    lines.push("--- Hinweise ---");
     for (const f of feedback.slice(-5)) lines.push(f);
   }
 
   // Pending messages (from send_message)
   const pendingMessages = deliverMessages(worldState, agentId, time.tick);
   if (pendingMessages) {
-    lines.push("--- Messages ---");
+    lines.push("--- Nachrichten ---");
     lines.push(pendingMessages);
   }
 
@@ -129,7 +131,7 @@ function parseToolCall(raw: string): { tool: string; args: Record<string, unknow
 // ─── Harness prompt builder ───────────────────────────────────
 
 /** Static portion — built once per harness run, cached by the LLM backend. */
-function buildStaticPrefix(
+export function buildStaticPrefix(
   seedContext: string,
   memory: string,
   toolDescriptions: string,
@@ -137,13 +139,13 @@ function buildStaticPrefix(
   return [
     seedContext,
     "",
-    "--- Memory ---",
-    memory ? memory.slice(-800) : "(no memory)",
+    "--- Gedächtnis ---",
+    memory ? memory.slice(-800) : "(kein Gedächtnis)",
     "",
-    "--- Available tools ---",
-    "Respond with ONLY a JSON object: {\"tool\": \"<name>\", \"args\": {...}}",
-    "Call exactly ONE tool per response. Do not add any other text.",
-    "IMPORTANT: Act decisively. Your situation is described above — produce, move, trade, or speak.",
+    "--- Verfügbare Tools ---",
+    "Antworte NUR mit einem JSON-Objekt: {\"tool\": \"<name>\", \"args\": {...}}",
+    "Rufe pro Antwort genau EIN Tool auf. Füge keinen weiteren Text hinzu.",
+    "WICHTIG: Handle entschlossen. Deine Lage steht oben — stelle her, geh, handle oder sprich.",
     "",
     toolDescriptions,
   ].join("\n");
@@ -159,10 +161,10 @@ function buildDynamicSuffix(
   displayName: string,
 ): string {
   const parts: string[] = [
-    `Tool calls remaining this turn: ${remaining}/${budget}`,
+    `Verbleibende Tool-Aufrufe in dieser Runde: ${remaining}/${budget}`,
     "",
-    "--- Actions this turn ---",
-    historyLines.length > 0 ? historyLines.join("\n") : "(none yet)",
+    "--- Aktionen in dieser Runde ---",
+    historyLines.length > 0 ? historyLines.join("\n") : "(noch keine)",
   ];
 
   // Always surface speech that mentions this agent by name and offers directed at them.
@@ -175,16 +177,16 @@ function buildDynamicSuffix(
 
   if (pending.length > 0 || pendingOffers.length > 0) {
     parts.push("");
-    parts.push("⚠ Addressed to you:");
+    parts.push("⚠ An dich gerichtet:");
     for (const s of pending.slice(-3)) {
       parts.push(`  ${s.name}: "${s.text}"`);
     }
     for (const o of pendingOffers) {
-      parts.push(`  ${o.fromName} offers ${o.qty}x ${o.item} @ ${o.price}c — respond with negotiate() to accept or decline`);
+      parts.push(`  ${o.fromName} bietet ${o.qty}x ${ITEM_LABELS[o.item as ItemType] ?? o.item} für ${o.price} Groschen — antworte mit negotiate(), um anzunehmen oder abzulehnen`);
     }
   }
 
-  parts.push("", "What do you do next?");
+  parts.push("", "Was tust du als Nächstes?");
   return parts.join("\n");
 }
 
@@ -253,7 +255,7 @@ export async function* runAgentHarness(config: HarnessConfig): AsyncGenerator<vo
       try {
         const retryRaw = await callClaudeWithPrefix(
           staticPrefix,
-          dynamicSuffix + "\n\nRespond with ONLY valid JSON: {\"tool\": \"<name>\", \"args\": {...}}",
+          dynamicSuffix + "\n\nAntworte NUR mit gültigem JSON: {\"tool\": \"<name>\", \"args\": {...}}",
           { model: process.env.CHARACTER_MODEL ?? "haiku" },
         );
         toolCall = parseToolCall(retryRaw);

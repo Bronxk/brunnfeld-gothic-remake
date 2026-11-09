@@ -1,10 +1,10 @@
 # Brakel
 
-## People
+## Personen
 - Wendel: Bettnachbar in Baracke 1, arbeitet mit dir auf dem Unterfeld.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

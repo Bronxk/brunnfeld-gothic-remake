@@ -9,7 +9,7 @@ export function degradeTools(state: WorldState): void {
     if (!eco.tool) continue;
     if (eco.tool.durability <= 0) {
       eco.tool = null;
-      feedbackToAgent(agent, state, "Your Werkzeug broke. You need a new one to work efficiently.");
+      feedbackToAgent(agent, state, "Dein Werkzeug ist kaputtgegangen. Du brauchst ein neues, um ordentlich zu arbeiten.");
     }
   }
 }
@@ -23,13 +23,14 @@ export function autoEquipTools(state: WorldState): void {
     if (!hasStock) continue;
     removeFromInventory(eco.inventory, "werkzeug", 1);
     eco.tool = { type: "werkzeug", durability: 100 };
-    feedbackToAgent(agent, state, "You equipped a fresh Werkzeug from your stock.");
+    feedbackToAgent(agent, state, "Du hast ein frisches Werkzeug aus deinem Vorrat eingesetzt.");
   }
 }
 
 export function getToolPerception(agent: AgentName, state: WorldState): string {
   const eco = state.economics[agent];
-  if (!eco.tool) return "(no tools — tool-requiring production halved)";
-  if (eco.tool.durability <= 20) return `Werkzeug (${eco.tool.durability}/100) — nearly broken!`;
-  return `Werkzeug (${eco.tool.durability}/100)`;
+  // Rendered by agent-runner as "Werkzeug: <this>", so no leading "Werkzeug" here.
+  if (!eco.tool) return "keins (Arbeit, die Werkzeug braucht, ist nicht möglich)";
+  if (eco.tool.durability <= 20) return `Zustand ${eco.tool.durability}/100 — fast kaputt!`;
+  return `Zustand ${eco.tool.durability}/100`;
 }

@@ -1,10 +1,10 @@
 # Lenz
 
-## People
+## Personen
 - Eckhart: Schmied, dein einziger Freund im Tal.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

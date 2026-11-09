@@ -1,4 +1,5 @@
-import type { AgentAction, AgentName, AgentTurnResult, ItemType, WorldState, SimTime } from "./types.js";
+import type { AgentAction, AgentName, AgentTurnResult, ItemType, Skill, WorldState, SimTime } from "./types.js";
+import { ITEM_LABELS, SKILL_LABELS } from "./types.js";
 import { callClaudeJSON } from "./llm.js";
 import { emitSSE } from "./events.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
@@ -7,15 +8,47 @@ import { getRelevantOrders, getAgentMarketplace } from "./marketplace.js";
 import { getToolPerception } from "./tools-degradation.js";
 import { bodyPerception } from "./body.js";
 import { buildActionSchema, resolveAction, type ResolveContext } from "./tools.js";
-import { tickToTime } from "./time.js";
+import { tickToTime, SEASON_LABELS } from "./time.js";
 import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation } from "./village-map.js";
 import { RECIPES, MULTI_FARM_ITEMS } from "./production.js";
 import { computeVillageConcerns } from "./village-concerns.js";
-import { getAgentNames, getDisplayName, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation } from "./world-registry.js";
+import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation } from "./world-registry.js";
 
 // ─── Hunger food hint ─────────────────────────────────────────
 
 const EDIBLE_ITEMS = new Set<string>(["brot", "eintopf", "fleisch", "rueben", "eier", "milch"]);
+
+/** German display label of an item id (agents see labels, tool args use ids). */
+function itemLabel(item: string): string {
+  return ITEM_LABELS[item as ItemType] ?? item;
+}
+
+/** German display label of a skill id. */
+function skillLabel(skill: string): string {
+  return SKILL_LABELS[skill as Skill] ?? skill;
+}
+
+const AGENDA_LABELS: Record<string, string> = {
+  tax_change: "Zehnt",
+  marketplace_hours: "Öffnungszeiten des Tauschbretts",
+  banishment: "Karzerstrafe",
+  general_rule: "Allgemeine Regel",
+  grant_tools: "Werkzeugvergabe",
+  curfew: "Sperrstunde",
+  trade_restriction: "Handelsbeschränkung",
+  repeal: "Aufhebung eines Beschlusses",
+};
+
+function seasonDayLine(time: SimTime): string {
+  return `${SEASON_LABELS[time.season]}, Tag ${time.seasonDay}/7`;
+}
+
+/** "A ist hier." / "A, B sind hier." */
+function othersHereLine(others: string[], where: "here" | "road"): string {
+  if (others.length === 0) return where === "road" ? "Du bist allein auf der Straße." : "Du bist hier allein.";
+  const suffix = where === "road" ? "auf der Straße" : "hier";
+  return `${others.join(", ")} ${others.length === 1 ? "ist" : "sind"} ${suffix}.`;
+}
 
 
 function getHungryNoFoodHint(agent: AgentName, state: WorldState): string {
@@ -28,7 +61,7 @@ function getHungryNoFoodHint(agent: AgentName, state: WorldState): string {
   );
   if (hasFood) return "";
 
-  return "(You have no food in your inventory.)";
+  return "(Du hast kein Essen im Inventar.)";
 }
 
 // ─── Location keeper note ─────────────────────────────────────
@@ -46,7 +79,7 @@ function getLocationKeeperNote(agent: AgentName, state: WorldState): string {
     if (state.agent_locations[a] !== location) {
       const keeperName = getDisplayName(a);
       const keeperLoc = state.agent_locations[a];
-      return `(This is ${keeperName}'s ${location}. ${keeperName} is currently at ${keeperLoc}. Use send_message to ${keeperName} to arrange a purchase, or check the ${HUB_LOCATION} marketplace.)`;
+      return `(Hier ist der Arbeitsplatz von ${keeperName}: ${location}. ${keeperName} ist gerade in ${keeperLoc}. Schick ${keeperName} per send_message eine Nachricht, um einen Kauf zu verabreden, oder schau aufs Tauschbrett auf dem ${HUB_LOCATION}.)`;
     }
     return ""; // Keeper is present — already listed in "Others here"
   }
@@ -67,14 +100,14 @@ function getLoanPerception(agent: AgentName, state: WorldState): string {
   const parts: string[] = [];
   for (const loan of owed) {
     const dueDay = Math.ceil(loan.dueTick / 16);
-    parts.push(`You are owed ${loan.amount}c by ${getDisplayName(loan.debtor)} (due day ${dueDay}).`);
+    parts.push(`${getDisplayName(loan.debtor)} schuldet dir ${loan.amount} Groschen (fällig an Tag ${dueDay}).`);
   }
   for (const loan of owes) {
     const dueDay = Math.ceil(loan.dueTick / 16);
-    parts.push(`You owe ${loan.amount}c to ${getDisplayName(loan.creditor)} (due day ${dueDay}).`);
+    parts.push(`Du schuldest ${getDisplayName(loan.creditor)} ${loan.amount} Groschen (fällig an Tag ${dueDay}).`);
   }
 
-  return `\nLoans: ${parts.join(" ")}`;
+  return `\nDarlehen: ${parts.join(" ")}`;
 }
 
 // ─── Governance helpers ──────────────────────────────────
@@ -83,22 +116,22 @@ function getVillageLaws(state: WorldState, time: SimTime): string {
   if (!state.active_laws || state.active_laws.length === 0) return "";
   const lines = state.active_laws.map(law => {
     const day = Math.ceil(law.passedTick / 16);
-    if (law.type === "tax_change") return `- Tax rate: ${Math.round((law.value ?? 0.1) * 100)}% (passed day ${day})`;
+    if (law.type === "tax_change") return `- Zehnt: ${Math.round((law.value ?? 0.1) * 100)} % (beschlossen an Tag ${day})`;
     if (law.type === "banishment" && law.target) {
       const untilTick = state.banned?.[law.target] ?? (law.passedTick + 32);
       const untilDay = Math.ceil(untilTick / 16);
-      return `- ${getDisplayName(law.target ?? "")} banished until day ${untilDay}`;
+      return `- ${getDisplayName(law.target ?? "")}: Karzerstrafe bis Tag ${untilDay}`;
     }
     if (law.type === "grant_tools" && law.grantedTo && law.grantedTools) {
-      return `- ${getDisplayName(law.grantedTo)} granted [${law.grantedTools.join(", ")}] (${law.id}, passed day ${day})`;
+      return `- ${getDisplayName(law.grantedTo)} erhält [${law.grantedTools.map(itemLabel).join(", ")}] (${law.id}, beschlossen an Tag ${day})`;
     }
     if (law.type === "curfew" && law.value != null) {
-      return `- Curfew: home by ${String(6 + law.value).padStart(2, "0")}:00 (${law.id}, passed day ${day})`;
+      return `- Sperrstunde: um ${String(6 + law.value).padStart(2, "0")}:00 zu Hause sein (${law.id}, beschlossen an Tag ${day})`;
     }
     if (law.type === "trade_restriction") {
-      return `- Trade restriction: ${law.description} (${law.id}, passed day ${day})`;
+      return `- Handelsbeschränkung: ${law.description} (${law.id}, beschlossen an Tag ${day})`;
     }
-    return `- ${law.description} (${law.id}, passed day ${day})`;
+    return `- ${law.description} (${law.id}, beschlossen an Tag ${day})`;
   });
 
   // Show recent violations (last 16 ticks) to elder
@@ -106,13 +139,13 @@ function getVillageLaws(state: WorldState, time: SimTime): string {
     .filter(v => time.tick - v.tick <= 16)
     .slice(-5);
   if (recentViolations.length > 0) {
-    lines.push("Recent violations:");
+    lines.push("Letzte Verstöße:");
     for (const v of recentViolations) {
-      lines.push(`  ${getDisplayName(v.agent)}: ${v.action}${v.blocked ? " (blocked)" : ""}`);
+      lines.push(`  ${getDisplayName(v.agent)}: ${v.action}${v.blocked ? " (verhindert)" : ""}`);
     }
   }
 
-  return `\nVillage Laws:\n${lines.join("\n")}`;
+  return `\nRatsbeschlüsse:\n${lines.join("\n")}`;
 }
 
 function getMeetingContext(agent: AgentName, state: WorldState, time: SimTime): string {
@@ -122,7 +155,7 @@ function getMeetingContext(agent: AgentName, state: WorldState, time: SimTime): 
   if (time.tick < mtg.scheduledTick) {
     const townHall = getVillageTownHall(vid);
     const meetingTime = tickToTime(mtg.scheduledTick);
-    return `\n(Village meeting: "${mtg.description}" at ${townHall} on ${meetingTime.timeLabel}. Be there.)`;
+    return `\n(Appell: "${mtg.description}" in ${townHall} am ${meetingTime.timeLabel}. Sei dabei.)`;
   }
   return "";
 }
@@ -135,20 +168,20 @@ function buildInventoryLines(agent: AgentName, state: WorldState): string {
     .filter(i => i.quantity > 0)
     .map(i => {
       const reserved = i.reserved ?? 0;
-      const reservedNote = reserved > 0 ? ` (${reserved} listed for sale — will transfer when bought)` : "";
-      const spoilNote = i.spoilsAtTick && i.spoilsAtTick - state.current_tick < 32 ? " [spoils soon]" : "";
-      return `${i.type} ×${i.quantity}${reservedNote}${spoilNote}`;
+      const reservedNote = reserved > 0 ? ` (${reserved} reserviert — wird bei Kauf übergeben)` : "";
+      const spoilNote = i.spoilsAtTick && i.spoilsAtTick - state.current_tick < 32 ? " [verdirbt bald]" : "";
+      return `${itemLabel(i.type)} ×${i.quantity}${reservedNote}${spoilNote}`;
     });
-  return lines.length > 0 ? lines.join(", ") : "empty";
+  return lines.length > 0 ? lines.join(", ") : "leer";
 }
 
 function buildMarketboardLines(agent: AgentName, state: WorldState): string {
   const orders = getRelevantOrders(agent, state);
-  if (orders.length === 0) return "  (no current orders)";
+  if (orders.length === 0) return "  (keine aktuellen Angebote)";
   return orders
     .map(o => o.type === "sell"
-      ? `  SELL: ${o.item} ×${o.quantity} at ${o.price}c (by ${getDisplayName(o.agentId) || o.agentId}, expires in ${o.expiresAtTick - state.current_tick} ticks)`
-      : `  WANT: ${o.item} ×${o.quantity}, paying up to ${o.price}c (${getDisplayName(o.agentId) || o.agentId})`
+      ? `  BIETE: ${itemLabel(o.item)} ×${o.quantity} für ${o.price} Groschen (von ${getDisplayName(o.agentId) || o.agentId}, läuft ab in ${o.expiresAtTick - state.current_tick} Stunden)`
+      : `  SUCHE: ${itemLabel(o.item)} ×${o.quantity}, zahlt bis zu ${o.price} Groschen (${getDisplayName(o.agentId) || o.agentId})`
     )
     .join("\n");
 }
@@ -163,28 +196,28 @@ function getProducibleBlock(agent: AgentName, state: WorldState): string {
     const validLocations = MULTI_FARM_ITEMS[itemKey] ?? [recipe.location];
     if (!validLocations.includes(location)) continue;
 
-    const outputStr = Object.entries(recipe.output).map(([k, v]) => `${v} ${k}`).join(", ");
+    const outputStr = Object.entries(recipe.output).map(([k, v]) => `${v} ${itemLabel(k)}`).join(", ");
 
     if (recipe.tool && (!eco.tool || eco.tool.durability <= 0)) {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [needs tools — yours are broken or missing]`);
+      lines.push(`- produce "${itemKey}" → ${outputStr} [braucht Werkzeug — deins ist kaputt oder fehlt]`);
       continue;
     }
 
     const missing: string[] = [];
     for (const [inputItem, qty] of Object.entries(recipe.inputs)) {
       const have = getInventoryQty(eco.inventory, inputItem as ItemType);
-      if (have < qty) missing.push(`${inputItem} (need ${qty}, have ${have})`);
+      if (have < qty) missing.push(`${itemLabel(inputItem)} (brauchst ${qty}, hast ${have})`);
     }
 
     if (missing.length === 0) {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [ready now]`);
+      lines.push(`- produce "${itemKey}" → ${outputStr} [jetzt möglich]`);
     } else {
-      lines.push(`- produce "${itemKey}" → ${outputStr} [missing: ${missing.join(", ")}]`);
+      lines.push(`- produce "${itemKey}" → ${outputStr} [fehlt: ${missing.join(", ")}]`);
     }
   }
 
   if (lines.length === 0) return "";
-  return `\nYou can produce here:\n${lines.join("\n")}`;
+  return `\nHier kannst du herstellen:\n${lines.join("\n")}`;
 }
 
 // ─── Village directory (common knowledge) ────────────────────
@@ -198,11 +231,12 @@ function getVillageDirectory(agent: AgentName, state: WorldState): string {
     if (a === agent) continue;
     const eco = state.economics[a];
     if (!eco?.skill || eco.skill === "none") continue;
-    lines.push(`${getDisplayName(a)} (${eco.skill}) — ${eco.workLocation}`);
+    // Registry description carries grammatical gender ("die Müllerin"); skill labels are masculine only.
+    lines.push(`${getDisplayName(a)} (${getDescription(a)}) — ${eco.workLocation}`);
   }
 
   if (lines.length === 0) return "";
-  return `\nVillage craftspeople:\n${lines.join("\n")}`;
+  return `\nHandwerker der Kolonie:\n${lines.join("\n")}`;
 }
 
 // ─── Travel hint block ────────────────────────────────────────
@@ -222,9 +256,9 @@ function buildTravelBlock(agent: AgentName, state: WorldState): string {
       const v = villages.find(v => v.id === vid);
       const vName = v?.name ?? vid;
       const vSquare = v?.locations.find(l => isBaseLocation(l, HUB_LOCATION)) ?? v?.locations[0] ?? vid;
-      return `  Go to ${vName}: move_to "${vSquare}"`;
+      return `  Gehe nach ${vName}: move_to "${vSquare}"`;
     });
-    return `Travel options (pick a direction):\n${lines.join("\n")}`;
+    return `Reiseziele (wähle eine Richtung):\n${lines.join("\n")}`;
   }
 
   const currentVid = getVillageForLocation(loc) ?? getAgentVillage(agent);
@@ -234,10 +268,12 @@ function buildTravelBlock(agent: AgentName, state: WorldState): string {
   const lines = reachableRoads.map(road => {
     const destVid = road.connectsVillages.find(v => v !== currentVid) ?? "";
     const destName = villages.find(v => v.id === destVid)?.name ?? destVid;
-    return `  Travel to ${destName}: move_to "${road.name}" (${road.transitTicks} tick travel, costs 1 hunger)`;
+    return `  Reise nach ${destName}: move_to "${road.name}" (${road.transitTicks} Stunden Reise, kostet 1 Hunger)`;
   });
-  return `Travel:\n${lines.join("\n")}`;
+  return `Reise:\n${lines.join("\n")}`;
 }
+
+const RULE_LINE = `REGEL: Reden bewegt NIE Waren oder Geld. Nur post_order und buy_item lösen echte Übergaben aus. "Hier sind 4 Groschen" zu sagen bewirkt nichts.`;
 
 // ─── Road perception (minimal — no marketplace, no production) ─
 
@@ -261,24 +297,22 @@ function buildRoadPerception(
   const v1Name = getVillages().find(v => v.id === v1id)?.name ?? v1id ?? "?";
   const v2Name = getVillages().find(v => v.id === v2id)?.name ?? v2id ?? "?";
 
-  const othersStr = otherAgentsPresent.length > 0
-    ? `Others on the road: ${otherAgentsPresent.join(", ")}.`
-    : "You are alone on the road.";
+  const othersStr = othersHereLine(otherAgentsPresent, "road");
 
-  return `RULE: Speech NEVER moves goods or coin. Only post_order and buy_item create real transfers. Saying "here are 4 coins" does nothing.
+  return `${RULE_LINE}
 
-You are ${getDisplayName(agent)}.
-Location: ${location}. ${time.timeLabel}. ${time.season.charAt(0).toUpperCase() + time.season.slice(1)}, day ${time.seasonDay}/7.
-Weather: ${state.weather}
+Du bist ${getDisplayName(agent)}.
+Ort: ${location}. ${time.timeLabel}. ${seasonDayLine(time)}.
+Wetter: ${state.weather}
 
-You are travelling between ${v1Name} and ${v2Name}. You will arrive at your destination next tick.
+Du bist zwischen ${v1Name} und ${v2Name} unterwegs. Du erreichst dein Ziel in der nächsten Stunde.
 
 ${othersStr}
 ${bodyNote ? bodyNote + "\n" : ""}
-Inventory: ${inventoryLines}
-Wallet: ${eco.wallet} coin
+Inventar: ${inventoryLines}
+Geldbeutel: ${eco.wallet} Groschen
 
-${pendingMessages ? `Messages:\n${pendingMessages}\n` : ""}${feedback ? `Last tick feedback:\n${feedback}\n` : ""}${conversationSoFar ? `\nConversation so far:\n${conversationSoFar}\n` : ""}`.trim();
+${pendingMessages ? `Nachrichten:\n${pendingMessages}\n` : ""}${feedback ? `Rückmeldung der letzten Stunde:\n${feedback}\n` : ""}${conversationSoFar ? `\nGespräch bisher:\n${conversationSoFar}\n` : ""}`.trim();
 }
 
 // ─── Full perception ──────────────────────────────────────────
@@ -313,27 +347,25 @@ export function buildPerception(
 
   const agentOrders = getAgentMarketplace(agent, state).orders.filter(o => o.agentId === agent);
   const activeOrdersBlock = agentOrders.length > 0
-    ? `\nYour active orders:\n${agentOrders.map(o =>
-        `${o.type.toUpperCase()} ${o.item} x${o.quantity} at ${o.price}c each (id: ${o.id}, expires in ${o.expiresAtTick - time.tick} ticks)`
+    ? `\nDeine aktiven Angebote:\n${agentOrders.map(o =>
+        `${o.type === "sell" ? "BIETE" : "SUCHE"} ${itemLabel(o.item)} x${o.quantity} für je ${o.price} Groschen (id: ${o.id}, läuft ab in ${o.expiresAtTick - time.tick} Stunden)`
       ).join("\n")}`
     : "";
 
-  const othersStr = otherAgentsPresent.length > 0
-    ? `Others here: ${otherAgentsPresent.join(", ")}.`
-    : "You are alone here.";
+  const othersStr = othersHereLine(otherAgentsPresent, "here");
 
   const soundsStr = sounds.length > 0
-    ? `Sounds: ${sounds.join(" ")}`
+    ? `Geräusche: ${sounds.join(" ")}`
     : "";
 
   const hiredNote = eco.hiredBy
-    ? `\nYou are hired by ${getDisplayName(eco.hiredBy)} today.`
+    ? `\nDu bist heute von ${getDisplayName(eco.hiredBy)} angeheuert.`
     : "";
 
   const laborerNote = (() => {
     for (const a of getAgentNames()) {
       if (state.economics[a].hiredBy === agent) {
-        return `\n${getDisplayName(a)} is working for you today.`;
+        return `\n${getDisplayName(a)} arbeitet heute für dich.`;
       }
     }
     return "";
@@ -342,7 +374,7 @@ export function buildPerception(
   const feedback = (state.action_feedback[agent] ?? []).join("\n");
 
   const activeEvents = state.active_events.length > 0
-    ? `\nVillage events: ${state.active_events.map(e => e.description).join("; ")}`
+    ? `\nEreignisse in der Kolonie: ${state.active_events.map(e => e.description).join("; ")}`
     : "";
   const lawsBlock = getVillageLaws(state, time);
   const meetingCtx = getMeetingContext(agent, state, time);
@@ -354,22 +386,22 @@ export function buildPerception(
       })()
     : "";
 
-  return `RULE: Speech NEVER moves goods or coin. Only post_order and buy_item create real transfers. Saying "here are 4 coins" does nothing.
+  return `${RULE_LINE}
 
-You are ${getDisplayName(agent)}.
-Location: ${location}. ${time.timeLabel}. ${time.season.charAt(0).toUpperCase() + time.season.slice(1)}, day ${time.seasonDay}/7.
-Weather: ${state.weather}${activeEvents}${lawsBlock}${meetingCtx}${villageConcernsBlock}
+Du bist ${getDisplayName(agent)}.
+Ort: ${location}. ${time.timeLabel}. ${seasonDayLine(time)}.
+Wetter: ${state.weather}${activeEvents}${lawsBlock}${meetingCtx}${villageConcernsBlock}
 
 ${othersStr}${soundsStr ? "\n" + soundsStr : ""}${keeperNote ? "\n" + keeperNote : ""}
 ${bodyNote ? bodyNote + "\n" : ""}${hungryHint ? hungryHint + "\n" : ""}
-Inventory: ${inventoryLines}
-Wallet: ${eco.wallet} coin${loanPerception}
-Tools: ${toolLine}${hiredNote}${laborerNote}${producibleBlock}${activeOrdersBlock}${villageDirectory}
+Inventar: ${inventoryLines}
+Geldbeutel: ${eco.wallet} Groschen${loanPerception}
+Werkzeug: ${toolLine}${hiredNote}${laborerNote}${producibleBlock}${activeOrdersBlock}${villageDirectory}
 
-Marketplace board:
+Tauschbrett:
 ${marketboardLines}
 
-${pendingMessages ? `Messages:\n${pendingMessages}\n` : ""}${feedback ? `Last tick feedback:\n${feedback}\n` : ""}${conversationSoFar ? `\nConversation so far:\n${conversationSoFar}\n` : ""}`.trim();
+${pendingMessages ? `Nachrichten:\n${pendingMessages}\n` : ""}${feedback ? `Rückmeldung der letzten Stunde:\n${feedback}\n` : ""}${conversationSoFar ? `\nGespräch bisher:\n${conversationSoFar}\n` : ""}`.trim();
 }
 
 export function buildMeetingPerception(
@@ -389,25 +421,26 @@ export function buildMeetingPerception(
   const lawsBlock = getVillageLaws(state, time);
 
   const othersStr = othersPresent.length > 0
-    ? `Present: ${othersPresent.join(", ")}.`
-    : "You are alone here.";
+    ? `Anwesend: ${othersPresent.join(", ")}.`
+    : "Du bist hier allein.";
 
   const councilNote = getCouncilMembers(vid).includes(agent)
-    ? `\nYou hold a council seat. This meeting is part of your duties as a council member.`
+    ? `\nDu hast einen Sitz im Rat der Rottmeister. Dieser Appell gehört zu deinen Pflichten als Ratsmitglied.`
     : "";
 
+  const agendaLabel = AGENDA_LABELS[mtg.agendaType] ?? mtg.agendaType.replace("_", " ");
   const phaseNote = meetingPhase === "discussion"
-    ? `\n=== VILLAGE MEETING — DISCUSSION ===\nAgenda: "${mtg.description}" (${mtg.agendaType.replace("_", " ")})\nSpeak your mind. If you have a concrete proposal, use propose_rule with a specific text (and value if it's numeric, e.g. tax rate 0.15). You can also just speak or think.`
-    : `\n=== VILLAGE MEETING — VOTE ===\nProposal on the table: "${proposal ?? "(no specific rule proposed)"}"\nUse the vote action with side "agree" or "disagree". Speak first if you want.`;
+    ? `\n=== APPELL — AUSSPRACHE ===\nTagesordnung: "${mtg.description}" (${agendaLabel})\nSag, was du denkst. Hast du einen konkreten Vorschlag, nutze propose_rule mit einem genauen Text (und value, wenn es eine Zahl ist, z. B. Zehnt 0.15). Du kannst auch einfach sprechen (speak) oder nachdenken (think).`
+    : `\n=== APPELL — ABSTIMMUNG ===\nVorschlag auf dem Tisch: "${proposal ?? "(kein konkreter Beschluss vorgeschlagen)"}"\nNutze die Aktion vote mit side "agree" oder "disagree". Sprich vorher, wenn du willst.`;
 
-  return `You are ${getDisplayName(agent)}.
-Location: ${TOWNHALL_LOCATION}. ${time.timeLabel}. ${time.season.charAt(0).toUpperCase() + time.season.slice(1)}, day ${time.seasonDay}/7.
-Weather: ${state.weather}${lawsBlock}
+  return `Du bist ${getDisplayName(agent)}.
+Ort: ${TOWNHALL_LOCATION}. ${time.timeLabel}. ${seasonDayLine(time)}.
+Wetter: ${state.weather}${lawsBlock}
 
 ${othersStr}${councilNote}
 ${body.hunger > 1 ? `Hunger: ${body.hunger}/5.` : ""}
-Wallet: ${eco.wallet} coin
-${feedback ? `Last tick feedback:\n${feedback}\n` : ""}${conversationSoFar ? `\nConversation so far:\n${conversationSoFar}\n` : ""}${phaseNote}`.trim();
+Geldbeutel: ${eco.wallet} Groschen
+${feedback ? `Rückmeldung der letzten Stunde:\n${feedback}\n` : ""}${conversationSoFar ? `\nGespräch bisher:\n${conversationSoFar}\n` : ""}${phaseNote}`.trim();
 }
 
 // ─── Prompt builder ───────────────────────────────────────────
@@ -428,11 +461,11 @@ function buildPrompt(agent: AgentName, perception: string, actionSchema: string,
   const displayLocs = onRoad ? [] : getVillageLocations(currentVillageId).map(loc =>
     villageName && loc.startsWith(`${villageName}:`) ? loc.slice(villageName.length + 1) : loc
   );
-  const locationsLine = displayLocs.length > 0 ? `Locations in the village: ${displayLocs.join(", ")}` : "";
+  const locationsLine = displayLocs.length > 0 ? `Orte in der Kolonie: ${displayLocs.join(", ")}` : "";
 
   const travelBlock = buildTravelBlock(agent, state);
 
-  return `You are ${name}.
+  return `Du bist ${name}.
 
 ${profile}
 ${locationsLine ? "\n" + locationsLine : ""}

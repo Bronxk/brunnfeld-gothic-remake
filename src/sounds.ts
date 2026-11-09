@@ -1,12 +1,13 @@
 import type { AgentName, ResolvedAction } from "./types.js";
 import { getVillageAdjacency, getVillageForLocation, DEFAULT_VILLAGE_ID } from "./world-registry.js";
 
+// Keywords are matched against free-text actions; German (agent output) and legacy English both count.
 const LOUD_KEYWORDS = [
-  "hammer", "hammering", "forge", "clang", "clank", "bang",
-  "chop", "chopping", "axe", "splitting", "sawing",
-  "scream", "yell", "shout", "cry", "crying",
-  "music", "singing", "prayer", "bell", "bells",
-  "explosion", "fire", "burning",
+  "hammer", "hämmer", "schmiede", "amboss", "klirr", "klang", "krach", "forge", "clang", "clank", "bang",
+  "hack", "axt", "spalt", "säg", "chop", "axe", "splitting", "sawing",
+  "schrei", "brüll", "ruf", "scream", "yell", "shout", "cry", "crying",
+  "musik", "sing", "gebet", "glocke", "music", "singing", "prayer", "bell",
+  "explosion", "feuer", "brand", "brenn", "fire", "burning",
 ];
 
 function isLoudAction(text: string): boolean {
@@ -16,12 +17,12 @@ function isLoudAction(text: string): boolean {
 
 function describeLoudAction(text: string, location: string): string {
   const lower = text.toLowerCase();
-  if (lower.includes("hammer") || lower.includes("clang") || lower.includes("forge")) return `Hammering from the ${location}.`;
-  if (lower.includes("chop") || lower.includes("axe") || lower.includes("split")) return `Chopping sounds from ${location}.`;
-  if (lower.includes("scream") || lower.includes("yell")) return `Someone shouting near ${location}.`;
-  if (lower.includes("prayer") || lower.includes("singing") || lower.includes("bell")) return `Bells and voices from ${location}.`;
-  if (lower.includes("fire") || lower.includes("burning")) return `Crackling fire from ${location}.`;
-  return `Loud noise from ${location}.`;
+  if (lower.includes("hammer") || lower.includes("hämmer") || lower.includes("amboss") || lower.includes("clang") || lower.includes("forge")) return `Hämmern aus der Richtung von ${location}.`;
+  if (lower.includes("hack") || lower.includes("axt") || lower.includes("spalt") || lower.includes("chop") || lower.includes("axe") || lower.includes("split")) return `Hackgeräusche aus der Richtung von ${location}.`;
+  if (lower.includes("schrei") || lower.includes("brüll") || lower.includes("scream") || lower.includes("yell")) return `Jemand schreit in der Nähe von ${location}.`;
+  if (lower.includes("gebet") || lower.includes("sing") || lower.includes("glocke") || lower.includes("prayer") || lower.includes("bell")) return `Glocken und Stimmen aus der Richtung von ${location}.`;
+  if (lower.includes("feuer") || lower.includes("brenn") || lower.includes("fire") || lower.includes("burning")) return `Feuerknistern aus der Richtung von ${location}.`;
+  return `Lärm aus der Richtung von ${location}.`;
 }
 
 export function getSounds(
@@ -43,7 +44,7 @@ export function getSounds(
     for (const action of actions) {
       if (action.type === "speak" && !hasVoice) hasVoice = true;
     }
-    if (hasVoice) sounds.push(`Voices from ${otherLocation}.`);
+    if (hasVoice) sounds.push(`Stimmen aus der Richtung von ${otherLocation}.`);
   }
 
   return sounds;

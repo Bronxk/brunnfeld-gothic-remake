@@ -21,14 +21,14 @@ export function deliverMessages(state: WorldState, agent: AgentName, currentTick
   for (const msg of queue) {
     const fromName = getDisplayName(msg.from);
     const ticksAgo = currentTick - msg.sent_tick;
-    const timeAgo = ticksAgo <= 1 ? "just now" : `${ticksAgo} hours ago`;
+    const timeAgo = ticksAgo <= 1 ? "gerade eben" : `vor ${ticksAgo} Stunden`;
 
     switch (msg.type) {
       case "message":
-        lines.push(`Message from ${fromName} (${timeAgo}): "${msg.text}"`);
+        lines.push(`Von ${fromName} (${timeAgo}): "${msg.text}"`);
         break;
       case "note":
-        lines.push(`Note from ${fromName} (${timeAgo}): "${msg.text}"`);
+        lines.push(`Zettel von ${fromName} (${timeAgo}): "${msg.text}"`);
         break;
     }
   }

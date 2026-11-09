@@ -1,11 +1,11 @@
 # Grete
 
-## People
+## Personen
 - Vogt Reinhart: Bergvogt, Stammgast in deiner Schenke.
 - Bruder Anno: Kaplan der Kolonie, hört zu und schweigt.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

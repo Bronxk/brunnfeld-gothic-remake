@@ -1,10 +1,10 @@
 # Jost
 
-## People
+## Personen
 - Gisbert: alter Knappe mit Staublunge, kennt jeden Gang im Erzstollen.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

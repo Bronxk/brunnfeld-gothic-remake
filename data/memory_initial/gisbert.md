@@ -1,11 +1,11 @@
 # Gisbert
 
-## People
+## Personen
 - Mattis: junger Knappe, flink und vorlaut.
 - Jost: Holzfäller und Köhler, schweigsam und verlässlich.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*

@@ -1,5 +1,5 @@
 import type { AgentName, EconomySnapshot, ItemType, WorldState, SimTime } from "./types.js";
-import { ALL_ITEMS } from "./types.js";
+import { ALL_ITEMS, ITEM_LABELS } from "./types.js";
 import { getAgentNames } from "./world-registry.js";
 import { calcInventoryValue } from "./inventory.js";
 
@@ -60,12 +60,12 @@ export function takeEconomySnapshot(state: WorldState, time: SimTime): void {
   state.production_log = state.production_log.filter(e => e.tick >= yesterdayStart);
 
   if (scarcityAlerts.length > 0) {
-    console.log(`  ⚠  Scarcity alert: ${scarcityAlerts.join(", ")}`);
+    console.log(`  ⚠  Knappheit: ${scarcityAlerts.map(i => ITEM_LABELS[i] ?? i).join(", ")}`);
   }
 }
 
 export function getEconomySummary(state: WorldState): string {
   const last = state.economy_snapshots[state.economy_snapshots.length - 1];
   if (!last) return "";
-  return `Economy — Wealth: ${last.totalWealth}c | Gini: ${last.giniCoefficient} | GDP: ${last.gdp}c/day${last.scarcityAlerts.length > 0 ? ` | SCARCE: ${last.scarcityAlerts.join(",")}` : ""}`;
+  return `Wirtschaft — Vermögen: ${last.totalWealth} Groschen | Gini: ${last.giniCoefficient} | BIP: ${last.gdp} Groschen/Tag${last.scarcityAlerts.length > 0 ? ` | KNAPP: ${last.scarcityAlerts.map(i => ITEM_LABELS[i] ?? i).join(", ")}` : ""}`;
 }

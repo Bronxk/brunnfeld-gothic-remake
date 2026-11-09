@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import type { AgentName, ItemType, ResolvedAction, SimTime, WorldState } from "./types.js";
 import { getAgentNames, getDisplayName, DEFAULT_VILLAGE_ID } from "./world-registry.js";
+import { dayLabel } from "./time.js";
 
 const DATA_DIR = join(process.cwd(), "data");
 
@@ -71,22 +72,44 @@ interface MemorySections {
   important: string[];
 }
 
+// Memory files use German headings; the pre-reskin English headings are still parsed
+// so that saved games keep working (they get rewritten with German headings on the next save).
+const HEADING_PEOPLE = /^## (Personen|People)\b/;
+const HEADING_EXPERIENCES = /^## (Erlebnisse|Experiences)\b/;
+const HEADING_IMPORTANT = /^## (Wichtig|Important)\b/;
+
+const EMPTY_PEOPLE = new Set(["*(Noch niemand)*", "*(Noch niemand bekannt)*", "*(Nobody yet)*", "*(Nobody known yet)*"]);
+const EMPTY_EXPERIENCES = new Set(["*(Noch nichts)*", "*(Nothing yet)*"]);
+const EMPTY_IMPORTANT = new Set(["*(Nichts)*", "*(Nothing)*"]);
+
+/** Returns the body of the "Personen" section (or legacy "People") of a memory file, "" if missing. */
+export function getPeopleSection(content: string): string {
+  const lines: string[] = [];
+  let inPeople = false;
+  for (const line of content.split("\n")) {
+    if (HEADING_PEOPLE.test(line)) { inPeople = true; continue; }
+    if (line.startsWith("##")) { inPeople = false; continue; }
+    if (inPeople) lines.push(line);
+  }
+  return lines.join("\n");
+}
+
 function parseMemory(content: string): MemorySections {
   const sections: MemorySections = { header: "", people: [], experiences: [], important: [] };
   let current: "header" | "people" | "experiences" | "important" = "header";
 
   for (const line of content.split("\n")) {
     if (line.startsWith("# ")) { sections.header = line; continue; }
-    if (line.startsWith("## People")) { current = "people"; continue; }
-    if (line.startsWith("## Experiences")) { current = "experiences"; continue; }
-    if (line.startsWith("## Important")) { current = "important"; continue; }
+    if (HEADING_PEOPLE.test(line)) { current = "people"; continue; }
+    if (HEADING_EXPERIENCES.test(line)) { current = "experiences"; continue; }
+    if (HEADING_IMPORTANT.test(line)) { current = "important"; continue; }
 
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    if (current === "people") sections.people.push(trimmed);
-    else if (current === "experiences" && trimmed !== "*(Nothing yet)*") sections.experiences.push(trimmed);
-    else if (current === "important" && trimmed !== "*(Nothing)*") sections.important.push(trimmed);
+    if (current === "people" && !EMPTY_PEOPLE.has(trimmed)) sections.people.push(trimmed);
+    else if (current === "experiences" && !EMPTY_EXPERIENCES.has(trimmed)) sections.experiences.push(trimmed);
+    else if (current === "important" && !EMPTY_IMPORTANT.has(trimmed)) sections.important.push(trimmed);
   }
 
   return sections;
@@ -94,12 +117,12 @@ function parseMemory(content: string): MemorySections {
 
 function serializeMemory(s: MemorySections): string {
   let out = s.header + "\n\n";
-  out += "## People\n";
-  out += s.people.length > 0 ? s.people.join("\n") + "\n" : "*(Nobody yet)*\n";
-  out += "\n## Experiences\n";
-  out += s.experiences.length > 0 ? s.experiences.join("\n") + "\n" : "*(Nothing yet)*\n";
-  out += "\n## Important\n";
-  out += s.important.length > 0 ? s.important.join("\n") + "\n" : "*(Nothing)*\n";
+  out += "## Personen\n";
+  out += s.people.length > 0 ? s.people.join("\n") + "\n" : "*(Noch niemand)*\n";
+  out += "\n## Erlebnisse\n";
+  out += s.experiences.length > 0 ? s.experiences.join("\n") + "\n" : "*(Noch nichts)*\n";
+  out += "\n## Wichtig\n";
+  out += s.important.length > 0 ? s.important.join("\n") + "\n" : "*(Nichts)*\n";
   return out;
 }
 
@@ -122,10 +145,10 @@ function compressExperiences(entries: string[]): string[] {
     }
 
     const timeMatch = batch[0]?.match(/^(\S+ \d+:\d+)/);
-    const timeRef = timeMatch ? timeMatch[1] : "Earlier";
+    const timeRef = timeMatch ? timeMatch[1] : "Früher";
     let summary = `[${timeRef}]: `;
-    if (names.size > 0) summary += `Interacted with ${[...names].join(", ")}. `;
-    summary += "Routine.";
+    if (names.size > 0) summary += `Begegnungen mit ${[...names].join(", ")}. `;
+    summary += "Alltag.";
     compressed.push(summary);
   }
 
@@ -153,6 +176,9 @@ function summarizeHarnessTrace(historyLines: string[]): string {
   return meaningful.join(". ");
 }
 
+const SIGNIFICANT_RESULT_RE = /Sold|Bought|Barter completed|starved|Verkauft|Gekauft|Tausch|verhungert/;
+const SIGNIFICANT_EXCLUDE_RE = /^\[(Barter failed|Tausch gescheitert)\]/;
+
 export function updateAgentMemoryFromActions(
   agent: AgentName,
   time: SimTime,
@@ -164,9 +190,9 @@ export function updateAgentMemoryFromActions(
   const content = readAgentMemory(agent);
   const sections = parseMemory(content);
 
-  const timeShort = `${time.dayOfWeek} ${time.hour.toString().padStart(2, "0")}:00`;
+  const timeShort = `${dayLabel(time.dayOfWeek)} ${time.hour.toString().padStart(2, "0")}:00`;
   const othersStr = otherAgents.length > 0
-    ? `. ${otherAgents.join(", ")} ${otherAgents.length === 1 ? "was" : "were"} there`
+    ? `. ${otherAgents.join(", ")} ${otherAgents.length === 1 ? "war" : "waren"} dort`
     : "";
   const header = `${timeShort}. ${location}${othersStr}.`;
 
@@ -183,7 +209,7 @@ export function updateAgentMemoryFromActions(
     for (const action of actions) {
       switch (action.type) {
         case "speak":
-          parts.push(`Said: "${action.text?.substring(0, 80)}"`);
+          parts.push(`Gesagt: "${action.text?.substring(0, 80)}"`);
           hasContent = true;
           break;
         case "think":
@@ -193,7 +219,7 @@ export function updateAgentMemoryFromActions(
           }
           break;
         case "move_to":
-          parts.push(`Went to ${action.location}.`); hasContent = true;
+          parts.push(`Ging nach ${action.location}.`); hasContent = true;
           break;
         case "produce":
           if (action.result && !action.result.startsWith("[")) {
@@ -207,10 +233,10 @@ export function updateAgentMemoryFromActions(
           }
           break;
         case "send_message":
-          parts.push(`Sent message to ${action.to || action.target}.`); hasContent = true;
+          parts.push(`Nachricht an ${action.to || action.target} geschickt.`); hasContent = true;
           break;
         case "knock_door":
-          parts.push(`Knocked at ${action.target}'s door. ${action.result}`); hasContent = true;
+          parts.push(`Bei ${action.target} an die Tür geklopft. ${action.result}`); hasContent = true;
           break;
       }
     }
@@ -219,14 +245,12 @@ export function updateAgentMemoryFromActions(
     }
   }
 
-  // Pin significant trade events to Important
+  // Pin significant trade events to Important. The result strings are produced elsewhere
+  // (tools.ts, tool-registry.ts, trade-scanner.ts, body.ts): match legacy English and German wording.
   const significantResults = actions.filter(a =>
-    a.result && (
-      a.result.includes("Sold") ||
-      a.result.includes("Bought") ||
-      a.result.includes("Barter completed") ||
-      a.result.includes("starved")
-    )
+    a.result &&
+    !SIGNIFICANT_EXCLUDE_RE.test(a.result) &&
+    SIGNIFICANT_RESULT_RE.test(a.result)
   );
   for (const action of significantResults) {
     if (sections.important.length < 5) {

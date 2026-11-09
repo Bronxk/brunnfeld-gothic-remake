@@ -33,10 +33,10 @@ export function getSeasonMultiplier(item: ItemType, season: Season): number {
 // Called at dawn when first tick of a new season — logs a weather/season update
 export function getSeasonDescription(season: Season): string {
   switch (season) {
-    case "spring": return "Spring has arrived. Fields are ready. Animal produce is plentiful.";
-    case "summer": return "Summer is here. Crops grow at peak rate. Hot and dry days.";
-    case "autumn": return "Autumn harvest season. Bier brewing peaks. Prepare brennholz for winter.";
-    case "winter": return "Winter has come. Farming is impossible. Brennholz keeps away the cold.";
+    case "spring": return "Der Frühling ist da. Die Felder sind bereit. Tierische Erzeugnisse gibt es reichlich.";
+    case "summer": return "Der Sommer ist da. Das Getreide wächst am schnellsten. Heiße, trockene Tage.";
+    case "autumn": return "Erntezeit im Herbst. Dünnbier wird jetzt am meisten gebraut. Leg Brennholz für den Winter zurück.";
+    case "winter": return "Der Winter ist da. Feldarbeit ist unmöglich. Brennholz hält die Kälte fern.";
   }
 }
 
@@ -58,7 +58,7 @@ export function applyWinterHeating(state: WorldState): void {
       if (currentSickness < 3) {
         state.body[agent].sickness = currentSickness + 1;
       }
-      feedbackToAgent(agent, state, "You had no brennholz last night. You feel cold and unwell.");
+      feedbackToAgent(agent, state, "Du hattest letzte Nacht kein Brennholz. Dir ist kalt und du fühlst dich elend.");
     }
   }
 }

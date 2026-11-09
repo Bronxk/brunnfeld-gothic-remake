@@ -1,10 +1,10 @@
 # Wendel
 
-## People
+## Personen
 - Brakel: Rottmeister der Feldrotte und dein Bettnachbar in Baracke 1.
 
-## Experiences
-*(Nothing yet)*
+## Erlebnisse
+*(Noch nichts)*
 
-## Important
-*(Nothing)*
+## Wichtig
+*(Nichts)*
