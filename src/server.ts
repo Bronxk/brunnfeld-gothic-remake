@@ -117,6 +117,7 @@ const server = createServer(async (req, res) => {
         "war:update":         (e) => send({ type: "war:update",         ...(e as object) }),
         "war:event":          (e) => send({ type: "war:event",          ...(e as object) }),
         "war:raid":           (e) => send({ type: "war:raid",           ...(e as object) }),
+        "war:march":          (e) => send({ type: "war:march",          ...(e as object) }),
       };
 
       for (const [evt, handler] of Object.entries(handlers)) {
