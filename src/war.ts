@@ -339,7 +339,8 @@ export function declareWar(state: WorldState, tick: number, aggressor: string, t
   delete rel.truceUntil;
 
   notifyVillage(state, target, `⚔ ${aName} hat uns den Krieg erklärt! Wachen aufstellen, Vorräte sichern — Überfälle sind jetzt jederzeit möglich.`);
-  notifyVillage(state, aggressor, `⚔ Der Rat hat ${tName} den Krieg erklärt. Mit ueberfallen kannst du dort angreifen, mit wache_halten schützt du unseren Ort.`);  const ev = pushLog(state, {
+  notifyVillage(state, aggressor, `⚔ Der Rat hat ${tName} den Krieg erklärt. Mit ueberfallen kannst du dort angreifen, mit wache_halten schützt du unseren Ort.`);
+  const ev = pushLog(state, {
     tick, kind: "declared", villages: [rel.a, rel.b],
     text: `${aName} erklärt ${tName} den Krieg.`, actor: aggressor,
   });
@@ -725,6 +726,61 @@ export function sendMarchersHome(state: WorldState, tick: number): void {
     turnBack(state, tick, agent, m);
     feedbackToAgent(agent, state, `Du ziehst von ${villageName(m.target)} wieder heim. Ankunft in ${m.arriveTick - tick} Stunden.`);
   }
+}
+
+export const WAR_PARTY_MAX = 8;
+
+export type WarPartyResult =
+  | { ok: true; marchers: AgentName[]; names: string[]; arriveTick: number; text: string; event: WarEvent }
+  | { ok: false; error: string };
+
+/**
+ * Observer lever: `from` sends a war party of up to `size` fighters against `to` (needs krieg).
+ * Picks the fittest members (not the elder, not dead/jailed/already marching, at home or on a road),
+ * lowest hunger and highest energy first, and starts their marches like `ueberfallen` would.
+ */
+export function dispatchWarParty(state: WorldState, tick: number, from: string, to: string, size = 3): WarPartyResult {
+  const bad = checkVillages(from, to);
+  if (bad) return { ok: false, error: bad };
+  const fName = villageName(from);
+  const tName = villageName(to);
+  if (peekRelation(state, from, to)?.stance !== "krieg") {
+    return { ok: false, error: `[Geht nicht] Zwischen ${fName} und ${tName} herrscht kein Krieg — erst Krieg erklären.` };
+  }
+  const n = Math.max(1, Math.min(WAR_PARTY_MAX, Math.floor(Number.isFinite(size) ? size : 3)));
+  const elder = getVillageElder(from);
+  const fit = getVillageMembers(from)
+    .filter(a => a !== PLAYER_ID && a !== elder)
+    .filter(a => {
+      const body = state.body[a];
+      if (!body || isAgentDead(body)) return false;
+      if (state.banned?.[a] != null && tick < state.banned[a]!) return false;
+      if (state.war_marches?.[a]) return false;
+      const loc = state.agent_locations[a];
+      return locationVillage(loc) === from || (!!loc && isRoadLocation(loc));
+    })
+    .sort((x, y) => (state.body[x]!.hunger - state.body[y]!.hunger) || (state.body[y]!.energy - state.body[x]!.energy));
+  if (fit.length === 0) return { ok: false, error: `[Geht nicht] In ${fName} ist gerade niemand kampffähig daheim.` };
+
+  const marchers: AgentName[] = [];
+  for (const agent of fit) {
+    if (marchers.length >= n) break;
+    const r = registerWarAction(state, tick, agent, "raid", to);
+    if (!r.ok) {
+      console.warn(`  ⚔ Kriegszug: ${getDisplayName(agent)} kann nicht mit: ${r.error}`);
+      continue;
+    }
+    marchers.push(agent);
+    feedbackToAgent(agent, state, `⚔ ${fName} schickt einen Kriegszug gegen ${tName}, und du ziehst mit. ${r.text}`);
+  }
+  if (marchers.length === 0) return { ok: false, error: `[Geht nicht] Aus ${fName} konnte niemand losziehen.` };
+
+  const names = marchers.map(a => getDisplayName(a));
+  const arriveTick = Math.max(...marchers.map(a => state.war_marches![a]!.arriveTick));
+  const text = `${fName} schickt einen Kriegszug gegen ${tName}: ${names.join(", ")}.`;
+  notifyVillage(state, to, `⚔ Späher melden: Aus ${fName} zieht ein Kriegszug heran (${marchers.length} Leute). Wache halten!`);
+  const event = pushLog(state, { tick, kind: "march", villages: [from, to], text, actor: from });
+  return { ok: true, marchers, names, arriveTick, text, event };
 }
 
 /** One engine log line while marches are active, e.g. "⚔ Kriegszug: 3 unterwegs (Rabenstollen→Kehlhof)". */

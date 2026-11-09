@@ -6,6 +6,7 @@
  *   POST /api/war/declare    { aggressor, target }
  *   POST /api/war/peace      { a, b }
  *   POST /api/war/tribute    { payer, receiver, amount }
+ *   POST /api/war/raid       { from, to, size? }  → sends a war party (Kriegszug), needs krieg
  *
  * Concurrency: while a tick runs the engine owns the state in memory, so mutations are applied to
  * that live object (it persists them itself at the end of the tick). Between ticks the state is
@@ -20,7 +21,7 @@ import { getLiveWorldState } from "./player.js";
 import { getVillages } from "./world-registry.js";
 import {
   PROVOKE_KINDS, resolveVillageId, relationOrDefault, provoke, declareWar, makePeace, payTribute,
-  type WarResult,
+  dispatchWarParty, WAR_PARTY_MAX, type WarResult,
 } from "./war.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -138,7 +139,7 @@ export async function handleWarRoute(
     }
 
     const action = path.slice("/api/war/".length);
-    if (!["provoke", "declare", "peace", "tribute"].includes(action)) return false;
+    if (!["provoke", "declare", "peace", "tribute", "raid"].includes(action)) return false;
     if (method !== "POST") { send(res, headers, 405, { ok: false, error: "Nur POST erlaubt." }); return true; }
 
     const body = await readJsonBody(req);
@@ -172,6 +173,20 @@ export async function handleWarRoute(
       const b = village(body, "b", res, headers); if (!b) return true;
       const { state, tick, persist } = acquire();
       finish(res, headers, makePeace(state, tick, a, b), persist);
+    } else if (action === "raid") {
+      const from = village(body, "from", res, headers); if (!from) return true;
+      const to = village(body, "to", res, headers); if (!to) return true;
+      const rawSize = body["size"];
+      const size = rawSize == null ? 3 : Number(rawSize);
+      if (!Number.isFinite(size) || size < 1 || size > WAR_PARTY_MAX) {
+        send(res, headers, 400, { ok: false, error: `Feld „size“ muss eine Zahl von 1 bis ${WAR_PARTY_MAX} sein.` });
+        return true;
+      }
+      const { state, tick, persist } = acquire();
+      const r = dispatchWarParty(state, tick, from, to, size);
+      if (!r.ok) { send(res, headers, 400, { ok: false, error: r.error }); return true; }
+      persist();
+      send(res, headers, 200, { ok: true, marchers: r.marchers, names: r.names, arriveTick: r.arriveTick, text: r.text, event: r.event });
     } else {
       const payer = village(body, "payer", res, headers); if (!payer) return true;
       const receiver = village(body, "receiver", res, headers); if (!receiver) return true;

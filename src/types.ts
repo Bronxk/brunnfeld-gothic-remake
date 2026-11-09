@@ -340,7 +340,7 @@ export interface VillageRelation {
   raidsWon: Record<string, number>;
 }
 
-export type WarEventKind = "provocation" | "tension" | "declared" | "raid" | "guard" | "peace_offer" | "peace" | "tribute";
+export type WarEventKind = "provocation" | "tension" | "declared" | "raid" | "guard" | "peace_offer" | "peace" | "tribute" | "march";
 
 export interface WarEvent {
   tick: number;

@@ -1147,6 +1147,7 @@ With two or more colonies, every pair has a relation: **Frieden**, **Spannung** 
 
 - **Stirring trouble (observer):** `POST /api/war/provoke` with `{ from, to, kind }`. The kinds are `grenzstreit`, `diebstahl`, `beleidigung` and `geruecht`. Each raises tension by 20–35 and tells both colonies what happened from their own side. A `diebstahl` really moves a little Groschen or goods. From tension 60 the relation turns to Spannung. From 85 the victim's council is summoned to vote on war; whether they declare it is up to the LLM council.
 - **Hard levers:** `POST /api/war/declare` (`{ aggressor, target }`), `POST /api/war/peace` (`{ a, b }`) and `POST /api/war/tribute` (`{ payer, receiver, amount }`). A peace starts a 24-tick truce.
+- **Send a war party:** `POST /api/war/raid` with `{ from, to, size? }` (1–8, default 3) sends the fittest members of `from` on a Kriegszug against `to`. The elder stays home. It only works while the two are at war. The target colony gets a scout warning, so its people may stand guard.
 - **What colonists can do:**
   - `ueberfallen` starts a **Kriegszug** (war march) from the home colony or a road. The raiders walk the road for its transit time without LLM turns (no token cost), raid on arrival and walk home afterwards. Several raiders on the same tick march and fight together. If peace is made meanwhile, the party turns back without fighting.
   - `wache_halten` guards their own colony and counts double in defence.
