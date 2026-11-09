@@ -1,7 +1,7 @@
 import type {
   AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WorldState,
 } from "./types.js";
-import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageMembers, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive, pinPlayerIdentity } from "./world-registry.js";
+import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageMembers, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive, pinPlayerIdentity, getAgentModel, getDefaultModel } from "./world-registry.js";
 import { emitSSE } from "./events.js";
 import { tickToTime, ticksPerDay, getHourIndex } from "./time.js";
 import {
@@ -854,6 +854,15 @@ async function runTickCore(tick: number): Promise<void> {
   const trades = tickLog.trades.length;
   const prods = tickLog.productions.length;
   console.log(`  Calls: ${stats.totalCalls} | Trades: ${trades} | Productions: ${prods}`);
+  const modelCounts = new Map<string, number>();
+  for (const id of getNpcNames()) {
+    const m = getAgentModel(id);
+    modelCounts.set(m, (modelCounts.get(m) ?? 0) + 1);
+  }
+  // Only worth a line when at least one colonist differs from the global default (override exists).
+  if ([...modelCounts.keys()].some(m => m !== getDefaultModel())) {
+    console.log(`  Modelle: ${[...modelCounts].map(([m, n]) => `${n}× ${m}`).join(", ")}`);
+  }
   const u = stats.apiUsage;
   if (u.input + u.output + u.cacheRead + u.cacheWrite > 0) {
     console.log(`  Claude API tokens (total, measured): in ${u.input} | out ${u.output} | cache read ${u.cacheRead} | cache write ${u.cacheWrite}`);

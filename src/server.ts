@@ -8,7 +8,10 @@ import { triggerEvent, triggerMeeting, runInterview } from "./god-mode.js";
 import { queueMessage } from "./messages.js";
 import { getPlayerView, getPlayerTools, createPlayer, performPlayerAction } from "./player.js";
 import type { AgentName } from "./types.js";
-import { reloadConfig, getVillages, getVillageElder, getAgentVillage, DEFAULT_VILLAGE_ID } from "./world-registry.js";
+import {
+  reloadConfig, getVillages, getVillageElder, getAgentVillage, DEFAULT_VILLAGE_ID,
+  getNpcNames, getAgentModel, getDefaultModel, setAgentModel, PLAYER_ID, type ModelTier,
+} from "./world-registry.js";
 
 export { emitSSE };
 
@@ -35,6 +38,13 @@ const MIME: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
 };
+
+/** Model choices offered in the viewer; prices in USD per million tokens (Claude API list prices). */
+const MODEL_OPTIONS: { id: ModelTier; label: string; inPerMTok: number; outPerMTok: number }[] = [
+  { id: "haiku",  label: "Haiku 5.5",  inPerMTok: 0.10, outPerMTok: 0.50 },
+  { id: "sonnet", label: "Sonnet 5.5", inPerMTok: 2,    outPerMTok: 10 },
+  { id: "opus",   label: "Opus 5.5",   inPerMTok: 4,    outPerMTok: 20 },
+];
 
 // ─── HTTP Server ──────────────────────────────────────────────
 
@@ -99,6 +109,7 @@ const server = createServer(async (req, res) => {
         "meeting:quorum_fail":(e) => send({ type: "meeting:quorum_fail",...(e as object) }),
         "harness:tool":       (e) => send({ type: "harness:tool",       ...(e as object) }),
         "player:update":      (e) => send({ type: "player:update",      ...(e as object) }),
+        "agent:model":        (e) => send({ type: "agent:model",        ...(e as object) }),
       };
 
       for (const [evt, handler] of Object.entries(handlers)) {
@@ -147,6 +158,54 @@ const server = createServer(async (req, res) => {
       headers["Content-Type"] = "application/json";
       res.writeHead(result.status, headers);
       res.end(JSON.stringify(result.body));
+      return;
+    }
+
+    // ─── Per-colonist LLM model (world-registry: getAgentModel / setAgentModel) ───
+    if (path === "/api/agents/models" && req.method === "GET") {
+      const models: Record<string, string> = {};
+      for (const id of getNpcNames()) models[id] = getAgentModel(id);
+      headers["Content-Type"] = "application/json";
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ default: getDefaultModel(), models, options: MODEL_OPTIONS }));
+      return;
+    }
+    const modelRoute = /^\/api\/agents\/([^/]+)\/model$/.exec(path);
+    if (modelRoute && req.method === "POST") {
+      headers["Content-Type"] = "application/json";
+      let agentId: string;
+      try {
+        agentId = decodeURIComponent(modelRoute[1]!);
+      } catch {
+        res.writeHead(404, headers);
+        res.end(JSON.stringify({ ok: false, error: `Unbekannter Kolonist: ${modelRoute[1]}` }));
+        return;
+      }
+      if (agentId === PLAYER_ID || !getNpcNames().includes(agentId)) {
+        res.writeHead(404, headers);
+        res.end(JSON.stringify({ ok: false, error: `Unbekannter Kolonist: ${agentId}` }));
+        return;
+      }
+      const parsed: unknown = await parseBody(req);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !("model" in parsed)) {
+        res.writeHead(400, headers);
+        res.end(JSON.stringify({ ok: false, error: "Ungültiger Body: erwartet { \"model\": \"haiku\" | \"sonnet\" | \"opus\" | null }." }));
+        return;
+      }
+      const requested = (parsed as Record<string, unknown>)["model"];
+      try {
+        setAgentModel(agentId, requested as ModelTier | null);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[server] setAgentModel(${agentId}, ${String(requested)}) rejected: ${msg}`);
+        res.writeHead(400, headers);
+        res.end(JSON.stringify({ ok: false, error: msg }));
+        return;
+      }
+      const model = getAgentModel(agentId);
+      emitSSE("agent:model", { agent: agentId, model });
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ ok: true, agent: agentId, model }));
       return;
     }
 

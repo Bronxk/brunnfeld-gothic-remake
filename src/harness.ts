@@ -6,7 +6,7 @@ import { seedLocationContext, captureOffersForPlayer, playerSeedLines } from "./
 import { callClaudeWithPrefix } from "./llm.js";
 import { emitSSE } from "./events.js";
 import { readAgentProfile, readAgentMemory } from "./memory.js";
-import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall } from "./world-registry.js";
+import { getDisplayName, getAgentVillage, getVillages, getVillageTownHall, getAgentModel } from "./world-registry.js";
 import { deliverMessages } from "./messages.js";
 import { HUB_LOCATION, isBaseLocation } from "./village-map.js";
 import { tickToTime, SEASON_LABELS } from "./time.js";
@@ -245,7 +245,7 @@ export async function* runAgentHarness(config: HarnessConfig): AsyncGenerator<vo
 
     let raw: string;
     try {
-      raw = await callClaudeWithPrefix(staticPrefix, dynamicSuffix, { model: process.env.CHARACTER_MODEL ?? "haiku" });
+      raw = await callClaudeWithPrefix(staticPrefix, dynamicSuffix, { model: getAgentModel(agentId) });
     } catch (err) {
       console.error(`${label} ✗ LLM error: ${(err as Error).message?.slice(0, 80)}`);
       break;
@@ -260,7 +260,7 @@ export async function* runAgentHarness(config: HarnessConfig): AsyncGenerator<vo
         const retryRaw = await callClaudeWithPrefix(
           staticPrefix,
           dynamicSuffix + "\n\nAntworte NUR mit gültigem JSON: {\"tool\": \"<name>\", \"args\": {...}}",
-          { model: process.env.CHARACTER_MODEL ?? "haiku" },
+          { model: getAgentModel(agentId) },
         );
         toolCall = parseToolCall(retryRaw);
       } catch { /* fall through to give-up */ }

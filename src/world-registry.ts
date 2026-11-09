@@ -6,7 +6,7 @@
  * directly from types.ts or village-map.ts.
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, renameSync } from "fs";
 import { join } from "path";
 import type { Skill } from "./types.js";
 import {
@@ -34,6 +34,10 @@ import {
 
 // ─── Schema ──────────────────────────────────────────────────
 
+/** Model tier an individual colonist runs on (resolved to a concrete model ID in llm.ts). */
+export type ModelTier = "haiku" | "sonnet" | "opus";
+export const MODEL_TIERS: readonly ModelTier[] = ["haiku", "sonnet", "opus"];
+
 export interface AgentConfig {
   id: string;
   displayName: string;
@@ -41,6 +45,8 @@ export interface AgentConfig {
   homeLocation: string;
   workLocation: string;
   description: string;    // shown to unknown acquaintances: "a farmer", "the miller"
+  /** Per-colonist model tier override; unset = global CHARACTER_MODEL (default "haiku"). */
+  model?: ModelTier;
 }
 
 export interface VillageConfig {
@@ -151,8 +157,10 @@ function buildDefaultConfig(): WorldConfig {
 
 // ─── Load (or build default) ──────────────────────────────────
 
+const configPath = () => join(process.cwd(), "data", "world_config.json");
+
 function loadConfig(): WorldConfig {
-  const path = join(process.cwd(), "data", "world_config.json");
+  const path = configPath();
   if (!existsSync(path)) return buildDefaultConfig();
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8")) as WorldConfig;
@@ -179,9 +187,18 @@ function getConfig(): WorldConfig {
   return _config;
 }
 
-/** Force reload from disk (used after generate-world runs). */
+/**
+ * Force reload from disk (used after generate-world runs and per-agent model changes).
+ * Drops the config and every lookup table derived from it; both are rebuilt lazily on the next
+ * access. Synchronous, so it is safe mid-tick. The player identity (`_player`) lives outside the
+ * config and is deliberately left untouched.
+ */
 export function reloadConfig(): void {
   _config = null;
+  _agentMap = null;
+  _agentVillage = null;
+  _locationVillage = null;
+  _villageMap = null;
 }
 
 // ─── Lookup tables (built lazily from config) ────────────────
@@ -468,4 +485,50 @@ export function getAgentHomeLocation(agent: string): string {
 export function getAgentWorkLocation(agent: string): string {
   ensureMaps();
   return _agentMap!.get(agent)?.workLocation ?? AGENT_WORK_LOCATIONS[agent] ?? HUB_LOCATION;
+}
+
+// ─── Per-colonist LLM model ───────────────────────────────────
+
+const isModelTier = (v: unknown): v is ModelTier =>
+  typeof v === "string" && (MODEL_TIERS as readonly string[]).includes(v);
+
+/** Global default model for colonists without an override. */
+export function getDefaultModel(): string {
+  return process.env.CHARACTER_MODEL || "haiku";
+}
+
+/** Model (tier name, or the raw CHARACTER_MODEL value) this colonist's LLM calls use. */
+export function getAgentModel(agent: string): string {
+  ensureMaps();
+  const tier = _agentMap!.get(agent)?.model;
+  return isModelTier(tier) ? tier : getDefaultModel();
+}
+
+/**
+ * Set (or with null: clear) a colonist's model tier. Persists to data/world_config.json
+ * (materialising the current effective config first if the file does not exist yet) and
+ * reloads the registry so the next LLM call in this process picks it up.
+ */
+export function setAgentModel(agent: string, model: ModelTier | null): void {
+  if (agent === PLAYER_ID || !getNpcNames().includes(agent)) {
+    throw new Error(`Unbekannter Kolonist: ${agent}`);
+  }
+  if (model !== null && !isModelTier(model)) {
+    throw new Error(`Unbekanntes Modell: ${String(model)}. Möglich: ${MODEL_TIERS.join(", ")}.`);
+  }
+
+  const path = configPath();
+  const cfg: WorldConfig = existsSync(path)
+    ? (JSON.parse(readFileSync(path, "utf-8")) as WorldConfig)
+    : (JSON.parse(JSON.stringify(getConfig())) as WorldConfig);
+  const entry = cfg.villages.flatMap(v => v.agents).find(a => a.id === agent);
+  if (!entry) throw new Error(`Unbekannter Kolonist: ${agent}`);
+  if (model === null) delete entry.model;
+  else entry.model = model;
+
+  // Write-then-rename so a crash mid-write cannot leave a truncated config behind.
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(cfg, null, 2));
+  renameSync(tmp, path);
+  reloadConfig();
 }

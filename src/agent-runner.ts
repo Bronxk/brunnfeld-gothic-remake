@@ -12,7 +12,7 @@ import { tickToTime, SEASON_LABELS } from "./time.js";
 import { HUB_LOCATION, TOWNHALL_LOCATION, isBaseLocation } from "./village-map.js";
 import { RECIPES, MULTI_FARM_ITEMS } from "./production.js";
 import { computeVillageConcerns } from "./village-concerns.js";
-import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation } from "./world-registry.js";
+import { getAgentNames, getDisplayName, getDescription, getCouncilMembers, getAgentVillage, getVillageAgents, getVillageLocations, getLocationType, getVillages, getVillageElder, getVillageTownHall, getRoads, isRoadLocation, getVillageForLocation, getAgentModel } from "./world-registry.js";
 
 // ─── Agent descriptions for unknown acquaintances ────────────
 
@@ -522,7 +522,7 @@ export async function runAgentTurn(
   perception: string,
   context: ResolveContext,
 ): Promise<AgentTurnResult> {
-  const model = process.env.CHARACTER_MODEL || "haiku";
+  const model = getAgentModel(agent);
   const hasConcerns = computeVillageConcerns(context.state, context.time.tick).length > 0;
   const agentVid = getAgentVillage(agent);
   const atMeeting = context.agentLocation === getVillageTownHall(agentVid) && !!context.state.pending_meetings[agentVid];
