@@ -1,5 +1,5 @@
 import type {
-  AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WorldState,
+  AgentName, AgentTurnResult, ItemType, Law, ResolvedAction, SimTime, TickLog, WarEvent, WorldState,
 } from "./types.js";
 import { getAgentNames, getNpcNames, getDisplayName, getCouncilMembers, getVillages, getVillageAgents, getVillageMembers, getVillageElder, getVillageTownHall, isRoadLocation, PLAYER_ID, isPlayerActive, pinPlayerIdentity, getAgentModel, getDefaultModel } from "./world-registry.js";
 import { emitSSE } from "./events.js";
@@ -28,6 +28,8 @@ import { takeEconomySnapshot, getEconomySummary } from "./economy-tracker.js";
 import { applyWinterHeating, getSeasonDescription } from "./seasons.js";
 import { applyWarAgenda, tickDiplomacy, resolveWar, isWarAgenda, warProposal, validTributeAmount, processWarMarches, sendMarchersHome, warMarchLogLine } from "./war.js";
 import { gateBeforeTick } from "./sim-control.js";
+import { emitTickBarks, captureRaidSetup, buildRaids, theftsFromResults } from "./barks.js";
+import type { RaidSetup, TickBarkContext } from "./barks.js";
 import { isLocationOpen, isBaseLocation, HUB_LOCATION, PRISON_LOCATION, TOWNHALL_LOCATION } from "./village-map.js";
 
 // ─── Vote normalisation ──────────────────────────────────────
@@ -615,12 +617,14 @@ async function runTickCore(tick: number): Promise<void> {
 
   let meetingAttendees = new Set<AgentName>();
   let meetingLog: import("./types.js").MeetingLog | null = null;
+  const bellVillages: string[] = []; // villages whose Appell bell rang this tick (barks)
   for (const [vid, mtg] of Object.entries(state.pending_meetings)) {
     if (time.tick !== mtg.scheduledTick) {
       console.log(`  🏛 [${vid}] Pending meeting "${mtg.description}" scheduledTick=${mtg.scheduledTick}, current tick=${time.tick}`);
       continue;
     }
     ringVillageBell(state, time, vid);
+    bellVillages.push(vid);
     console.log(`  🏛 [${vid}] FIRING meeting "${mtg.description}" — checking quorum...`);
     const result = await runMeetingPhase(state, time, vid);
     for (const a of result.attendees) meetingAttendees.add(a);
@@ -840,8 +844,16 @@ async function runTickCore(tick: number): Promise<void> {
   }
 
   // ── 8c. WAR: resolve this tick's raids and guards (after all agent actions and economy) ──
+  // Barks need who fought: captured before resolveWar (it clears war_actions and wounds fighters).
+  let raidSetup: RaidSetup[] = [];
   try {
-    resolveWar(state, time.tick);
+    raidSetup = captureRaidSetup(state, time.tick);
+  } catch (err) {
+    console.error("[barks] raid capture failed", err);
+  }
+  let raidEvents: WarEvent[] = [];
+  try {
+    raidEvents = resolveWar(state, time.tick);
   } catch (err) {
     console.error(`  ⚔ resolveWar failed: ${(err as Error).stack ?? err}`);
     state.war_actions = {};
@@ -856,6 +868,26 @@ async function runTickCore(tick: number): Promise<void> {
   const warEventsThisTick = (state.war_log ?? []).filter(e => e.tick === time.tick);
   if (warEventsThisTick.length > 0) {
     console.log(`  ⚔ Krieg: ${warEventsThisTick.length} Ereignis(se) — ${warEventsThisTick.map(e => e.kind).join(", ")}`);
+  }
+
+  // ── 8d. BARKS (viewer-only flavour: nothing here touches state, memory or feedback) ──
+  try {
+    const marketTrades = (state.marketplaces
+      ? Object.values(state.marketplaces).flatMap(m => m.history)
+      : state.marketplace.history
+    ).filter(t => t.tick === time.tick);
+    const barkCtx: TickBarkContext = {
+      hour: time.hour,
+      weather: state.weather,
+      raids: buildRaids(raidSetup, raidEvents),
+      thefts: theftsFromResults(state, allResults, moveFromLocations),
+      producers: state.production_log.filter(e => e.tick === time.tick).map(e => e.agent),
+      traders: marketTrades.flatMap(t => [t.buyer, t.seller]),
+      appellVillages: bellVillages,
+    };
+    emitTickBarks(state, time.tick, barkCtx);
+  } catch (err) {
+    console.error("[barks] tick barks failed", err);
   }
 
   // ── 9. MEMORY + PERSISTENCE ─────────────────────────────────

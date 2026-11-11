@@ -8,6 +8,8 @@
  *   POST /api/sim/pause|resume|step → { ok, status }
  *   POST /api/sim/budget            → { ticks: number | null }
  *   POST /api/sim/speed             → { delayMs }
+ *   POST /api/sim/barks             → { level: 0 | 1 | 2 }  (colonist barks off / normal / viel)
+ *   POST /api/agents/<id>/bark      → { ok, agent, text, kind }   (click bark, no SSE)
  *   GET  /api/world/roads           → roads incl. village names
  *   GET  /api/world/villages-lore   → [{ id, name, description }]
  */
@@ -16,8 +18,12 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { emitSSE } from "./events.js";
 import {
   PLAYER_ID, getNpcNames, getAgentRole, setAgentRole, getSkillOptions, getRoads, getVillages,
-  getVillageDescription,
+  getVillageDescription, getDisplayName,
 } from "./world-registry.js";
+import { readWorldState } from "./memory.js";
+import { getLiveWorldState } from "./player.js";
+import { isAgentDead } from "./body.js";
+import { clickBark, setBarkLevel } from "./barks.js";
 import type { RolePatch } from "./world-registry.js";
 import {
   getSimControl, pauseSim, resumeSim, requestStep, setBudget, setTickDelay,
@@ -120,6 +126,45 @@ export async function handleRegieRoute(
     return true;
   }
 
+  // ─── Click bark (observer clicks a colonist) ────────────
+  const barkRoute = /^\/api\/agents\/([^/]+)\/bark$/.exec(path);
+  if (barkRoute && method === "POST") {
+    let agentId: string;
+    try {
+      agentId = decodeURIComponent(barkRoute[1]!);
+    } catch {
+      sendJson(res, headers, 404, { ok: false, error: `Unbekannter Kolonist: ${barkRoute[1]}` });
+      return true;
+    }
+    if (agentId === PLAYER_ID) {
+      sendJson(res, headers, 400, { ok: false, error: "Der Beobachter hat keine Sprüche." });
+      return true;
+    }
+    if (!getNpcNames().includes(agentId)) {
+      sendJson(res, headers, 404, { ok: false, error: `Unbekannter Kolonist: ${agentId}` });
+      return true;
+    }
+    try {
+      // Read-only: the engine's in-memory state while a tick runs, else the saved world.
+      const state = getLiveWorldState()?.state ?? readWorldState();
+      const body = state.body[agentId];
+      if (!body || isAgentDead(body)) {
+        sendJson(res, headers, 409, { ok: false, error: `${getDisplayName(agentId)} sagt nichts mehr.` });
+        return true;
+      }
+      const bark = clickBark(state, agentId);
+      if (!bark) {
+        sendJson(res, headers, 404, { ok: false, error: `${getDisplayName(agentId)} hat gerade nichts zu sagen.` });
+        return true;
+      }
+      sendJson(res, headers, 200, { ok: true, agent: agentId, text: bark.text, kind: bark.kind });
+    } catch (err) {
+      console.error(`[routes-regie] clickBark(${agentId}) fehlgeschlagen:`, err);
+      sendJson(res, headers, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   // ─── Simulation control ─────────────────────────────────
   if (path === "/api/sim" && method === "GET") {
     sendJson(res, headers, 200, getSimControl());
@@ -144,6 +189,17 @@ export async function handleRegieRoute(
           sendJson(res, headers, 400, { ok: false, error: err instanceof Error ? err.message : String(err) });
           return true;
         }
+        done();
+        return true;
+      }
+      case "barks": {
+        const parsed = await readJsonBody(req);
+        const lvl = parsed.ok ? parsed.body["level"] : undefined;
+        if (lvl !== 0 && lvl !== 1 && lvl !== 2) {
+          sendJson(res, headers, 400, { ok: false, error: "Feld „level“ muss 0, 1 oder 2 sein." });
+          return true;
+        }
+        setBarkLevel(lvl);
         done();
         return true;
       }

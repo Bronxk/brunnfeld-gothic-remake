@@ -8,8 +8,13 @@
 
 import { emitSSE, eventBus } from "./events.js";
 import { clearPendingRoleSync } from "./world-registry.js";
+// Cycle with barks.ts (it imports emitSimControl): both only call each other at runtime, never at module eval.
+import { getBarkLevel } from "./barks.js";
+import type { BarkLevel } from "./barks-types.js";
 
 export interface SimControlStatus {
+  /** Colonist barks (Sprüche): 0 = off, 1 = normal, 2 = viel. */
+  barkLevel: BarkLevel;
   paused: boolean;
   /** Remaining ticks before the auto-pause, null = unlimited. */
   budget: number | null;
@@ -55,11 +60,17 @@ function emit(): void {
   emitSSE("sim:control", getSimControl());
 }
 
+/** Broadcasts the current status (SSE sim:control); for settings kept outside this module (bark level). */
+export function emitSimControl(): void {
+  emit();
+}
+
 export function getSimControl(): SimControlStatus {
+  const barkLevel = getBarkLevel();
   if (awaitingStart) {
-    return { paused: true, budget, tickDelayMs, pausedReason: "Wartet auf den Start.", awaitingStart: true };
+    return { paused: true, budget, tickDelayMs, pausedReason: "Wartet auf den Start.", awaitingStart: true, barkLevel };
   }
-  const status: SimControlStatus = { paused, budget, tickDelayMs };
+  const status: SimControlStatus = { paused, budget, tickDelayMs, barkLevel };
   if (paused && pausedReason) status.pausedReason = pausedReason;
   return status;
 }

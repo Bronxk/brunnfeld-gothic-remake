@@ -12,6 +12,7 @@
     "server": "tsx src/server.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "test:barks": "tsx tests/barks-pool-lint.mts && tsx tests/barks.test.mts",
     "viewer:dev": "cd viewer && npm run dev",
     "viewer:build": "cd viewer && npm run build",
     "dev": "npm run viewer:build && npm start",
