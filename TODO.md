@@ -6,7 +6,9 @@ Annahmen (ju hat nicht explizit gewählt):
 - Alter Spielstand gesichert unter `../brunnfeld-data-backup-20261109-2335`, Testwelt der Nacht unter `../brunnfeld-data-test-20261110`.
 
 ## Offen (siehe fragen.md)
-- [ ] Deko-Grafiken der 2D-Karte fehlen (`viewer/public/assets/terrain/decos/…` nicht im Repo, Renderer warnt nur)
+- [ ] `viewer/public/assets/` fehlt komplett (Gebäude- und Deko-Sprites); die Leucht-Kreise auf der 2D-Karte sind der Fallback, Renderer warnt nur
+- [ ] Kriegs-Test (262 Checks) ging beim /tmp-Wipe verloren, war nie im Repo; bei Bedarf nach `tests/` neu bauen
+- [ ] Beobachten: rauer LLM-Ton im Rat/Appell und beim Handeln; falls der Rat keine Beschlüsse mehr schafft, Ton-Satz in `src/tools.ts` auf „außerhalb des Rats“ begrenzen
 - [ ] 3D-Chunk > 500 kB (three.js); lädt nur bei Klick auf 3D, ok für jetzt
 - [ ] 3D-Layout der Siedlungen ist eine Reihe, keine echte Talkarte
 
@@ -29,3 +31,4 @@ Annahmen (ju hat nicht explizit gewählt):
 - [x] Echtlauf (35 Kolonisten, Haiku): stabil, ~7 ct/Tick, ~3–4 min/Tick
 - [x] Frische Startwelt (Seed 1109, Tick 0, 3 Siedlungen, 35 Kolonisten)
 - [x] README: Krieg, Regie-Routen, Regie-Tab, Start-Dialog, 3D-Ansicht
+- [x] Sprüche: ~350 eigene derbe Sprüche, situativ + per Klick, Sprechblasen in 2D/3D, Regie Aus/Normal/Viel, `npm run test:barks`
