@@ -871,7 +871,7 @@ const ALL_TOOL_DEFS: ToolDef[] = [
   { name: "check_inventory",description: "Zeig dein Inventar und deinen Geldbeutel",                      argsHint: "{}" },
   { name: "recall",         description: "Durchsuche dein Gedächtnis nach einem Thema",                   argsHint: '{"topic": "gerste handel"}' },
   { name: "assess_person",  description: "Was du über jemanden weißt (nur Bekannte)",                     argsHint: '{"name": "Bodo"}' },
-  { name: "speak",          description: "Sag etwas laut — max. 15 Wörter, nur wenn andere da sind",      argsHint: '{"text": "..."}' },
+  { name: "speak",          description: "Sag etwas laut — max. 15 Wörter, nur wenn andere da sind, derb und direkt wie ein Sträfling",  argsHint: '{"text": "..."}' },
   { name: "negotiate",      description: "Mach jemandem hier ein festes Tauschangebot",                   argsHint: '{"agent": "Bodo", "item": "mehl", "price": 6, "qty": 3}' },
   { name: "produce",        description: "Stell etwas her (du musst an deinem Arbeitsort sein)",          argsHint: '{"item": "mehl"}' },
   { name: "move_to",        description: "Geh an einen Ort",                                              argsHint: `{"location": "${HUB_LOCATION}"}` },

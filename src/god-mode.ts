@@ -387,7 +387,7 @@ Hunger: ${body.hunger}/5, Jahreszeit: ${SEASON_DE[state.season] ?? state.season}
 Aktuelle Ereignisse in der Kolonie: ${state.active_events.map(e => e.description).join("; ") || "keine"}
 
 Ein neugieriger Besucher fragt dich: „${question}"
-Antworte auf Deutsch, in der Rolle von ${name} (2–4 Sätze). Falle nicht aus der Rolle.`;
+Antworte auf Deutsch, in der Rolle von ${name} (2–4 Sätze). Falle nicht aus der Rolle und antworte in der rauen, derben Sprache der Kolonie, nicht höflich-geschniegelt.`;
 
   await callClaude(prompt, {
     model: process.env.INTERVIEW_MODEL ?? "haiku",
