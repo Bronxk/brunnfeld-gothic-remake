@@ -880,6 +880,7 @@ npx tsx src/generate-world.ts --villages=3 --seed=1109
 | `ANTHROPIC_MODEL_HAIKU` / `_SONNET` / `_OPUS` | `claude-haiku-5-5` / `claude-sonnet-5-5` / `claude-opus-5-5` | Claude API model per tier |
 | `CHARACTER_MODEL` | `haiku` | Model tier for agents: `haiku` / `sonnet` / `opus` (CLI) or any OpenRouter model ID |
 | `INTERVIEW_MODEL` | `haiku` | Model for the agent interview endpoint |
+| `BARK_LEVEL` | `1` | Colonist barks (Sprüche): `0` off, `1` normal, `2` viel. Changeable live in the Regie tab |
 | `USE_HARNESS` | unset (= classic) | `true` enables harness mode (multi-call tool loop per agent); `.env.example` sets it to `true` |
 | `OPENROUTER_MODEL` | — | Override all tiers with one OpenRouter model ID |
 | `OPENROUTER_MODEL_HAIKU` | — | OpenRouter model for haiku-tier calls only |
@@ -1185,6 +1186,17 @@ Changes arrive as SSE `agent:role` and `sim:control`. Set `SIM_START_PAUSED=true
 
 Click any colonist → **Interview** → ask them anything. The response streams live in character, grounded in their actual memory, inventory, wallet and current events.
 
+### Barks (Sprüche)
+
+Colonists shout short, rough one-liners that fit their situation: hunger, injuries, work, haggling, a theft, strangers from another colony, the Appell, the Karzer, and above all war (marching, raiding, defending, winning, losing). About 350 hand-written lines live in `src/barks-pool.ts`, sorted by situation and by role (each craft, Rottmeister, Vogt). Selection and triggers are in `src/barks.ts`.
+
+- **Zero tokens, viewer only:** barks are flavour. They never enter memory, prompts or feedback, so the LLM colonists don't know what they "said".
+- **Talk to a colonist:** click them on the map (2D or 3D) or press **Ansprechen** in their panel, and they bark at you according to their state.
+- **Amount:** Regie tab → Sprüche: Aus / Normal (max 3 per tick) / Viel (max 8 per tick), or `BARK_LEVEL`.
+- **LLM voice:** the `speak` action and the interview prompt ask the colonists to talk rough and direct as well.
+- **Routes and events:** `POST /api/agents/<id>/bark` returns `{ text, kind }`; `POST /api/sim/barks` with `{ level }`; SSE `agent:bark` (`{ agent, text, kind, location, tick }`).
+- **Tests:** `npm run test:barks` (pool lint: counts, duplicates, ≤12 words, placeholders, blocklist; selection, caps, cooldowns, routes).
+
 ### Whisper
 
 Type a rumor into the **Whisper** field while an agent is selected. They receive it as a message next tick and may act on it — adjust prices, hoard goods, warn others.
@@ -1201,6 +1213,7 @@ The web viewer at `http://localhost:5173` (dev) or `http://localhost:3333` (prod
 - **Right panel** — agent detail, Tauschbrett, economy charts, world events
 - **Activity drawer** — collapsible scene chronicle
 - **Economy strip** — always-visible wealth bar
+- **Speech bubbles** — LLM speech and barks over the colonists, in 2D and 3D
 - **Start dialog** — before the first tick: start the world on disk, or generate a new one (1–5 colonies, 6–20 colonists per neighbour colony, with an estimated cost per tick)
 
 ### 3D view
