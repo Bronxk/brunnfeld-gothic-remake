@@ -25,6 +25,7 @@ export function categoryOf(entry: FeedEntry): Category | null {
     case "do":
     case "move": return "work";
     case "speak": return entry.council ? "council" : "talk";
+    case "bark": return "talk";
     case "system": return "council";
     default: return null;
   }
@@ -61,6 +62,7 @@ function withoutLeadingName(text: string, fullName: string, shortName: string): 
 function Entry({ entry, fresh: freshProp, onSelect }: { entry: FeedEntry; fresh: boolean; onSelect: (a: string) => void }) {
   const [fresh] = useState(freshProp); // decided once, so re-renders never cancel the enter animation
   const cat = categoryOf(entry)!;
+  const icon: IconName = entry.type === "move" ? "feet" : CAT_ICON[cat];
   const name = AGENT_DISPLAY[entry.agent]?.split(" ")[0] ?? entry.agent;
   const nameBtn = (
     <button className="linkish" onClick={() => onSelect(entry.agent)} title={`${AGENT_DISPLAY[entry.agent]} ansehen`}>{name}</button>
@@ -68,13 +70,14 @@ function Entry({ entry, fresh: freshProp, onSelect }: { entry: FeedEntry; fresh:
   // trade / production / move / system texts already name the actors; speech and actions get the speaker prefixed.
   let body: React.ReactNode;
   if (entry.type === "speak") body = <>{nameBtn}: „{entry.text}“</>;
+  else if (entry.type === "bark") body = <>{nameBtn}: <em className="bark-tx">„{entry.text}“</em></>;
   else if (entry.type === "do") body = <>{nameBtn} {withoutLeadingName(entry.text, AGENT_DISPLAY[entry.agent] ?? entry.agent, name)}</>;
   else body = entry.text;
 
   return (
-    <li className={`ent${fresh ? " enter" : ""}`} data-t={cat} title={entry.location ? `${entry.location}` : undefined}>
+    <li className={`ent${fresh ? " enter" : ""}`} data-t={entry.type === "bark" ? "bark" : cat} title={entry.location ? `${entry.location}` : undefined}>
       <time>{tickClock(entry.tick)}</time>
-      <span className="bd"><Icon name={entry.type === "move" ? "feet" : CAT_ICON[cat]} /></span>
+      <span className="bd"><Icon name={icon} /></span>
       <span className="tx">{body}</span>
     </li>
   );

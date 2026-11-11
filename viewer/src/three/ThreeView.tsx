@@ -17,6 +17,7 @@ const CSS = `
 .t3-tag{padding:3px 9px;border-radius:var(--r);background:color-mix(in srgb,var(--panel) 92%,transparent);border:1px solid var(--line2);color:var(--ink);font-size:12.5px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 .t3-tag-sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--panel))}
 .t3-bubble{white-space:normal;width:max-content;max-width:190px;padding:6px 10px;border-radius:10px;background:color-mix(in srgb,var(--panel2) 94%,transparent);border:1px solid color-mix(in srgb,var(--accent) 38%,var(--line2));color:var(--ink);font-size:13px;line-height:1.25;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+.t3-bubble.bark{background:color-mix(in srgb,var(--accent) 14%,var(--panel2));border-color:color-mix(in srgb,var(--accent) 65%,var(--line2))}
 .t3-ui{position:absolute;z-index:6;display:flex;gap:6px}
 .t3-ctl{top:8px;right:8px;flex-direction:column;flex-wrap:wrap-reverse;align-content:flex-start;max-height:calc(100% - 72px)}
 .t3-btn{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line2);color:var(--ink);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:background .15s,transform .15s,border-color .15s;cursor:pointer;padding:0}
@@ -120,6 +121,7 @@ export default function ThreeView({ onOpenMeeting }: ThreeViewProps) {
     try {
       const sc = new ColonyScene(canvas, overlay, {
         onSelect: (id) => useVillageStore.getState().selectAgent(id),
+        onBark: (id) => void useVillageStore.getState().barkAt(id),
         onFollow: setFollowing,
         onTour: setTouring,
         onCaption: setCaption,
@@ -225,6 +227,7 @@ export default function ThreeView({ onOpenMeeting }: ThreeViewProps) {
       for (const e of fresh.reverse()) {
         if (e.tick < s.currentTick - 1) continue; // history loaded after mount
         if (e.type === "speak") sc.say(e.agent, e.text);
+        else if (e.type === "bark") sc.say(e.agent, e.text, "bark");
         else if (e.type === "trade") sc.trade(e.agent, e.agent, e.text);
       }
     });

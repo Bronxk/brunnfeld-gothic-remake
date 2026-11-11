@@ -6,7 +6,8 @@ import {
   getActiveTiles, getActiveBuildings, findTile, ADJACENCY, TILE_SIZE, WORLD_W, WORLD_H,
 } from "./map";
 import type { AgentName, WorldState } from "../types";
-import { AGENT_DISPLAY } from "../store";
+import { AGENT_DISPLAY, type MapBubble } from "../store";
+import { drawBubbles } from "./bubbles";
 
 // ─── Sprite URLs ──────────────────────────────────────────────────────────
 
@@ -861,6 +862,7 @@ export function renderVillage(
   canvasW: number,
   canvasH: number,
   animations: Map<AgentName, ActiveAnimation> = new Map(),
+  bubbles: readonly MapBubble[] = [],
 ): void {
   frameIndex++;
   const tSec = performance.now() / 1000;
@@ -893,6 +895,9 @@ export function renderVillage(
   drawOverlayPass(ctx, world, camera, selectedAgent, hoveredLocation, tSec);
   drawParticles(ctx, 1 / camera.zoom);
   ctx.restore();
+
+  // ── Speech / bark bubbles (screen space, over the colonists drawn above; 54 px keeps clear of the playback bar) ──
+  drawBubbles(ctx, bubbles, agentDraws, camera, canvasW, canvasH, HEAD, FEET, 54);
 }
 
 // ─── Hit test: which location was clicked ─────────────────────────────────

@@ -27,6 +27,7 @@ export default function VillageMap() {
   const villages = useVillageStore((s) => s.villages);
   const selectedAgent = useVillageStore((s) => s.selectedAgent);
   const selectAgent = useVillageStore((s) => s.selectAgent);
+  const barkAt = useVillageStore((s) => s.barkAt);
   const feed = useVillageStore((s) => s.feed);
 
   // Tick nav state for overlay
@@ -140,7 +141,7 @@ export default function VillageMap() {
         ),
       } : null;
 
-      renderVillage(ctx, filteredWorld, cameraRef.current, selectedAgent, hoveredLoc, w, h, animationsRef.current);
+      renderVillage(ctx, filteredWorld, cameraRef.current, selectedAgent, hoveredLoc, w, h, animationsRef.current, store.mapBubbles);
 
       const now = performance.now();
       for (const [agent, anim] of animationsRef.current) {
@@ -298,14 +299,16 @@ export default function VillageMap() {
       }
       if (agents.length > 0) {
         const idx = selectedAgent ? agents.indexOf(selectedAgent) : -1;
-        selectAgent(agents[(idx + 1) % agents.length]!);
+        const picked = agents[(idx + 1) % agents.length]!;
+        selectAgent(picked);
+        void barkAt(picked); // walking up to them: they answer with a bark
       } else {
         selectAgent(null);
       }
     } else {
       selectAgent(null);
     }
-  }, [world, selectedAgent, selectAgent]);
+  }, [world, selectedAgent, selectAgent, barkAt, activeVillageId]);
 
   const handleSlider = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const idx = parseInt(e.target.value);

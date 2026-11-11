@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier, WarRelation, WarLogEntry, WarRaidEvent, WarState, WarMarchInfo, SimStatus, AgentRole, AgentRoleResponse, SkillOption } from "./types";
+import type { AgentName, WorldState, FeedEntry, SSEEvent, EconomySnapshot, VillageInfo, MeetingState, Trade, PlayerView, PlayerTool, AgentModelsInfo, ModelTier, WarRelation, WarLogEntry, WarRaidEvent, WarState, WarMarchInfo, SimStatus, AgentRole, AgentRoleResponse, SkillOption, BarkLevel } from "./types";
 import { itemLabel, gr } from "./types";
 
 export type { MeetingState } from "./types";
@@ -76,6 +76,40 @@ function mergeRelation(list: WarRelation[], r: WarRelation): WarRelation[] {
 function isRelation(r: unknown): r is WarRelation {
   const x = r as Partial<WarRelation> | null;
   return !!x && typeof x.a === "string" && typeof x.b === "string" && typeof x.stance === "string";
+}
+
+// ─── Speech bubbles on the 2D map (LLM speech + barks) ───────────────────
+
+/** One bubble over a colonist on the 2D map. Times are `performance.now()` ms. */
+export interface MapBubble {
+  id: number;
+  agent: AgentName;
+  text: string;
+  kind: "speak" | "bark";
+  at: number;
+  until: number;
+}
+
+const BUBBLE_MAX = 5;
+const BUBBLE_TEXT_MAX = 140;
+const BARK_THROTTLE_MS = 1500;
+let bubbleCounter = 0;
+/** Last click-bark per colonist (performance.now ms), for the client-side throttle. */
+const lastBarkAt = new Map<string, number>();
+
+/** Bubble lifetime: 4.5 s + 50 ms per character. */
+export function bubbleLifetimeMs(text: string): number {
+  return 4500 + text.length * 50;
+}
+
+/** Adds a bubble (replacing the colonist's previous one); at most BUBBLE_MAX live bubbles, the oldest drops. */
+function withBubble(list: MapBubble[], agent: AgentName, raw: string, kind: MapBubble["kind"]): MapBubble[] {
+  const text = raw.length > BUBBLE_TEXT_MAX ? `${raw.slice(0, BUBBLE_TEXT_MAX - 1)}…` : raw;
+  if (!text) return list;
+  const now = performance.now();
+  const next = list.filter((b) => b.until > now && b.agent !== agent);
+  next.push({ id: bubbleCounter++, agent, text, kind, at: now, until: now + bubbleLifetimeMs(text) });
+  return next.slice(-BUBBLE_MAX);
 }
 
 let toastCounter = 0;
@@ -360,7 +394,15 @@ interface VillageStore {
   sim: SimStatus | null;
   loadSim: () => Promise<void>;
   /** POST /api/sim/<action>. Toasts errors; returns true on success. */
-  simCommand: (action: "pause" | "resume" | "step" | "budget" | "speed", body?: Record<string, unknown>) => Promise<boolean>;
+  simCommand: (action: "pause" | "resume" | "step" | "budget" | "speed" | "barks", body?: Record<string, unknown>) => Promise<boolean>;
+  /** POST /api/sim/barks: Sprüche level 0 = Aus, 1 = Normal, 2 = Viel. Updates `sim` from the response. */
+  setBarkLevel: (level: BarkLevel) => Promise<boolean>;
+
+  // Barks (Sprüche) and speech bubbles on the 2D map
+  /** Live bubbles over colonists (2D map); the renderer skips expired ones. */
+  mapBubbles: MapBubble[];
+  /** Click on a colonist: POST /api/agents/<id>/bark, shows bubble + feed entry (client throttle 1.5 s per colonist). */
+  barkAt: (agentId: AgentName) => Promise<void>;
 
   // Regie: live roles (skill / council / director's note)
   /** Last known role per colonist (loaded on selection, updated by SSE agent:role). */
@@ -438,6 +480,22 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       }
       return next as VillageStore;
     });
+  }
+
+  /** A bark (SSE `agent:bark` or a click answer): own feed entry type "bark" plus a map bubble. */
+  function applyBark(agent: AgentName, text: string, location: string | undefined, tick: number): void {
+    const entry: FeedEntry = {
+      id: feedCounter++,
+      tick,
+      agent,
+      type: "bark",
+      text,
+      ...(location ? { location } : {}),
+    };
+    set((s) => ({
+      feed: [entry, ...s.feed].slice(0, 300),
+      mapBubbles: withBubble(s.mapBubbles, agent, text, "bark"),
+    }));
   }
 
   /** Perception + tools change with every tick/action; coalesce bursts of updates into one refetch. */
@@ -563,6 +621,36 @@ export const useVillageStore = create<VillageStore>((set, get) => {
       console.error(`[viewer] POST /api/sim/${action} failed`, err);
       get().pushToast("Keine Verbindung zum Server.", "bad");
       return false;
+    }
+  },
+
+  setBarkLevel: (level) => get().simCommand("barks", { level }),
+
+  mapBubbles: [],
+  barkAt: async (agentId) => {
+    // The human player is not a colonist to bark at.
+    if (agentId === "player") return;
+    const now = performance.now();
+    const last = lastBarkAt.get(agentId);
+    if (last !== undefined && now - last < BARK_THROTTLE_MS) return;
+    lastBarkAt.set(agentId, now);
+    try {
+      const res = await fetch(`/api/agents/${encodeURIComponent(agentId)}/bark`, { method: "POST" });
+      const data = await readJson(res);
+      if (!res.ok || data.ok === false) {
+        const error = typeof data.error === "string" ? data.error : `HTTP ${res.status}`;
+        console.warn(`[viewer] POST /api/agents/${agentId}/bark rejected: ${error}`);
+        get().pushToast(error, res.status === 409 ? "warn" : "bad");
+        return;
+      }
+      if (typeof data.text !== "string" || !data.text) {
+        console.warn(`[viewer] bark of ${agentId} came back without text`, data);
+        return;
+      }
+      applyBark(agentId, data.text, get().world?.agent_locations[agentId], get().currentTick);
+    } catch (err) {
+      console.error(`[viewer] POST /api/agents/${agentId}/bark failed`, err);
+      get().pushToast("Keine Verbindung zum Server.", "bad");
     }
   },
 
@@ -931,7 +1019,10 @@ export const useVillageStore = create<VillageStore>((set, get) => {
         ...(isSpeech && atTownHall && get().activeMeeting ? { council: true } : {}),
       };
       set((s) => {
-        const base = { feed: [entry, ...s.feed].slice(0, 300) };
+        const base = {
+          feed: [entry, ...s.feed].slice(0, 300),
+          ...(isSpeech ? { mapBubbles: withBubble(s.mapBubbles, e.agent, entry.text, "speak") } : {}),
+        };
         if (isSpeech && (e.location === "Vogtei" || e.location.endsWith(":Vogtei")) && s.activeMeeting) {
           return {
             ...base,
@@ -1189,6 +1280,12 @@ export const useVillageStore = create<VillageStore>((set, get) => {
     if (e.type === "sim:control") {
       const { type: _type, ...status } = e;
       set({ sim: status });
+      return;
+    }
+
+    if (e.type === "agent:bark") {
+      if (!e.agent || !e.text) { console.warn("[viewer] agent:bark without agent/text", e); return; }
+      applyBark(e.agent, e.text, e.location, e.tick ?? get().currentTick);
       return;
     }
 

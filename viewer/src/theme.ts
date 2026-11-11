@@ -370,6 +370,11 @@ button.evc:disabled{cursor:default}
 .ent[data-t=work] .bd{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 50%,transparent);background:color-mix(in srgb,var(--warn) 12%,transparent)}
 .ent[data-t=talk] .bd{color:var(--info);border-color:color-mix(in srgb,var(--info) 50%,transparent);background:color-mix(in srgb,var(--info) 12%,transparent)}
 .ent[data-t=council] .bd{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.ent[data-t=bark]{background:color-mix(in srgb,var(--accent) 7%,var(--panel2));border-color:color-mix(in srgb,var(--accent) 28%,var(--line))}
+.ent[data-t=bark] .bd{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.ent .bark-tx{font-style:italic;color:var(--accent)}
+.tk .tk-bark{font-style:italic;color:var(--accent)}
+.tk .tk-bark b{font-style:normal;color:var(--ink)}
 .ent .tx{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ent .tx .linkish{font-weight:700}
 .ent.thought .tx{font-style:italic;color:var(--ink2)}

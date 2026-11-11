@@ -365,6 +365,7 @@ export default function AgentPanel() {
   const selectedAgent = useVillageStore((s) => s.selectedAgent);
   const world = useVillageStore((s) => s.world);
   const selectAgent = useVillageStore((s) => s.selectAgent);
+  const barkAt = useVillageStore((s) => s.barkAt);
 
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -486,6 +487,12 @@ export default function AgentPanel() {
             </div>
           )) : <span className="muted">Alles verkauft.</span>}
         </div>
+      )}
+
+      {selectedAgent !== "player" && (
+        <button className="btn block" style={{ marginBottom: 8 }} onClick={() => void barkAt(selectedAgent)} title={`${first} ansprechen: ein kurzer, rauer Spruch`}>
+          <Icon name="speech" />Ansprechen
+        </button>
       )}
 
       <dl className="kv">

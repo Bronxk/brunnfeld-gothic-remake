@@ -27,6 +27,8 @@ export interface ColonistInfo {
 
 export interface SceneCallbacks {
   onSelect(id: string | null): void;
+  /** A colonist figure was clicked (not on removal): the observer walks up to them and gets barked at. */
+  onBark(id: string): void;
   onFollow(on: boolean): void;
   onTour(on: boolean): void;
   onCaption(text: string | null): void;
@@ -170,6 +172,7 @@ export class ColonyScene {
       const r = canvas.getBoundingClientRect();
       const hit = this.pick(e.clientX - r.left, e.clientY - r.top);
       this.cb.onSelect(hit.fig);
+      if (hit.fig) this.cb.onBark(hit.fig);
     });
     on<Event>(document, "visibilitychange", () => { this.lastT = 0; });
     this.ro = new ResizeObserver(() => this.resize());
@@ -450,17 +453,18 @@ export class ColonyScene {
 
   /* ───────────── speech / events / hotspots ───────────── */
 
-  say(id: string, text: string): void {
+  /** `kind` "bark" = a Spruch (amber bubble; no tour hotspot, so ambient barks do not hijack the auto-tour). */
+  say(id: string, text: string, kind: "speak" | "bark" = "speak"): void {
     const w = this.walkers.get(id);
     if (!w) return;
     const t = text.length > 110 ? `${text.slice(0, 107)}…` : text;
     for (const b of this.bubbles.filter((x) => x.id === id)) { b.el.remove(); }
     this.bubbles = this.bubbles.filter((x) => x.id !== id);
-    const el = this.mkEl("t3-bubble");
+    const el = this.mkEl(kind === "bark" ? "t3-bubble bark" : "t3-bubble");
     el.textContent = t;
     this.bubbles.push({ el, id, until: this.clock + 4.5 + t.length * 0.05 });
     if (this.bubbles.length > 8) this.bubbles.shift()?.el.remove();
-    this.pushHot({ kind: "speech", caption: `${w.info.name}: „${t}“`, agent: id });
+    if (kind === "speak") this.pushHot({ kind: "speech", caption: `${w.info.name}: „${t}“`, agent: id });
   }
 
   trade(buyer: string, seller: string, text: string): void {

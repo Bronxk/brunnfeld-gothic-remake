@@ -2,10 +2,10 @@ import { useVillageStore, AGENT_DISPLAY } from "../store";
 import type { FeedEntry } from "../types";
 import Icon, { type IconName } from "./Icon";
 
-const TICKER_TYPES: FeedEntry["type"][] = ["speak", "trade", "move", "production", "system"];
+const TICKER_TYPES: FeedEntry["type"][] = ["speak", "bark", "trade", "move", "production", "system"];
 
 const TYPE_ICON: Record<string, IconName> = {
-  speak: "speech", trade: "swap", move: "feet", production: "hammer", system: "bell",
+  speak: "speech", bark: "speech", trade: "swap", move: "feet", production: "hammer", system: "bell",
 };
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
@@ -18,8 +18,8 @@ function Items({ entries }: { entries: FeedEntry[] }) {
         return (
           <span key={e.id} className="tk">
             <Icon name={TYPE_ICON[e.type] ?? "bell"} />
-            {e.type === "speak" ? (
-              <span><b>{name}</b>: „{clip(e.text, 60)}“</span>
+            {e.type === "speak" || e.type === "bark" ? (
+              <span className={e.type === "bark" ? "tk-bark" : undefined}><b>{name}</b>: „{clip(e.text, 60)}“</span>
             ) : (
               <span>{clip(e.text, 80)}</span>
             )}

@@ -122,7 +122,7 @@ export interface FeedEntry {
   id: number;
   tick: number;
   agent: AgentName;
-  type: "speak" | "do" | "move" | "trade" | "production" | "thought" | "system";
+  type: "speak" | "bark" | "do" | "move" | "trade" | "production" | "thought" | "system";
   text: string;
   location?: string;
   /** True for speech that happened during an active Appell (council meeting). */
@@ -168,7 +168,29 @@ export type SSEEvent =
   | ({ type: "war:event" } & Partial<WarLogEntry>)
   | ({ type: "war:march" } & WarMarchPayload)
   | ({ type: "sim:control" } & SimStatus)
-  | { type: "agent:role"; agent: AgentName; role: AgentRole };
+  | { type: "agent:role"; agent: AgentName; role: AgentRole }
+  | ({ type: "agent:bark" } & BarkEvent);
+
+// ─── Barks (Sprüche): short, rough one-liners the colonists shout (backend: src/barks-types.ts) ───
+
+/** Situation a bark fits (mirror of the backend BARK_KINDS). */
+export type BarkKind =
+  | "gruss" | "abweisen" | "fremder" | "hunger" | "erschoepft" | "verletzt" | "krank" | "arbeit" | "markt"
+  | "dieb" | "arm" | "reich" | "spannung"
+  | "krieg_marsch" | "krieg_angriff" | "krieg_verteidigung" | "krieg_sieg" | "krieg_niederlage"
+  | "appell" | "karzer" | "wetter" | "nacht";
+
+/** Observer setting: 0 = Aus, 1 = Normal, 2 = Viel. Click barks work at every level. */
+export type BarkLevel = 0 | 1 | 2;
+
+/** SSE `agent:bark` payload (ambient barks only; click barks come back in the HTTP response). */
+export interface BarkEvent {
+  agent: AgentName;
+  text: string;
+  kind: BarkKind;
+  location: string;
+  tick: number;
+}
 
 // ─── Regie: simulation control (backend: GET /api/sim, POST /api/sim/*, SSE sim:control) ───
 
@@ -181,6 +203,8 @@ export interface SimStatus {
   pausedReason?: string;
   /** Fresh world that has not started yet; "Weiter"/"1 Tick" start it. */
   awaitingStart?: boolean;
+  /** Sprüche level; absent on an older server (the Regie row is hidden then). */
+  barkLevel?: BarkLevel;
 }
 
 // ─── Regie: live role of a colonist (backend: GET/POST /api/agents/<id>/role, SSE agent:role) ───

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useVillageStore, AGENT_DISPLAY } from "../store";
-import type { WarMarchInfo, WarRelation, WarStance } from "../types";
+import type { BarkLevel, WarMarchInfo, WarRelation, WarStance } from "../types";
 import Icon, { type IconName } from "./Icon";
 import GodModePanel from "./GodModePanel";
 
@@ -66,11 +66,18 @@ const SPEED_CHIPS: { ms: number; label: string; title: string }[] = [
   { ms: 60000, label: "60 s", title: "60 Sekunden zwischen den Ticks" },
 ];
 
-const fmtDelay = (ms: number) => (ms === 0 ? "sofort" : ms % 1000 === 0 ? `${ms / 1000} s` : `${deNum(ms / 1000, 1)} s`);
+const BARK_CHIPS: { level: BarkLevel; label: string; title: string }[] = [
+  { level: 0, label: "Aus", title: "Keine Sprüche von selbst (Anklicken geht weiter)" },
+  { level: 1, label: "Normal", title: "Ab und zu ein Spruch" },
+  { level: 2, label: "Viel", title: "Oft ein Spruch" },
+];
+
+const fmtDelay =(ms: number) => (ms === 0 ? "sofort" : ms % 1000 === 0 ? `${ms / 1000} s` : `${deNum(ms / 1000, 1)} s`);
 
 function SimSection() {
   const sim = useVillageStore((s) => s.sim);
   const simCommand = useVillageStore((s) => s.simCommand);
+  const setBarkLevel = useVillageStore((s) => s.setBarkLevel);
   const cost = useCostEstimate();
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -170,6 +177,26 @@ function SimSection() {
           ))}
         </div>
       </div>
+
+      {sim?.barkLevel !== undefined && (
+        <div className="fld" style={{ marginTop: 8 }}>
+          <span className="fld-l">Sprüche <small className="muted">Zurufe der Kolonisten, kostet keine Tokens</small></span>
+          <div className="chips">
+            {BARK_CHIPS.map((b) => (
+              <button
+                key={b.level}
+                className="chip"
+                title={b.title}
+                aria-pressed={sim.barkLevel === b.level}
+                disabled={busy !== null}
+                onClick={() => void run(`barks${b.level}`, () => setBarkLevel(b.level))}
+              >
+                {b.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="costbox">
         {cost ? (

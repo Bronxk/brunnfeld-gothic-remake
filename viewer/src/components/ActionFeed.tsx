@@ -6,6 +6,7 @@ import Icon, { type IconName } from "./Icon";
 /** Unused full-height feed (the chronicle in SceneChronicle replaced it); kept restyled for reuse. */
 const ENTRY_ICON: Record<FeedEntry["type"], IconName> = {
   speak: "speech",
+  bark: "speech",
   do: "hammer",
   move: "feet",
   trade: "swap",
@@ -16,14 +17,14 @@ const ENTRY_ICON: Record<FeedEntry["type"], IconName> = {
 
 function FeedRow({ entry, onClick }: { entry: FeedEntry; onClick: () => void }) {
   return (
-    <button type="button" className="ent" onClick={onClick}>
+    <button type="button" className="ent" data-t={entry.type === "bark" ? "bark" : undefined} onClick={onClick}>
       <time>{tickClock(entry.tick)}</time>
       <span className="bd"><Icon name={ENTRY_ICON[entry.type]} /></span>
       <span className="tx">
         <b>{AGENT_DISPLAY[entry.agent]}</b>
         {entry.location ? <span className="muted"> · {entry.location}</span> : null}
         {": "}
-        {entry.type === "speak" ? `„${entry.text}“` : entry.text}
+        {entry.type === "speak" || entry.type === "bark" ? `„${entry.text}“` : entry.text}
       </span>
     </button>
   );
